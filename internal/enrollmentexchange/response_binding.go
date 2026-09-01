@@ -22,7 +22,7 @@ const (
 	boundResponseEnvelopeSchema  = "owntransit.enrollment-bound-response-envelope.v1"
 	boundResponseSignatureDomain = "OwnTransit enrollment bound response v1"
 	approvedRequestSetDomain     = "OwnTransit approved enrollment request set v1"
-	MaxBoundResponseSize         = enrollment.MaxEnvelopeSize + (256 << 10)
+	MaxBoundResponseSize         = 2 * enrollment.MaxEnvelopeSize
 )
 
 type boundResponsePayload struct {
