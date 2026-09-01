@@ -1,0 +1,53 @@
+[Unit]
+Description=OwnTransit untrusted rendezvous relay container
+Documentation=https://github.com/sentrybottale/owntransit
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+ConditionPathIsDirectory=/var/lib/owntransit/relay/runtime
+ConditionPathIsDirectory=/var/lib/owntransit/relay/anchor-view
+ConditionPathExists=/etc/owntransit/relay-container.env
+ConditionPathExists=!/var/lib/owntransit/package-supervisor/relay.intent
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/owntransit/relay-container.env
+UMask=0077
+WorkingDirectory=/
+ExecStartPre=/usr/bin/podman image exists ${OWNTRANSIT_RELAY_IMAGE}
+ExecStartPre=/usr/bin/podman run --rm --network=none --read-only --cap-drop=all --security-opt=no-new-privileges --pids-limit=32 --memory=128m --user ${OWNTRANSIT_RELAY_UID}:${OWNTRANSIT_RELAY_READER_GID} --volume=/var/lib/owntransit/relay/runtime:/runtime:ro,nosuid,nodev,noexec --volume=/var/lib/owntransit/relay/anchor-view:/anchor:ro,nosuid,nodev,noexec ${OWNTRANSIT_RELAY_IMAGE} check-config --runtime-root=/runtime --anchor-view-root=/anchor --reader-gid=${OWNTRANSIT_RELAY_READER_GID}
+ExecStart=/usr/bin/podman run --rm --name=owntransit-relay --pull=never --read-only --cap-drop=all --security-opt=no-new-privileges --pids-limit=128 --memory=256m --user ${OWNTRANSIT_RELAY_UID}:${OWNTRANSIT_RELAY_READER_GID} --volume=/var/lib/owntransit/relay/runtime:/runtime:ro,nosuid,nodev,noexec --volume=/var/lib/owntransit/relay/anchor-view:/anchor:ro,nosuid,nodev,noexec --publish=127.0.0.1:9087:9087/tcp --log-driver=journald ${OWNTRANSIT_RELAY_IMAGE} run --runtime-root=/runtime --anchor-view-root=/anchor --reader-gid=${OWNTRANSIT_RELAY_READER_GID}
+ExecStop=/usr/bin/podman stop --ignore --time=10 owntransit-relay
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=30s
+TimeoutStopSec=20s
+KillSignal=SIGTERM
+KillMode=mixed
+StandardOutput=null
+StandardError=journal
+SyslogIdentifier=owntransit-relay
+
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+ReadOnlyPaths=/var/lib/owntransit/relay/runtime /var/lib/owntransit/relay/anchor-view
+InaccessiblePaths=/var/lib/owntransit/relay/private /var/lib/owntransit/relay/authority
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+TasksMax=256
+LimitNOFILE=4096
+MemoryMax=512M
+OOMPolicy=stop
+Delegate=yes
+
+[Install]
+WantedBy=multi-user.target

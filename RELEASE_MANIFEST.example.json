@@ -1,0 +1,209 @@
+{
+  "schema": "owntransit.software-release.v1",
+  "product": "owntransit",
+  "version": "0.0.0-example",
+  "release_id": "aeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "sequence": 1,
+  "created_unix": 1700000000,
+  "protocol": "forthgate/1",
+  "license": "Apache-2.0",
+  "minimum_lifecycle": 1,
+  "source": {
+    "repository": "https://github.com/sentrybottale/owntransit",
+    "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "dirty": false,
+    "source_manifest_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "toolchain": {
+    "go_version": "go1.26.7",
+    "builder_image": "registry.owntransit.invalid/build/go@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "artifacts": [
+    {
+      "name": "client-darwin-arm64",
+      "file": "artifacts/owntransit-darwin-arm64",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 101,
+      "os": "darwin",
+      "arch": "arm64",
+      "role": "client",
+      "format": "executable",
+      "sbom": "sbom-client-darwin-arm64"
+    },
+    {
+      "name": "client-linux-amd64",
+      "file": "artifacts/owntransit-linux-amd64",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 102,
+      "os": "linux",
+      "arch": "amd64",
+      "role": "client",
+      "format": "executable",
+      "sbom": "sbom-client-linux-amd64"
+    },
+    {
+      "name": "connector-linux-amd64",
+      "file": "artifacts/owntransit-connector-linux-amd64",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 103,
+      "os": "linux",
+      "arch": "amd64",
+      "role": "connector",
+      "format": "executable",
+      "ssh_target": "tcp4/127.0.0.1:22",
+      "sbom": "sbom-connector-linux-amd64"
+    },
+    {
+      "name": "relay-linux-amd64",
+      "file": "artifacts/owntransit-relay-linux-amd64.oci.tar",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 104,
+      "os": "linux",
+      "arch": "amd64",
+      "role": "relay",
+      "format": "oci",
+      "sbom": "sbom-relay-linux-amd64"
+    },
+    {
+      "name": "lifecycle-darwin-arm64",
+      "file": "artifacts/owntransitctl-darwin-arm64",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 105,
+      "os": "darwin",
+      "arch": "arm64",
+      "role": "lifecycle",
+      "format": "executable",
+      "sbom": "sbom-lifecycle-darwin-arm64"
+    },
+    {
+      "name": "lifecycle-linux-amd64",
+      "file": "artifacts/owntransitctl-linux-amd64",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 106,
+      "os": "linux",
+      "arch": "amd64",
+      "role": "lifecycle",
+      "format": "executable",
+      "sbom": "sbom-lifecycle-linux-amd64"
+    },
+    {
+      "name": "provisioner-darwin-arm64",
+      "file": "artifacts/owntransit-provision-darwin-arm64",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 107,
+      "os": "darwin",
+      "arch": "arm64",
+      "role": "provisioner",
+      "format": "executable",
+      "sbom": "sbom-provisioner-darwin-arm64"
+    },
+    {
+      "name": "provisioner-linux-amd64",
+      "file": "artifacts/owntransit-provision-linux-amd64",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 108,
+      "os": "linux",
+      "arch": "amd64",
+      "role": "provisioner",
+      "format": "executable",
+      "sbom": "sbom-provisioner-linux-amd64"
+    },
+    {
+      "name": "launcher-darwin-arm64",
+      "file": "artifacts/owntransit-launcher-darwin-arm64",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 109,
+      "os": "darwin",
+      "arch": "arm64",
+      "role": "launcher",
+      "format": "executable",
+      "sbom": "sbom-launcher-darwin-arm64"
+    }
+  ],
+  "evidence": [
+    {
+      "name": "project-license",
+      "file": "LICENSE",
+      "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "size": 11357,
+      "kind": "project-license"
+    },
+    {
+      "name": "provenance",
+      "file": "evidence/PROVENANCE.json",
+      "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "size": 1001,
+      "kind": "provenance"
+    },
+    {
+      "name": "sbom-client-darwin-arm64",
+      "file": "evidence/owntransit-darwin-arm64.spdx.json",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "size": 201,
+      "kind": "sbom"
+    },
+    {
+      "name": "sbom-client-linux-amd64",
+      "file": "evidence/owntransit-linux-amd64.spdx.json",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "size": 202,
+      "kind": "sbom"
+    },
+    {
+      "name": "sbom-connector-linux-amd64",
+      "file": "evidence/owntransit-connector-linux-amd64.spdx.json",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "size": 203,
+      "kind": "sbom"
+    },
+    {
+      "name": "sbom-launcher-darwin-arm64",
+      "file": "evidence/owntransit-launcher-darwin-arm64.spdx.json",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "size": 209,
+      "kind": "sbom"
+    },
+    {
+      "name": "sbom-lifecycle-darwin-arm64",
+      "file": "evidence/owntransitctl-darwin-arm64.spdx.json",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "size": 205,
+      "kind": "sbom"
+    },
+    {
+      "name": "sbom-lifecycle-linux-amd64",
+      "file": "evidence/owntransitctl-linux-amd64.spdx.json",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "size": 206,
+      "kind": "sbom"
+    },
+    {
+      "name": "sbom-provisioner-darwin-arm64",
+      "file": "evidence/owntransit-provision-darwin-arm64.spdx.json",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "size": 207,
+      "kind": "sbom"
+    },
+    {
+      "name": "sbom-provisioner-linux-amd64",
+      "file": "evidence/owntransit-provision-linux-amd64.spdx.json",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "size": 208,
+      "kind": "sbom"
+    },
+    {
+      "name": "sbom-relay-linux-amd64",
+      "file": "evidence/owntransit-relay-linux-amd64.oci.tar.spdx.json",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "size": 204,
+      "kind": "sbom"
+    },
+    {
+      "name": "third-party-licenses",
+      "file": "evidence/THIRD_PARTY_LICENSES.txt",
+      "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "size": 301,
+      "kind": "licenses"
+    }
+  ]
+}

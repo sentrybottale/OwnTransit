@@ -1,0 +1,128 @@
+# frozen_string_literal: true
+
+require "digest"
+require "find"
+require "json"
+require "open3"
+
+# OwnTransit unprivileged client formula.
+class Owntransit < Formula
+  desc "SSH-only encrypted carrier through an untrusted relay"
+  homepage "https://github.com/{{GITHUB_OWNER}}/{{SOURCE_REPOSITORY}}"
+  url "{{SOURCE_URL}}"
+  sha256 "{{SOURCE_SHA256}}"
+  license "{{LICENSE}}"
+
+  depends_on "go@1.26" => :build
+  depends_on arch: :arm64
+  depends_on :macos
+
+  def install
+    verify_signed_source_tree!
+
+    go = formula_opt_bin("go@1.26")/"go"
+    actual_go = Utils.safe_popen_read(go.to_s, "env", "GOVERSION").strip
+    raise "OwnTransit requires exact Go {{GO_VERSION}}, got #{actual_go}" if actual_go != "{{GO_VERSION}}"
+
+    ENV["CGO_ENABLED"] = "0"
+    ENV["GOOS"] = "darwin"
+    ENV["GOARCH"] = "arm64"
+    build_info = "github.com/sentrybottale/owntransit/internal/buildinfo"
+    ldflags = [
+      "-buildid=", "-s", "-w",
+      "-X #{build_info}.Version={{VERSION}}",
+      "-X #{build_info}.Release={{RELEASE_ID}}",
+      "-X #{build_info}.Commit={{SOURCE_COMMIT}}",
+      "-X #{build_info}.Dirty=false"
+    ].join(" ")
+
+    system go.to_s, "build", "-mod=readonly", "-trimpath", "-buildvcs=false",
+           "-ldflags", ldflags, "-o", bin/"owntransit", "./cmd/owntransit"
+    pkgshare.install "LICENSE", "THIRD_PARTY_NOTICES.md"
+  end
+
+  def verify_signed_source_tree!
+    manifest = buildpath/"SOURCE-MANIFEST.txt"
+    signature = buildpath/"SOURCE-MANIFEST.txt.sig"
+    raise "signed source manifest is absent" unless manifest.file?
+    raise "signed source manifest is absent" unless signature.file?
+
+    allowed_signers = buildpath/".owntransit-allowed-signers"
+    source_signer = "{{SIGNER_KEY_TYPE}} {{SIGNER_KEY_DATA}}"
+    allowed_signers.atomic_write("owntransit-source #{source_signer}\n")
+    allowed_signers.chmod(0600)
+    _stdout, stderr, status = Open3.capture3(
+      "/usr/bin/ssh-keygen", "-Y", "verify",
+      "-f", allowed_signers.to_s,
+      "-I", "owntransit-source",
+      "-n", "owntransit-source-v1",
+      "-s", signature.to_s,
+      stdin_data: manifest.binread
+    )
+    raise "OwnTransit source signature verification failed: #{stderr}" unless status.success?
+
+    signed = {}
+    manifest.binread.lines(chomp: true).each do |line|
+      match = line.match(%r{\A([0-9a-f]{64})  (go\.(?:mod|sum)|(?:cmd|internal)/[A-Za-z0-9._/+:-]+)\z})
+      raise "invalid OwnTransit source manifest line" unless match
+
+      path = match[2]
+      raise "duplicate OwnTransit source manifest path: #{path}" if signed.key?(path)
+
+      signed[path] = match[1]
+    end
+
+    actual = Set.new(["go.mod", "go.sum"])
+    ["go.mod", "go.sum"].each do |path|
+      candidate = buildpath/path
+      raise "unsafe OwnTransit source member: #{path}" unless candidate.file?
+      raise "unsafe OwnTransit source member: #{path}" if candidate.symlink?
+    end
+    ["cmd", "internal"].each do |root|
+      Find.find((buildpath/root).to_s) do |absolute|
+        relative = Pathname(absolute).relative_path_from(buildpath).to_s
+        raise "symlink in OwnTransit Go build inputs: #{relative}" if File.symlink?(absolute)
+        next if File.directory?(absolute)
+        raise "special entry in OwnTransit Go build inputs: #{relative}" unless File.file?(absolute)
+
+        actual.add(relative)
+      end
+    end
+    raise "signed manifest does not exactly cover OwnTransit Go build inputs" if actual != signed.keys.to_set
+
+    signed.each do |path, expected|
+      actual_digest = Digest::SHA256.file(buildpath/path).hexdigest
+      raise "OwnTransit source checksum mismatch: #{path}" if actual_digest != expected
+    end
+  end
+
+  def caveats
+    <<~EOS
+      This formula installs only the unprivileged OwnTransit client. It
+      intentionally does not install owntransitctl and cannot activate the
+      protected runtime. Guided setup must use the independently authenticated
+      lifecycle copy at /Library/OwnTransit/roles/client/current/owntransitctl.
+
+      Hardened macOS activation is currently blocked: the CGO-free exact-ACL
+      verifier and fixed setgid launcher are implemented but have not passed
+      clean Apple-silicon lifecycle and reboot qualification.
+    EOS
+  end
+
+  test do
+    client = JSON.parse(Utils.safe_popen_read(bin/"owntransit", "version"))
+    assert_equal "owntransit.build.v1", client.fetch("schema")
+    assert_equal "client", client.fetch("role")
+    assert_equal "darwin", client.fetch("goos")
+    assert_equal "arm64", client.fetch("goarch")
+    assert_equal "{{RELEASE_ID}}", client.fetch("release_id")
+
+    assert_predicate pkgshare/"LICENSE", :file?
+    assert_match "Apache License", (pkgshare/"LICENSE").read
+    assert_predicate pkgshare/"THIRD_PARTY_NOTICES.md", :file?
+    notices = (pkgshare/"THIRD_PARTY_NOTICES.md").read
+    assert_match "Copyright 2019 The age Authors", notices
+    assert_match "Copyright (c) 2025 Coder", notices
+    assert_match "Copyright (c) 2013 BIP-39 authors", notices
+  end
+end

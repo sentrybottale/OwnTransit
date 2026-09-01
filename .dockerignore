@@ -1,0 +1,39 @@
+# Deny by default. A build receives only source needed by Containerfile.
+**
+!.dockerignore
+!Containerfile
+!LICENSE
+!THIRD_PARTY_NOTICES.md
+!RELEASE_MANIFEST.example.json
+!go.mod
+!go.sum
+!cmd
+!cmd/**
+!internal
+!internal/**
+!scripts
+!scripts/security-check.sh
+!scripts/tests
+!scripts/tests/dependency-licenses.sh
+!scripts/release
+!scripts/release/make-relay-oci.sh
+!scripts/release/releasectl
+!scripts/release/releasectl/**
+!deploy
+!deploy/poc
+!deploy/poc/sshd_config
+!deploy/poc/connector-poc-entrypoint.sh
+
+# A later allowlist expansion must not accidentally put credentials into the
+# build context. Public test fixtures should use an explicit non-key suffix.
+**/*-key.pem
+**/*.key
+**/id_ed25519
+**/id_ed25519_*
+**/ssh_host_*_key
+**/authorized_keys
+**/known_hosts*
+**/.env
+**/.env.*
+**/credentials/**
+**/secrets/**

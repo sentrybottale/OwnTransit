@@ -1,0 +1,5 @@
+FROM scratch
+COPY owntransit-relay-linux-amd64 /owntransit-relay
+USER 65532:65532
+ENTRYPOINT ["/owntransit-relay"]
+CMD ["run", "--runtime-root=/runtime", "--anchor-view-root=/anchor", "--reader-gid=65532"]

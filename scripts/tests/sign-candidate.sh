@@ -1,0 +1,477 @@
+#!/bin/sh
+set -eu
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+export PATH
+LC_ALL=C
+export LC_ALL
+umask 077
+
+fail() {
+  printf 'sign-candidate-test: %s\n' "$*" >&2
+  exit 1
+}
+
+project_root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
+workspace=$(mktemp -d "${TMPDIR:-/tmp}/owntransit-sign-candidate-test.XXXXXX")
+workspace=$(CDPATH= cd -P -- "$workspace" && pwd) || fail "cannot resolve test workspace"
+cleanup() { rm -rf -- "$workspace"; }
+trap cleanup EXIT HUP INT TERM
+
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+write_native_paths() {
+  cat <<'EOF'
+BUILD-INPUTS
+LICENSE
+RELEASE-MANIFEST.json
+SOURCE-MANIFEST.txt
+artifacts/owntransit-connector-linux-amd64
+artifacts/owntransit-darwin-arm64
+artifacts/owntransit-launcher-darwin-arm64
+artifacts/owntransit-linux-amd64
+artifacts/owntransit-provision-darwin-arm64
+artifacts/owntransit-provision-linux-amd64
+artifacts/owntransit-relay-linux-amd64.oci.tar
+artifacts/owntransitctl-darwin-arm64
+artifacts/owntransitctl-linux-amd64
+evidence/PROVENANCE.json
+evidence/THIRD_PARTY_LICENSES.txt
+evidence/owntransit-connector-linux-amd64.spdx.json
+evidence/owntransit-darwin-arm64.spdx.json
+evidence/owntransit-launcher-darwin-arm64.spdx.json
+evidence/owntransit-linux-amd64.spdx.json
+evidence/owntransit-provision-darwin-arm64.spdx.json
+evidence/owntransit-provision-linux-amd64.spdx.json
+evidence/owntransit-relay-linux-amd64.oci.tar.spdx.json
+evidence/owntransitctl-darwin-arm64.spdx.json
+evidence/owntransitctl-linux-amd64.spdx.json
+packaging/launchd/README.md
+packaging/scripts/install-linux.sh
+packaging/scripts/install-macos.sh
+packaging/scripts/uninstall-linux.sh
+packaging/scripts/uninstall-macos.sh
+packaging/systemd/README.md
+packaging/systemd/owntransit-connector.service
+packaging/systemd/owntransit-relay.service
+EOF
+}
+
+native_mode() {
+  case "$1" in
+    artifacts/owntransit-relay-linux-amd64.oci.tar) printf '%s\n' 0644 ;;
+    artifacts/*|packaging/scripts/*) printf '%s\n' 0755 ;;
+    *) printf '%s\n' 0644 ;;
+  esac
+}
+
+file_mode() {
+  if test "$(uname -s)" = Darwin; then
+    stat -f '%Lp' -- "$1"
+  else
+    stat -c '%a' -- "$1"
+  fi
+}
+
+verify_checksum_inventory() {
+  checksum_root=$1
+  checksum_record=$2
+  expected_paths=$3
+  checksum_label=$4
+  observed_paths="$workspace/$checksum_label.paths"
+  : > "$observed_paths"
+  while IFS= read -r checksum_line; do
+    digest=${checksum_line%%  *}
+    relative=${checksum_line#"$digest  "}
+    test "$checksum_line" = "$digest  $relative" || fail "$checksum_label contains a non-canonical line"
+    case "$digest" in ''|*[!0-9a-f]*) fail "$checksum_label contains an invalid digest" ;; esac
+    test "${#digest}" -eq 64 || fail "$checksum_label contains a digest with the wrong length"
+    case "$relative" in ''|/*|../*|*/../*|*/..|*//*|*[!A-Za-z0-9._/+:-]*) fail "$checksum_label contains an unsafe path" ;; esac
+    printf '%s\n' "$relative" >> "$observed_paths"
+    test "$(sha256_file "$checksum_root/$relative")" = "$digest" || fail "$checksum_label digest mismatch: $relative"
+  done < "$checksum_record"
+  cmp -s "$expected_paths" "$observed_paths" || fail "$checksum_label does not cover the exact expected inventory"
+}
+
+snapshot_tree() {
+  snapshot_root=$1
+  snapshot_output=$2
+  (
+    cd "$snapshot_root"
+    find . -print | LC_ALL=C sort |
+      while IFS= read -r relative; do
+        if test -d "$relative"; then
+          printf 'd %s %s\n' "$(file_mode "$relative")" "$relative"
+        else
+          printf 'f %s %s %s\n' "$(file_mode "$relative")" "$(sha256_file "$relative")" "$relative"
+        fi
+      done
+  ) > "$snapshot_output"
+}
+
+mkdir -m 0700 "$workspace/keys" "$workspace/output-parent" "$workspace/source"
+distribution_key="$workspace/keys/distribution"
+ssh-keygen -q -t ed25519 -N '' -f "$distribution_key"
+chmod 0600 "$distribution_key"
+distribution_public_key="$distribution_key.pub"
+public_fields=$(awk '{print $1 " " $2}' "$distribution_public_key")
+printf '%s\n' "owntransit-release $public_fields" "owntransit-source $public_fields" > "$workspace/keys/allowed_signers"
+printf '%s\n' release-public > "$workspace/keys/release-public.pem"
+printf '%s\n' release-private > "$workspace/keys/release-private.pem"
+printf '%s\n' policy-public > "$workspace/keys/policy-public.pem"
+printf '%s\n' policy-private > "$workspace/keys/policy-private.pem"
+chmod 0600 "$workspace/keys/release-private.pem" "$workspace/keys/policy-private.pem"
+
+mkdir -p "$workspace/source/cmd/example" "$workspace/source/internal/example"
+printf '%s\n' 'module example.invalid/owntransit-test' '' 'go 1.26' > "$workspace/source/go.mod"
+: > "$workspace/source/go.sum"
+printf '%s\n' 'package main' 'func main() {}' > "$workspace/source/cmd/example/main.go"
+printf '%s\n' 'package example' > "$workspace/source/internal/example/example.go"
+printf '%s\n' 'Apache License Version 2.0' > "$workspace/source/LICENSE"
+printf '%s\n' 'No third-party notices.' > "$workspace/source/THIRD_PARTY_NOTICES.md"
+source_date_epoch=1700000000
+git -C "$workspace/source" init -q
+git -C "$workspace/source" config user.email test@example.invalid
+git -C "$workspace/source" config user.name 'OwnTransit Test'
+git -C "$workspace/source" add .
+GIT_AUTHOR_DATE="@$source_date_epoch +0000" GIT_COMMITTER_DATE="@$source_date_epoch +0000" \
+  git -C "$workspace/source" commit -q -m fixture
+source_commit=$(git -C "$workspace/source" rev-parse HEAD)
+
+bundle="$workspace/bundle"
+native_paths="$workspace/native-paths"
+write_native_paths | LC_ALL=C sort > "$native_paths"
+mkdir -m 0755 "$bundle"
+while IFS= read -r relative; do
+  case "$relative" in */*) mkdir -p "$bundle/${relative%/*}" ;; esac
+done < "$native_paths"
+find "$bundle" -type d -exec chmod 0755 {} \;
+
+printf '%s\n' fixture-source-manifest > "$bundle/SOURCE-MANIFEST.txt"
+source_manifest_sha256=$(sha256_file "$bundle/SOURCE-MANIFEST.txt")
+release_id=$(printf 'b%051d' 0 | tr 0 a)
+version=0.1.0-rc.1
+printf '%s\n' \
+  "version=$version" \
+  "release_id=$release_id" \
+  'release_sequence=1' \
+  "source_commit=$source_commit" \
+  "source_date_epoch=$source_date_epoch" \
+  "source_manifest_sha256=$source_manifest_sha256" > "$bundle/BUILD-INPUTS"
+printf '%s\n' \
+  "{\"schema\":\"owntransit.software-release.v1\",\"product\":\"owntransit\",\"version\":\"$version\",\"release_id\":\"$release_id\",\"sequence\":1,\"created_unix\":$source_date_epoch,\"minimum_lifecycle\":2,\"source\":{\"repository\":\"https://github.com/sentrybottale/owntransit\",\"commit\":\"$source_commit\",\"dirty\":false,\"source_manifest_sha256\":\"$source_manifest_sha256\"},\"toolchain\":{\"go_version\":\"go1.26.7\",\"builder_image\":\"fixture\"}}" > "$bundle/RELEASE-MANIFEST.json"
+
+while IFS= read -r relative; do
+  case "$relative" in BUILD-INPUTS|RELEASE-MANIFEST.json|SOURCE-MANIFEST.txt) continue ;; esac
+  printf 'sign-candidate fixture: %s\n' "$relative" > "$bundle/$relative"
+done < "$native_paths"
+while IFS= read -r relative; do
+  chmod "$(native_mode "$relative")" "$bundle/$relative"
+done < "$native_paths"
+(
+  cd "$bundle"
+  while IFS= read -r relative; do
+    printf '%s  %s\n' "$(sha256_file "$relative")" "$relative"
+  done < "$native_paths"
+) > "$bundle/SHA256SUMS"
+chmod 0644 "$bundle/SHA256SUMS"
+
+candidate="$workspace/candidate.json"
+printf '%s\n' \
+  "{\"schema\":\"owntransit.release-candidate-ledger.v1\",\"status\":\"qualification-only\",\"version\":\"$version\",\"release_id\":\"$release_id\",\"release_sequence\":1,\"policy_sequence\":1,\"minimum_release_sequence\":1,\"minimum_lifecycle\":2,\"source_commit\":\"$source_commit\",\"source_date_epoch\":$source_date_epoch}" \
+  > "$candidate"
+chmod 0600 "$candidate"
+
+fake_releasectl="$workspace/fake-releasectl"
+cat > "$fake_releasectl" <<'EOF'
+#!/bin/sh
+set -eu
+command_name=$1
+shift
+printf '%s\n' "$command_name" >> "$(dirname "$0")/fake-releasectl.calls"
+argument() {
+  wanted=$1
+  shift
+  while test "$#" -gt 0; do
+    if test "$1" = "$wanted"; then printf '%s\n' "$2"; return 0; fi
+    shift 2
+  done
+  return 1
+}
+case "$command_name" in
+  candidate-verify)
+    selected_candidate=$(argument --candidate "$@")
+    selected_bundle=$(argument --bundle "$@")
+    selected_source=$(argument --source-root "$@")
+    test -s "$selected_candidate"
+    version=$(awk -F= '$1 == "version" {print $2}' "$selected_bundle/BUILD-INPUTS")
+    release_id=$(awk -F= '$1 == "release_id" {print $2}' "$selected_bundle/BUILD-INPUTS")
+    sequence=$(awk -F= '$1 == "release_sequence" {print $2}' "$selected_bundle/BUILD-INPUTS")
+    source_commit=$(awk -F= '$1 == "source_commit" {print $2}' "$selected_bundle/BUILD-INPUTS")
+    source_date_epoch=$(awk -F= '$1 == "source_date_epoch" {print $2}' "$selected_bundle/BUILD-INPUTS")
+    test "$(git -C "$selected_source" status --porcelain=v1 --untracked-files=all)" = ''
+    test "$(git -C "$selected_source" rev-parse --verify 'HEAD^{commit}')" = "$source_commit"
+    test "$(git -C "$selected_source" show -s --format=%ct "$source_commit")" = "$source_date_epoch"
+    policy_sequence=$(argument --policy-sequence "$@")
+    release_floor=$(argument --release-floor "$@")
+    lifecycle_floor=$(argument --lifecycle-floor "$@")
+    printf 'verified qualification-only candidate version=%s release_id=%s release_sequence=%s policy_sequence=%s minimum_release_sequence=%s minimum_lifecycle=%s source_commit=%s source_date_epoch=%s\n' \
+      "$version" "$release_id" "$sequence" "$policy_sequence" "$release_floor" "$lifecycle_floor" "$source_commit" "$source_date_epoch"
+    ;;
+  public-key-id)
+    key=$(argument --public-key "$@")
+    case "$(sed -n '1p' "$key")" in
+      release-public) printf '%s\n' sha256/release ;;
+      policy-public) printf '%s\n' sha256/policy ;;
+      *) printf '%s\n' sha256/same ;;
+    esac
+    ;;
+  sign-manifest|sign-policy)
+    out=$(argument --out "$@")
+    printf '%s\n' "$command_name-signature" > "$out"
+    chmod 0644 "$out"
+    ;;
+  verify-bundle)
+    selected_bundle=$(argument --bundle "$@")
+    release_id=$(awk -F= '$1 == "release_id" {print $2}' "$selected_bundle/BUILD-INPUTS")
+    sequence=$(awk -F= '$1 == "release_sequence" {print $2}' "$selected_bundle/BUILD-INPUTS")
+    printf 'verified release %s sequence %s key sha256/release\n' "$release_id" "$sequence"
+    ;;
+  policy)
+    out=$(argument --out "$@")
+    sequence=$(argument --sequence "$@")
+    release_floor=$(argument --release-floor "$@")
+    lifecycle_floor=$(argument --lifecycle-floor "$@")
+    printf '{"schema":"fixture-policy","sequence":%s,"minimum_release_sequence":%s,"minimum_lifecycle":%s}\n' \
+      "$sequence" "$release_floor" "$lifecycle_floor" > "$out"
+    chmod 0644 "$out"
+    ;;
+  verify-policy)
+    selected_policy=$(argument --policy "$@")
+    policy_values=$(sed -n 's/^{"schema":"fixture-policy","sequence":\([0-9][0-9]*\),"minimum_release_sequence":\([0-9][0-9]*\),"minimum_lifecycle":\([0-9][0-9]*\)}$/\1 \2 \3/p' "$selected_policy")
+    test -n "$policy_values"
+    set -- $policy_values
+    test "$#" -eq 3
+    printf '{"schema":"owntransit.release-policy-anchor.v1","highest_policy_sequence":%s,"minimum_release_sequence":%s,"minimum_lifecycle":%s,"tombstoned_release_ids":null}\n' \
+      "$1" "$2" "$3"
+    ;;
+  *) exit 64 ;;
+esac
+EOF
+chmod 0755 "$fake_releasectl"
+
+signer="$project_root/scripts/release/sign-candidate.sh"
+invoke_signer() {
+  selected_policy_public=$1
+  selected_output=$2
+  "$signer" \
+    --bundle "$bundle" \
+    --candidate "$candidate" \
+    --releasectl "$fake_releasectl" \
+    --release-private-key "$workspace/keys/release-private.pem" \
+    --release-public-key "$workspace/keys/release-public.pem" \
+    --policy-private-key "$workspace/keys/policy-private.pem" \
+    --policy-public-key "$selected_policy_public" \
+    --distribution-key "$distribution_key" \
+    --distribution-public-key "$distribution_public_key" \
+    --allowed-signers "$workspace/keys/allowed_signers" \
+    --source-root "$workspace/source" \
+    --version "$version" \
+    --source-commit "$source_commit" \
+    --policy-sequence 1 \
+    --release-floor 1 \
+    --lifecycle-floor 2 \
+    --output "$selected_output"
+}
+
+output="$workspace/output-parent/candidate"
+invoke_signer "$workspace/keys/policy-public.pem" "$output" > "$workspace/sign-candidate.out"
+grep -Fq "created signed candidate handoff: $output" "$workspace/sign-candidate.out" || fail "positive conductor did not report its atomic output"
+grep -Fq "release_id=$release_id" "$workspace/sign-candidate.out" || fail "positive conductor reported the wrong release ID"
+expected_releasectl_calls="$workspace/expected-releasectl.calls"
+printf '%s\n' \
+  public-key-id \
+  public-key-id \
+  public-key-id \
+  public-key-id \
+  candidate-verify \
+  sign-manifest \
+  verify-bundle \
+  policy \
+  sign-policy \
+  verify-policy \
+  verify-bundle \
+  verify-policy \
+  verify-bundle > "$expected_releasectl_calls"
+cmp -s "$expected_releasectl_calls" "$workspace/fake-releasectl.calls" || fail "positive conductor did not invoke the exact release/policy component sequence"
+
+expected_directories="$workspace/expected-output-directories"
+printf '%s\n' . ./assets ./trust > "$expected_directories"
+actual_directories="$workspace/actual-output-directories"
+(
+  cd "$output"
+  find . -type d -print | LC_ALL=C sort
+) > "$actual_directories"
+cmp -s "$expected_directories" "$actual_directories" || fail "signed handoff has an unexpected directory inventory"
+
+expected_assets="$workspace/expected-assets"
+printf '%s\n' \
+  NATIVE-SHA256SUMS.sig \
+  RELEASE-CANDIDATE.json \
+  RELEASE-MANIFEST.json \
+  RELEASE-MANIFEST.sig \
+  RELEASE-POLICY.json \
+  RELEASE-POLICY.sig \
+  SHA256SUMS \
+  "owntransit-$version-native.tar.gz" \
+  "owntransit-$version-source.tar.gz" \
+  owntransit.rb | LC_ALL=C sort > "$expected_assets"
+actual_assets="$workspace/actual-assets"
+(
+  cd "$output/assets"
+  find . -type f -print | sed 's|^\./||' | LC_ALL=C sort
+) > "$actual_assets"
+cmp -s "$expected_assets" "$actual_assets" || fail "signed handoff has an unexpected asset inventory"
+
+expected_trust="$workspace/expected-trust"
+printf '%s\n' \
+  SHA256SUMS.sig \
+  allowed_signers \
+  distribution-public.key \
+  policy-public.pem \
+  release-public.pem | LC_ALL=C sort > "$expected_trust"
+actual_trust="$workspace/actual-trust"
+(
+  cd "$output/trust"
+  find . -type f -print | sed 's|^\./||' | LC_ALL=C sort
+) > "$actual_trust"
+cmp -s "$expected_trust" "$actual_trust" || fail "signed handoff has an unexpected trust inventory"
+cmp -s "$workspace/keys/release-public.pem" "$output/trust/release-public.pem" || fail "release public trust copy changed"
+cmp -s "$workspace/keys/policy-public.pem" "$output/trust/policy-public.pem" || fail "policy public trust copy changed"
+cmp -s "$distribution_public_key" "$output/trust/distribution-public.key" || fail "distribution public trust copy changed"
+cmp -s "$workspace/keys/allowed_signers" "$output/trust/allowed_signers" || fail "allowed-signers trust copy changed"
+cmp -s "$candidate" "$output/assets/RELEASE-CANDIDATE.json" || fail "candidate ledger copy changed"
+
+expected_asset_checksums="$workspace/expected-asset-checksums"
+grep -v '^SHA256SUMS$' "$expected_assets" > "$expected_asset_checksums"
+verify_checksum_inventory "$output/assets" "$output/assets/SHA256SUMS" "$expected_asset_checksums" outer-assets
+outer_checksum_sha256=$(sha256_file "$output/assets/SHA256SUMS")
+"$project_root/packaging/macos/verify-sshsig.sh" \
+  --subject "$output/assets/SHA256SUMS" \
+  --sha256 "$outer_checksum_sha256" \
+  --signature "$output/trust/SHA256SUMS.sig" \
+  --allowed-signers "$output/trust/allowed_signers" \
+  --signer owntransit-release \
+  --namespace owntransit-release-v1 >/dev/null || fail "outer asset SSHSIG did not verify"
+
+native_extract="$workspace/native-extract"
+mkdir "$native_extract"
+gzip -cd "$output/assets/owntransit-$version-native.tar.gz" | tar -xpf - -C "$native_extract"
+native_root="$native_extract/owntransit-$version-native"
+test -d "$native_root" || fail "native archive omitted its canonical root"
+expected_native_files="$workspace/expected-native-files"
+{
+  cat "$native_paths"
+  printf '%s\n' SHA256SUMS
+} | LC_ALL=C sort > "$expected_native_files"
+actual_native_files="$workspace/actual-native-files"
+(
+  cd "$native_root"
+  find . -type f -print | sed 's|^\./||' | LC_ALL=C sort
+) > "$actual_native_files"
+cmp -s "$expected_native_files" "$actual_native_files" || fail "native archive does not contain the exact fixed file inventory"
+verify_checksum_inventory "$native_root" "$native_root/SHA256SUMS" "$native_paths" inner-native
+native_checksum_sha256=$(sha256_file "$native_root/SHA256SUMS")
+"$project_root/packaging/macos/verify-sshsig.sh" \
+  --subject "$native_root/SHA256SUMS" \
+  --sha256 "$native_checksum_sha256" \
+  --signature "$output/assets/NATIVE-SHA256SUMS.sig" \
+  --allowed-signers "$output/trust/allowed_signers" \
+  --signer owntransit-release \
+  --namespace owntransit-release-v1 >/dev/null || fail "inner native SSHSIG did not verify"
+cmp -s "$native_root/RELEASE-MANIFEST.json" "$output/assets/RELEASE-MANIFEST.json" || fail "external and archived release manifests differ"
+while IFS= read -r relative; do
+  cmp -s "$bundle/$relative" "$native_root/$relative" || fail "native archive changed $relative"
+  expected_mode=$(native_mode "$relative")
+  expected_mode=${expected_mode#0}
+  test "$(file_mode "$native_root/$relative")" = "$expected_mode" || fail "native archive changed mode for $relative"
+done < "$native_paths"
+test "$(file_mode "$native_root/SHA256SUMS")" = 644 || fail "native archive changed SHA256SUMS mode"
+find "$native_root" -type d -print > "$workspace/native-directories"
+while IFS= read -r native_directory; do
+  test "$(file_mode "$native_directory")" = 755 || fail "native archive contains a directory not mode 0755"
+done < "$workspace/native-directories"
+
+source_extract="$workspace/source-extract"
+mkdir "$source_extract"
+tar -xzf "$output/assets/owntransit-$version-source.tar.gz" -C "$source_extract"
+source_archive_root="$source_extract/owntransit-$version"
+"$project_root/packaging/homebrew/verify-source-tree.sh" \
+  --source "$source_archive_root" \
+  --allowed-signers "$output/trust/allowed_signers" \
+  --signer owntransit-source >/dev/null || fail "signed source archive did not verify"
+
+command -v ruby >/dev/null 2>&1 || fail "ruby is required for formula syntax verification"
+ruby -c "$output/assets/owntransit.rb" >/dev/null || fail "rendered formula is not valid Ruby"
+source_archive_sha256=$(sha256_file "$output/assets/owntransit-$version-source.tar.gz")
+grep -Fq "sha256 \"$source_archive_sha256\"" "$output/assets/owntransit.rb" || fail "formula source digest does not match the signed source archive"
+grep -Fq "https://github.com/sentrybottale/owntransit/releases/download/v$version/owntransit-$version-source.tar.gz" "$output/assets/owntransit.rb" || fail "formula source URL is not the canonical release asset"
+test -z "$(grep -E '\{\{[A-Z0-9_]+\}\}' "$output/assets/owntransit.rb" || true)" || fail "formula contains an unresolved template value"
+
+before_no_overwrite="$workspace/before-no-overwrite"
+after_no_overwrite="$workspace/after-no-overwrite"
+snapshot_tree "$output" "$before_no_overwrite"
+if overwrite_rejection=$(invoke_signer "$workspace/keys/policy-public.pem" "$output" 2>&1); then
+  fail "positive conductor overwrote an existing handoff"
+fi
+printf '%s\n' "$overwrite_rejection" | grep -Fq 'output already exists' || fail "existing handoff was rejected for the wrong reason"
+snapshot_tree "$output" "$after_no_overwrite"
+cmp -s "$before_no_overwrite" "$after_no_overwrite" || fail "failed overwrite attempt changed the signed handoff"
+
+printf '%s\n' release-public > "$workspace/keys/policy-public-overlap.pem"
+overlap_key_output="$workspace/output-parent/rejected-overlap-key"
+if "$project_root/scripts/release/sign-candidate.sh" \
+  --bundle "$bundle" --candidate "$candidate" --releasectl "$fake_releasectl" \
+  --release-private-key "$workspace/keys/release-private.pem" --release-public-key "$workspace/keys/release-public.pem" \
+  --policy-private-key "$workspace/keys/policy-private.pem" --policy-public-key "$workspace/keys/policy-public-overlap.pem" \
+  --distribution-key "$distribution_key" --distribution-public-key "$distribution_public_key" \
+  --allowed-signers "$workspace/keys/allowed_signers" --source-root "$workspace/source" \
+  --version "$version" --source-commit "$source_commit" --policy-sequence 1 --release-floor 1 --lifecycle-floor 1 \
+  --output "$overlap_key_output" >/dev/null 2>&1; then
+  fail "overlapping release and policy key IDs were accepted"
+fi
+test ! -e "$overlap_key_output" || fail "rejected overlapping-key output was created"
+
+overlap_output="$bundle/rejected-output"
+if "$project_root/scripts/release/sign-candidate.sh" \
+  --bundle "$bundle" --candidate "$candidate" --releasectl "$fake_releasectl" \
+  --release-private-key "$workspace/keys/release-private.pem" --release-public-key "$workspace/keys/release-public.pem" \
+  --policy-private-key "$workspace/keys/policy-private.pem" --policy-public-key "$workspace/keys/policy-public.pem" \
+  --distribution-key "$distribution_key" --distribution-public-key "$distribution_public_key" \
+  --allowed-signers "$workspace/keys/allowed_signers" --source-root "$workspace/source" \
+  --version "$version" --source-commit "$source_commit" --policy-sequence 1 --release-floor 1 --lifecycle-floor 1 \
+  --output "$overlap_output" >/dev/null 2>&1; then
+  fail "output nested in the bundle was accepted"
+fi
+test ! -e "$overlap_output" || fail "rejected nested output was created"
+
+preexisting_output="$workspace/output-parent/preexisting"
+mkdir "$preexisting_output"
+if "$project_root/scripts/release/sign-candidate.sh" \
+  --bundle "$bundle" --candidate "$candidate" --releasectl "$fake_releasectl" \
+  --release-private-key "$workspace/keys/release-private.pem" --release-public-key "$workspace/keys/release-public.pem" \
+  --policy-private-key "$workspace/keys/policy-private.pem" --policy-public-key "$workspace/keys/policy-public.pem" \
+  --distribution-key "$distribution_key" --distribution-public-key "$distribution_public_key" \
+  --allowed-signers "$workspace/keys/allowed_signers" --source-root "$workspace/source" \
+  --version "$version" --source-commit "$source_commit" --policy-sequence 1 --release-floor 1 --lifecycle-floor 1 \
+  --output "$preexisting_output" >/dev/null 2>&1; then
+  fail "pre-existing output was accepted"
+fi
+
+printf '%s\n' 'sign-candidate full-conductor and fail-closed tests passed'

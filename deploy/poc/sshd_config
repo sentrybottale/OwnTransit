@@ -1,0 +1,36 @@
+Port 2222
+ListenAddress 127.0.0.1
+AddressFamily inet
+Protocol 2
+HostKey /run/owntransit-ssh/ssh_host_ed25519_key
+PidFile /run/sshd-owntransit.pid
+
+UsePAM no
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+PubkeyAuthentication yes
+AuthenticationMethods publickey
+PermitEmptyPasswords no
+StrictModes no
+AuthorizedKeysFile /run/owntransit-ssh/authorized_keys
+AllowUsers owntransit-poc
+
+AllowAgentForwarding no
+AllowTcpForwarding no
+GatewayPorts no
+X11Forwarding no
+PermitTunnel no
+PermitUserEnvironment no
+PermitTTY yes
+TCPKeepAlive yes
+ClientAliveInterval 60
+ClientAliveCountMax 3
+MaxAuthTries 3
+MaxSessions 4
+LoginGraceTime 20
+UseDNS no
+PrintMotd no
+PrintLastLog no
+Subsystem sftp internal-sftp

@@ -1,0 +1,27 @@
+/bin/
+/dist/
+/.private/
+/poc/runtime/
+/poc/secrets/
+/poc/live-secrets/
+*.out
+*.test
+coverage.txt
+/*.private.md
+.DS_Store
+._*
+Thumbs.db
+
+# Defense in depth: never make credential-shaped files Git-visible merely
+# because somebody puts them outside the canonical ignored runtime trees.
+**/*-key.pem
+**/*.key
+**/id_ed25519
+**/id_ed25519_*
+**/ssh_host_*_key
+**/authorized_keys
+**/known_hosts*
+**/.env
+**/.env.*
+**/credentials/**
+**/secrets/**

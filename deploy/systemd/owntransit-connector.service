@@ -1,0 +1,65 @@
+[Unit]
+Description=OwnTransit outbound SSH connector
+Documentation=https://github.com/sentrybottale/owntransit
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+ConditionPathIsDirectory=/var/lib/owntransit/connector/runtime
+ConditionPathIsDirectory=/var/lib/owntransit/connector/anchor-view
+ConditionPathExists=/etc/owntransit/connector-runtime.env
+ConditionPathExists=!/var/lib/owntransit/package-supervisor/connector.intent
+
+[Service]
+Type=simple
+User=owntransit-connector
+Group=owntransit-connector
+EnvironmentFile=/etc/owntransit/connector-runtime.env
+UMask=0077
+WorkingDirectory=/
+ExecStartPre=/usr/libexec/owntransit/roles/connector/current/owntransit-connector check-config --runtime-root=/var/lib/owntransit/connector/runtime --anchor-view-root=/var/lib/owntransit/connector/anchor-view --reader-gid=${OWNTRANSIT_CONNECTOR_READER_GID}
+ExecStart=/usr/libexec/owntransit/roles/connector/current/owntransit-connector run --runtime-root=/var/lib/owntransit/connector/runtime --anchor-view-root=/var/lib/owntransit/connector/anchor-view --reader-gid=${OWNTRANSIT_CONNECTOR_READER_GID}
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=15s
+TimeoutStopSec=15s
+KillSignal=SIGTERM
+KillMode=mixed
+StandardOutput=null
+StandardError=journal
+SyslogIdentifier=owntransit-connector
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadOnlyPaths=/var/lib/owntransit/connector/runtime /var/lib/owntransit/connector/anchor-view
+InaccessiblePaths=/var/lib/owntransit/connector/private /var/lib/owntransit/connector/authority
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectProc=invisible
+ProcSubset=pid
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@clock @cpu-emulation @debug @module @mount @obsolete @privileged @raw-io @reboot @resources @swap
+LimitNOFILE=1024
+TasksMax=64
+MemoryMax=256M
+OOMPolicy=stop
+
+[Install]
+WantedBy=multi-user.target

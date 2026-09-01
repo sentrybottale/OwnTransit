@@ -1,0 +1,112 @@
+name: release-candidate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-candidate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repository-boundary:
+    name: repository boundary
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the complete candidate history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify public tree and complete history
+        run: ./scripts/publication-check.sh --history
+      - name: Verify repository and packaging invariants
+        run: ./scripts/security-check.sh
+      - name: Exercise clean-root export boundaries
+        run: ./scripts/tests/publication-tools.sh
+      - name: Verify release and platform static gates
+        run: |
+          ./scripts/release/static-check.sh
+          ./scripts/qualify/static-check.sh
+      - name: Exercise detached-signature, source-formula and native-archive helpers
+        run: |
+          ./scripts/qualify/test-signature-tools.sh
+          ./scripts/qualify/test-native-archive.sh
+          ./scripts/tests/sign-candidate.sh
+      - name: Verify a release tag without publishing
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          CANDIDATE_REF: ${{ github.ref }}
+          CANDIDATE_SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          tag=${CANDIDATE_REF#refs/tags/}
+          version=${tag#v}
+          printf '%s\n' "$tag" |
+            grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.[1-9][0-9]*)?$' || {
+              echo "release tag must be canonical vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-rc.N" >&2
+              exit 1
+            }
+          test "$(git cat-file -t "$CANDIDATE_REF")" = tag || {
+            echo "release tag must be an annotated tag object" >&2
+            exit 1
+          }
+          git cat-file tag "$CANDIDATE_REF" |
+            grep -Eq '^-----BEGIN (PGP SIGNATURE|SSH SIGNATURE|SIGNED MESSAGE)-----$' || {
+              echo "release tag has no recognized signature envelope" >&2
+              exit 1
+            }
+          test "$(git rev-list -n 1 "$CANDIDATE_REF")" = "$CANDIDATE_SHA" || {
+            echo "release tag does not select the checked candidate" >&2
+            exit 1
+          }
+          grep -Fqx "## [$version]" CHANGELOG.md || {
+            echo "CHANGELOG.md has no exact release heading for $version" >&2
+            exit 1
+          }
+
+  go-security:
+    name: Go security profiles
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install the pinned Go toolchain
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.26.7
+          cache: false
+      - name: Run both race and vet profiles plus vulnerability analysis
+        env:
+          GOTOOLCHAIN: local
+          GOWORK: "off"
+        run: ./scripts/security-check.sh --full
+
+  homebrew-formula:
+    name: rendered Homebrew formula
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Exercise signature helpers and inspect the rendered formula
+        run: |
+          homebrew_bin=$(command -v brew)
+          test -n "$homebrew_bin"
+          OWNTRANSIT_HOMEBREW_BIN="$homebrew_bin" ./scripts/qualify/test-signature-tools.sh

@@ -1,0 +1,171 @@
+//go:build linux
+
+package main
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/sentrybottale/owntransit/internal/packagetxn"
+)
+
+type fakePackageService struct {
+	active bool
+	calls  []string
+}
+
+func (service *fakePackageService) Active(unit string) (bool, error) {
+	service.calls = append(service.calls, "active:"+unit)
+	return service.active, nil
+}
+
+func (service *fakePackageService) Stop(unit string) error {
+	service.calls = append(service.calls, "stop:"+unit)
+	service.active = false
+	return nil
+}
+
+func (service *fakePackageService) Start(unit string) error {
+	service.calls = append(service.calls, "start:"+unit)
+	service.active = true
+	return nil
+}
+
+func TestPackageSupervisorStopsMutatesActivatesAndRestarts(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("exact supervisor ownership test requires the pinned root build environment")
+	}
+	root := newSupervisorRoot(t)
+	service := &fakePackageService{active: true}
+	activated := false
+	supervisor := packageSupervisor{
+		role: "connector", intentRoot: root, service: service,
+		activate: func(result packagetxn.Result) error {
+			activated = true
+			if service.active || result.Current != "release-b" {
+				t.Fatal("activation did not run while the service was stopped")
+			}
+			return nil
+		},
+	}
+	mutated := false
+	result, err := supervisor.run(func() error { return nil }, func() (packagetxn.Result, error) {
+		mutated = true
+		if service.active {
+			t.Fatal("package mutation ran while the service was active")
+		}
+		return packagetxn.Result{Role: "connector", Current: "release-b"}, nil
+	})
+	if err != nil || !mutated || !activated || !service.active || result.Current != "release-b" {
+		t.Fatalf("supervised mutation = %+v, %v; mutated=%v activated=%v active=%v", result, err, mutated, activated, service.active)
+	}
+	if _, err := os.Stat(filepath.Join(root, "connector.intent")); !os.IsNotExist(err) {
+		t.Fatalf("completed supervisor intent remains: %v", err)
+	}
+	joined := strings.Join(service.calls, ",")
+	if !strings.Contains(joined, "stop:owntransit-connector.service") || !strings.Contains(joined, "start:owntransit-connector.service") {
+		t.Fatalf("service calls = %q", joined)
+	}
+}
+
+func TestPackageSupervisorFailureStaysStoppedAndRecoveryRestarts(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("exact supervisor ownership test requires the pinned root build environment")
+	}
+	root := newSupervisorRoot(t)
+	service := &fakePackageService{active: true}
+	supervisor := packageSupervisor{
+		role: "relay", intentRoot: root, service: service,
+		activate: func(packagetxn.Result) error { return nil },
+	}
+	interrupted := errors.New("interrupted package transaction")
+	if _, err := supervisor.run(func() error { return nil }, func() (packagetxn.Result, error) {
+		return packagetxn.Result{}, interrupted
+	}); !errors.Is(err, interrupted) {
+		t.Fatalf("interruption error = %v", err)
+	}
+	if service.active {
+		t.Fatal("failed package transaction restarted the relay")
+	}
+	if _, err := os.Stat(filepath.Join(root, "relay.intent")); err != nil {
+		t.Fatalf("durable restart intent absent: %v", err)
+	}
+	recovered, err := supervisor.run(func() error { return nil }, func() (packagetxn.Result, error) {
+		if service.active {
+			t.Fatal("recovery ran while relay was active")
+		}
+		return packagetxn.Result{Role: "relay", Current: "release-c", Resumed: true}, nil
+	})
+	if err != nil || !recovered.Resumed || !service.active {
+		t.Fatalf("recovery = %+v, %v active=%v", recovered, err, service.active)
+	}
+	if _, err := os.Stat(filepath.Join(root, "relay.intent")); !os.IsNotExist(err) {
+		t.Fatalf("recovered supervisor intent remains: %v", err)
+	}
+}
+
+func TestPackageSupervisorLeavesPreviouslyInactiveServiceInactive(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("exact supervisor ownership test requires the pinned root build environment")
+	}
+	service := &fakePackageService{}
+	supervisor := packageSupervisor{
+		role: "connector", intentRoot: newSupervisorRoot(t), service: service,
+		activate: func(packagetxn.Result) error { return nil },
+	}
+	if _, err := supervisor.run(func() error { return nil }, func() (packagetxn.Result, error) {
+		return packagetxn.Result{Role: "connector", Current: "release-a"}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if service.active || strings.Contains(strings.Join(service.calls, ","), "start:") {
+		t.Fatalf("inactive service was started: active=%v calls=%v", service.active, service.calls)
+	}
+}
+
+func TestPackageSupervisorRejectsInvalidPreflightBeforeStoppingService(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("exact supervisor ownership test requires the pinned root build environment")
+	}
+	root := newSupervisorRoot(t)
+	service := &fakePackageService{active: true}
+	supervisor := packageSupervisor{
+		role: "connector", intentRoot: root, service: service,
+		activate: func(packagetxn.Result) error { return nil },
+	}
+	rejected := errors.New("invalid signed package")
+	mutated := false
+	if _, err := supervisor.run(func() error { return rejected }, func() (packagetxn.Result, error) {
+		mutated = true
+		return packagetxn.Result{}, nil
+	}); !errors.Is(err, rejected) {
+		t.Fatalf("preflight error = %v", err)
+	}
+	if mutated || !service.active {
+		t.Fatalf("invalid package affected live service: mutated=%v active=%v", mutated, service.active)
+	}
+	if joined := strings.Join(service.calls, ","); strings.Contains(joined, "stop:") {
+		t.Fatalf("invalid package stopped service: calls=%q", joined)
+	}
+	if _, err := os.Stat(filepath.Join(root, "connector.intent")); !os.IsNotExist(err) {
+		t.Fatalf("invalid package created restart intent: %v", err)
+	}
+}
+
+func newSupervisorRoot(t *testing.T) string {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chown(root, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
