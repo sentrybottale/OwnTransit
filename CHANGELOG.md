@@ -10,6 +10,33 @@ automatically.
 
 ## [Unreleased]
 
+## [0.1.0-rc.4]
+
+### Security
+
+- Added checked platform-integer arithmetic before allocating the
+  domain-separated signature input, so an oversized sign or verify request is
+  rejected instead of allowing the allocation-size calculation to wrap. This
+  correction addresses the High CodeQL `go/allocation-size-overflow` finding
+  and supersedes the unsigned, unpublished `0.1.0-rc.3` candidate.
+
+### Fixed
+
+- Sized the bound enrollment-response envelope for its two canonical base64
+  layers, allowing the documented maximum target-encrypted response to pass
+  through the mailbox, wire and durable-session limits.
+
+### Not yet qualified
+
+- Every `0.1.0-rc.3` build, scan and qualification result applies only to that
+  frozen source. The corrected `0.1.0-rc.4` source requires a new candidate
+  ledger, deterministic build, independent scan and complete qualification.
+- Production signer custody, clean-host lifecycle matrices, independent
+  implementation review and authorized penetration testing remain open.
+
+This prerelease candidate has not been signed, tagged or published as a
+release. No production version has been released.
+
 ## [0.1.0-rc.3]
 
 ### Added

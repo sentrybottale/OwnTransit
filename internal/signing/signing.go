@@ -15,6 +15,11 @@ import (
 	"strings"
 )
 
+const (
+	maximumSignatureDomainSize  = 255
+	maximumSignaturePayloadSize = 8 * 1024 * 1024
+)
+
 type KeyPair struct {
 	Public     ed25519.PublicKey
 	Private    ed25519.PrivateKey
@@ -96,26 +101,51 @@ func ValidateKeyID(value string) error {
 }
 
 func Sign(domain string, payload []byte, privateKey ed25519.PrivateKey) ([]byte, error) {
-	if domain == "" || strings.ContainsRune(domain, '\x00') || len(payload) == 0 || len(privateKey) != ed25519.PrivateKeySize {
+	if domain == "" || len(domain) > maximumSignatureDomainSize || strings.ContainsRune(domain, '\x00') ||
+		len(payload) == 0 || len(payload) > maximumSignaturePayloadSize || len(privateKey) != ed25519.PrivateKeySize {
 		return nil, errors.New("signing: domain, payload, and Ed25519 private key are required")
 	}
-	message := signatureInput(domain, payload)
+	message, err := signatureInput(domain, payload)
+	if err != nil {
+		return nil, err
+	}
 	return ed25519.Sign(privateKey, message), nil
 }
 
 func Verify(domain string, payload, signature []byte, publicKey ed25519.PublicKey) error {
-	if domain == "" || strings.ContainsRune(domain, '\x00') || len(payload) == 0 || len(signature) != ed25519.SignatureSize || len(publicKey) != ed25519.PublicKeySize {
+	if domain == "" || len(domain) > maximumSignatureDomainSize || strings.ContainsRune(domain, '\x00') ||
+		len(payload) == 0 || len(payload) > maximumSignaturePayloadSize || len(signature) != ed25519.SignatureSize || len(publicKey) != ed25519.PublicKeySize {
 		return errors.New("signing: invalid verification input")
 	}
-	if !ed25519.Verify(publicKey, signatureInput(domain, payload), signature) {
+	message, err := signatureInput(domain, payload)
+	if err != nil {
+		return err
+	}
+	if !ed25519.Verify(publicKey, message, signature) {
 		return errors.New("signing: signature verification failed")
 	}
 	return nil
 }
 
-func signatureInput(domain string, payload []byte) []byte {
-	result := make([]byte, 0, len(domain)+1+len(payload))
-	result = append(result, domain...)
-	result = append(result, 0)
-	return append(result, payload...)
+func signatureInput(domain string, payload []byte) ([]byte, error) {
+	size, err := signatureInputSize(len(domain), len(payload))
+	if err != nil {
+		return nil, err
+	}
+	result := make([]byte, size)
+	domainEnd := copy(result, domain)
+	result[domainEnd] = 0
+	copy(result[domainEnd+1:], payload)
+	return result, nil
+}
+
+func signatureInputSize(domainLength, payloadLength int) (int, error) {
+	if domainLength < 0 || payloadLength < 0 {
+		return 0, errors.New("signing: signature input length is invalid")
+	}
+	maximumInt := int(^uint(0) >> 1)
+	if domainLength > maximumInt-payloadLength-1 {
+		return 0, errors.New("signing: signature input exceeds the platform limit")
+	}
+	return domainLength + 1 + payloadLength, nil
 }
