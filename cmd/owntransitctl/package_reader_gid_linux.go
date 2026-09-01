@@ -9,6 +9,9 @@ import (
 )
 
 func nativePackageReaderGID(role string) (int, error) {
+	if role == "provisioner" {
+		return 0, nil
+	}
 	group, err := user.LookupGroup("owntransit-" + role)
 	if err != nil {
 		return 0, err

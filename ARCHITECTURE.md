@@ -52,6 +52,16 @@ and keys as fully malicious. They may ignore admission rules, cross-wire
 sessions, replay attempts and deny service; the independent inner boundary must
 still reject forgery and preserve plaintext confidentiality.
 
+Before a fresh relay has endpoint credentials, the same authenticated relay
+artifact may run in a separate temporary `exchange` mode. It binds only the
+packaged container address, serves the exact `/connects/enrollment` path, and
+reuses the bounded in-memory opaque mailbox. It cannot serve `/connects` or
+load a target runtime, endpoint key, issuer, signer, route, or connector
+selection. The operator keeps it running only until the first client has
+fetched and durably applied its bound response, then replaces it with the
+enrolled full relay on the same host-loopback publication port. This is a cold
+start mechanism, not an alternate carrier or online controller.
+
 ### Offline provisioner
 
 The provisioner is not an online controller. It approves target-generated CSRs,
@@ -161,13 +171,20 @@ publishes a read-only runtime view to the exact installed runtime identity.
 Guided setup is bound to that identity and cannot activate a detached package
 decision. Compromise of the privileged package manager or host root remains
 outside the endpoint-isolation claim; the platform ownership, ACL, reboot,
-interruption and hostile-filesystem matrix remains a release gate.
+interruption and hostile-filesystem boundary must be exercised by each exact
+supported-platform release handoff.
 
 Initial request, guided approval, apply, signed floor/upgrade policy, exact
-rollback, interruption recovery and native package integration exist in
-source. Production qualification of the complete rotation, revocation,
-retirement and recovery ceremonies remains unfinished and is not implied by
-this architecture.
+rollback, interruption recovery and native package integration are part of the
+0.1.0 candidate implementation. An official stable handoff must qualify the
+exact installed bytes on both target platforms and carry the independently
+verified signed result. The initial workflow authorizes exactly one relay, one
+connector, one route and one client. Adding a later client requires a
+separately versioned approval-context and signed relay-policy transition and is
+not implemented in 0.1.0. Expiry monitoring, rotation, revocation, retirement,
+issuer custody and clean-room recovery remain operator-run procedures and
+additional assurance work; the architecture does not claim that they are
+automatic or externally certified.
 
 ## Failure and compromise properties
 

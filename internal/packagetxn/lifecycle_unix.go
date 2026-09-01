@@ -75,11 +75,18 @@ type lifecycleSnapshot struct {
 
 // OpenLifecycle opens a package root together with a distinct, independently
 // protected rollback-anchor root. All supported package mutations use both.
+// Online roles require their dedicated non-root runtime reader GID. The
+// offline provisioner has no runtime reader and therefore requires readerGID
+// zero; its manager controls only the signed software package lifecycle.
 func OpenLifecycle(packageRoot, rollbackAnchorRoot, role string, readerGID int) (*Manager, error) {
 	if unix.Geteuid() != 0 {
 		return nil, errors.New("packagetxn: lifecycle manager requires root")
 	}
-	if readerGID <= 0 || uint64(readerGID) >= 1<<32 {
+	if role == "provisioner" {
+		if readerGID != 0 {
+			return nil, errors.New("packagetxn: provisioner package lifecycle has no runtime reader GID")
+		}
+	} else if readerGID <= 0 || uint64(readerGID) >= 1<<32 {
 		return nil, errors.New("packagetxn: a dedicated non-root runtime reader GID is required")
 	}
 	manager, err := openLifecycleManager(packageRoot, rollbackAnchorRoot, role, 0, 0, true, verifyPackageACL)
@@ -91,9 +98,6 @@ func OpenLifecycle(packageRoot, rollbackAnchorRoot, role string, readerGID int) 
 }
 
 func openLifecycleManager(packageRoot, rollbackAnchorRoot, role string, ownerUID, ownerGID uint32, strictRoot bool, aclCheck func(int, bool) error) (*Manager, error) {
-	if role == "provisioner" {
-		return nil, errors.New("packagetxn: provisioner has no target lifecycle transaction")
-	}
 	if nestedPath(packageRoot, rollbackAnchorRoot) || nestedPath(rollbackAnchorRoot, packageRoot) {
 		return nil, errors.New("packagetxn: package and rollback-anchor roots must not contain one another")
 	}
@@ -673,6 +677,10 @@ func artifactNameForRole(role, goos, goarch string) (string, error) {
 		return "connector-linux-amd64", nil
 	case "relay/linux/amd64":
 		return "relay-linux-amd64", nil
+	case "provisioner/darwin/arm64":
+		return "provisioner-darwin-arm64", nil
+	case "provisioner/linux/amd64":
+		return "provisioner-linux-amd64", nil
 	default:
 		return "", errors.New("packagetxn: role is unsupported on the local platform")
 	}

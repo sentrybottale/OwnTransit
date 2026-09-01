@@ -31,9 +31,27 @@ for installer in scripts/release/install-linux.sh scripts/release/install-macos.
   require_text "$installer" 'required bundle member is absent from SHA256SUMS'
   require_text "$installer" 'third_party_licenses_path=evidence/THIRD_PARTY_LICENSES.txt'
 done
+for entrypoint_invariant in \
+  'test "$(id -u)" -eq 0 || fail "installation requires root"' \
+  'assets must remain outside the native bundle' \
+  'trust must remain outside the native bundle' \
+  'outer asset checksum signature did not verify under the independently supplied trust' \
+  'trust statement signature did not verify' \
+  'trust statement does not bind the release public key' \
+  'native bundle checksum signature did not verify' \
+  'running installer entry point differs from the signed native bundle' \
+  'exec "$platform_installer"'; do
+  require_text scripts/release/install.sh "$entrypoint_invariant"
+done
+require_text scripts/release/build-artifacts.sh 'install.sh install-linux.sh'
+require_text scripts/release/archive-native.sh 'packaging/scripts/install.sh'
+require_text scripts/tests/sign-candidate.sh 'packaging/scripts/install.sh'
+require_text scripts/release/releasectl/main.go 'package-install-entrypoint'
+require_text scripts/qualify/test-native-archive.sh 'packaging/scripts/install.sh'
 require_text scripts/release/install-macos.sh '"$lifecycle_runner" package-apply'
 require_text scripts/release/install-macos.sh 'roles_root="$install_root/roles"'
 require_text scripts/release/install-macos.sh 'ensure_exact_symlink "$bin_directory/owntransit" "../roles/client/current/owntransit"'
+require_text scripts/release/install-macos.sh 'ensure_exact_symlink "$bin_directory/owntransit-provision" "../roles/provisioner/current/owntransit-provision"'
 require_text scripts/release/install-macos.sh 'ensure_root_directory /private/var/db/OwnTransit/package-rollback 700'
 require_text scripts/release/install-macos.sh 'ensure_root_directory "$install_root/client" 755'
 require_text scripts/release/install-macos.sh 'ensure_root_directory /private/var/db/OwnTransit/client 755'
@@ -41,8 +59,7 @@ require_text cmd/owntransitctl/package_lifecycle.go '"/private/var/db/OwnTransit
 require_text scripts/release/install-macos.sh 'release/policy trust input must remain outside the candidate bundle'
 require_text scripts/release/uninstall-macos.sh 'roles/client/current'
 require_text scripts/release/uninstall-macos.sh 'installed license notices'
-require_text packaging/macos/package-pkg.sh 'Library/OwnTransit/provisioner/releases/$release_id'
-require_text packaging/macos/package-pkg.sh '../provisioner/releases/$release_id/$installed_name'
+require_text packaging/macos/package-pkg.sh 'provisioner .pkg generation is disabled'
 require_text scripts/release/uninstall-linux.sh 'for notice in LICENSE THIRD_PARTY_LICENSES.txt'
 require_text scripts/release/uninstall-linux.sh 'installed license notices'
 
@@ -90,6 +107,7 @@ require_text scripts/release/install-linux.sh 'ensure_root_directory /var/lib/ow
 require_text scripts/release/install-linux.sh 'ensure_root_directory /var/lib/owntransit/package-supervisor 700'
 require_text scripts/release/install-linux.sh 'ensure_exact_symlink "$public_bin/owntransit" "$current_link/owntransit"'
 require_text scripts/release/install-linux.sh 'ensure_exact_symlink "$public_bin/owntransit-proxy" "$current_link/owntransit-proxy"'
+require_text scripts/release/install-linux.sh 'ensure_exact_symlink "$public_bin/owntransit-provision" "$current_link/owntransit-provision"'
 require_text scripts/release/install-linux.sh 'release/policy trust input must remain outside the candidate bundle'
 require_text scripts/release/install-linux.sh 'OWNTRANSIT_CONNECTOR_READER_GID='
 require_text scripts/release/install-linux.sh 'service identity has an unexpected supplementary group'
@@ -97,6 +115,12 @@ require_text scripts/release/install-linux.sh 'one exact local /etc/passwd ident
 require_text scripts/release/install-linux.sh 'client-reader.v1'
 require_text scripts/release/uninstall-linux.sh '/etc/owntransit/connector-runtime.env'
 require_text scripts/release/uninstall-linux.sh 'roles/$role/current'
+require_text scripts/release/install-linux.sh 'packaging/systemd/owntransit-relay-exchange-template.service'
+require_text scripts/release/install-linux.sh '/etc/systemd/system/owntransit-relay-exchange@.service'
+require_text scripts/release/install-linux.sh 'relay bootstrap exchange unit is not authenticated by SHA256SUMS'
+require_text scripts/release/install-linux.sh 'relay bootstrap exchange unit has multiple hard links'
+require_text scripts/release/uninstall-linux.sh "'owntransit-relay-exchange@*.service'"
+require_text scripts/release/uninstall-linux.sh '/etc/systemd/system/owntransit-relay-exchange@.service'
 
 if grep -Fq -- '$install_root/releases' scripts/release/install-linux.sh scripts/release/uninstall-linux.sh; then
   fail 'Linux role packages must not share a release or selector namespace'
@@ -131,7 +155,28 @@ require_text deploy/systemd/owntransit-relay.service '--volume=/var/lib/owntrans
 require_text deploy/systemd/owntransit-relay.service '--volume=/var/lib/owntransit/relay/anchor-view:/anchor:ro,nosuid,nodev,noexec'
 require_text deploy/systemd/owntransit-relay.service 'InaccessiblePaths=/var/lib/owntransit/relay/private /var/lib/owntransit/relay/authority'
 require_text deploy/systemd/owntransit-relay.service '--publish=127.0.0.1:9087:9087/tcp'
+require_text deploy/systemd/owntransit-relay.service '--memory=256m --env=GOMEMLIMIT=192MiB'
+require_text deploy/systemd/owntransit-relay.service '--network=bridge --publish=127.0.0.1:9087:9087/tcp'
 require_text deploy/systemd/owntransit-relay.service 'ConditionPathExists=!/var/lib/owntransit/package-supervisor/relay.intent'
+require_text deploy/systemd/owntransit-relay-exchange@.service 'Conflicts=owntransit-relay.service'
+require_text deploy/systemd/owntransit-relay-exchange@.service 'Before=owntransit-relay.service'
+require_text deploy/systemd/owntransit-relay-exchange@.service 'EnvironmentFile=/etc/owntransit/relay-container.env'
+require_text deploy/systemd/owntransit-relay-exchange@.service '--read-only --cap-drop=all --security-opt=no-new-privileges'
+require_text deploy/systemd/owntransit-relay-exchange@.service '--memory=256m --env=GOMEMLIMIT=192MiB'
+require_text deploy/systemd/owntransit-relay-exchange@.service '--user ${OWNTRANSIT_RELAY_UID}:${OWNTRANSIT_RELAY_READER_GID}'
+require_text deploy/systemd/owntransit-relay-exchange@.service '--network=bridge --publish=127.0.0.1:9087:9087/tcp'
+require_text deploy/systemd/owntransit-relay-exchange@.service 'exchange --allocation-sha256=%i'
+require_text deploy/systemd/owntransit-relay-exchange@.service 'InaccessiblePaths=/var/lib/owntransit'
+for relay_unit in deploy/systemd/owntransit-relay.service deploy/systemd/owntransit-relay-exchange@.service; do
+  relay_exec_start=$(grep '^ExecStart=' "$relay_unit")
+  test "$(printf '%s\n' "$relay_exec_start" | grep -o -- '--network=[^[:space:]]*')" = '--network=bridge' ||
+    fail "$relay_unit must select exactly the default Podman bridge"
+  test "$(printf '%s\n' "$relay_exec_start" | grep -o -- '--publish=[^[:space:]]*')" = '--publish=127.0.0.1:9087:9087/tcp' ||
+    fail "$relay_unit must publish exactly one host-loopback relay port"
+done
+if grep -Eq '^\[Install\]$|^WantedBy=|--(volume|mount|runtime-root|anchor-view-root|state-root|config)(=|[[:space:]])' deploy/systemd/owntransit-relay-exchange@.service; then
+  fail 'relay bootstrap exchange unit is enableable or consumes role state/configuration'
+fi
 require_text Containerfile 'CMD ["run", "--runtime-root=/runtime", "--anchor-view-root=/anchor", "--reader-gid=65532"]'
 require_text deploy/vps/Containerfile.relay 'CMD ["run", "--runtime-root=/runtime", "--anchor-view-root=/anchor", "--reader-gid=65532"]'
 require_text scripts/release/make-relay-oci.sh '\"--runtime-root=/runtime\",\"--anchor-view-root=/anchor\",\"--reader-gid=65532\"'
@@ -150,6 +195,13 @@ if grep -Fq -- '/var/lib/owntransit/relay/private:' deploy/systemd/owntransit-re
    grep -Fq -- '/var/lib/owntransit/relay/authority:' deploy/systemd/owntransit-relay.service; then
   fail 'relay unit mounts private lifecycle material'
 fi
+for inventory in scripts/release/archive-native.sh scripts/qualify/test-native-archive.sh scripts/tests/sign-candidate.sh; do
+  require_text "$inventory" 'packaging/systemd/owntransit-relay-exchange-template.service'
+done
+require_text scripts/release/build-artifacts.sh 'owntransit-relay-exchange@.service'
+require_text scripts/release/build-artifacts.sh 'packaging/systemd/owntransit-relay-exchange-template.service'
+require_text scripts/release/releasectl/main.go 'systemd-relay-exchange'
+require_text scripts/release/releasectl/main.go 'packaging/systemd/owntransit-relay-exchange-template.service'
 
 test -z "$(find deploy/launchd -type f -name '*.plist' -print)" || fail 'v1 macOS client must not install a launchd job'
 
@@ -237,9 +289,23 @@ require_text scripts/release/sign-candidate.sh 'owntransit-$version-source.tar.g
 require_text scripts/release/sign-candidate.sh '--namespace owntransit-release-v1'
 require_text scripts/release/sign-candidate.sh 'candidate asset inventory is not the fixed first-release set'
 require_text scripts/release/sign-candidate.sh 'outer asset checksum verification failed'
+require_text scripts/release/sign-candidate.sh 'allowed-signers must contain exactly the two canonical v1 principals'
+require_text scripts/release/sign-candidate.sh 'owntransit-trust-v1'
+require_text scripts/release/sign-candidate.sh 'trust_statement_sha256='
 require_text scripts/release/sign-candidate.sh 'cannot atomically publish candidate handoff'
 if grep -Eq 'ssh-keygen[[:space:]].*-t|openssl[[:space:]].*(genpkey|genrsa|req)' scripts/release/sign-candidate.sh; then
   fail 'candidate signer must never generate a signing key'
+fi
+
+require_text scripts/release/sign-qualification-record.sh 'owntransit-qualification-v1'
+require_text scripts/release/sign-qualification-record.sh 'qualification output must remain outside the signed asset inventory'
+require_text scripts/release/sign-qualification-record.sh 'results file does not contain the exact fixed sorted v1 test set'
+require_text scripts/release/sign-qualification-record.sh 'qualification_status=BLOCKED'
+require_text scripts/release/sign-qualification-record.sh 'unresolved_critical'
+require_text scripts/release/sign-qualification-record.sh 'unresolved_high'
+require_text scripts/tests/qualification-record.sh 'qualification record canonical signing and fail-closed tests passed'
+if grep -Eq 'ssh-keygen[[:space:]].*-t' scripts/release/sign-qualification-record.sh; then
+  fail 'qualification-record signer must never generate a signing key'
 fi
 
 if grep -Eq 'chmod.*2750|system.*sudo' packaging/homebrew/owntransit.rb.in; then

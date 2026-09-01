@@ -103,9 +103,12 @@ class Owntransit < Formula
       protected runtime. Guided setup must use the independently authenticated
       lifecycle copy at /Library/OwnTransit/roles/client/current/owntransitctl.
 
-      Hardened macOS activation is currently blocked: the CGO-free exact-ACL
-      verifier and fixed setgid launcher are implemented but have not passed
-      clean Apple-silicon lifecycle and reboot qualification.
+      Formula installation alone is not evidence that the protected macOS path
+      is qualified. Activate it only with the exact independently authenticated
+      native handoff whose signed qualification record reports PASS for the
+      Apple-silicon lifecycle and reboot hard gates. If that record is absent or
+      any hard gate is not PASS, keep the installation qualification-only and
+      retain an independent access and recovery path.
     EOS
   end
 

@@ -68,15 +68,6 @@ esac
 install_root=/usr/libexec/owntransit
 public_bin=/usr/local/bin
 
-if test "$role" = provisioner; then
-  provisioner="$public_bin/owntransit-provision"
-  test -f "$provisioner" && test ! -L "$provisioner" || fail "provisioner is absent or not a regular file"
-  test "$(stat -c %u "$provisioner")" -eq 0 && test "$(stat -c %g "$provisioner")" -eq 0 && test "$(stat -c %a "$provisioner")" = 755 || fail "provisioner metadata is invalid"
-  rm -f -- "$provisioner"
-  printf 'removed OwnTransit provisioner launcher for release %s\n' "$release_id"
-  exit 0
-fi
-
 current_link="$install_root/roles/$role/current"
 release_directory="$install_root/roles/$role/releases/$release_id"
 test -L "$current_link" || fail "role current selector is absent"
@@ -93,6 +84,22 @@ if test "$role" = client; then
     test -L "$launcher" || fail "client launcher is absent: $launcher"
     test "$(readlink "$launcher")" = "$expected" || fail "client launcher selects another role path: $launcher"
   done
+elif test "$role" = provisioner; then
+  launcher="$public_bin/owntransit-provision"
+  expected="$current_link/owntransit-provision"
+  test -L "$launcher" || fail "provisioner launcher is absent: $launcher"
+  test "$(readlink "$launcher")" = "$expected" || fail "provisioner launcher selects another role path: $launcher"
+fi
+
+if test "$role" = relay; then
+  exchange_units=$(systemctl list-units --all --plain --no-legend --no-pager 'owntransit-relay-exchange@*.service' | awk '{print $1}')
+  for exchange_unit in $exchange_units; do
+    case "$exchange_unit" in
+      owntransit-relay-exchange@*.service) ;;
+      *) fail "systemd returned an unexpected relay bootstrap exchange unit" ;;
+    esac
+    systemctl stop "$exchange_unit"
+  done
 fi
 
 if test -n "$service_name"; then
@@ -107,6 +114,8 @@ fi
 if test "$role" = client; then
   rm -f -- "$public_bin/owntransit"
   rm -f -- "$public_bin/owntransit-proxy"
+elif test "$role" = provisioner; then
+  rm -f -- "$public_bin/owntransit-provision"
 fi
 
 if test -n "$service_name"; then
@@ -114,6 +123,7 @@ if test -n "$service_name"; then
   if test "$role" = connector; then
     rm -f -- /etc/owntransit/connector-runtime.env
   elif test "$role" = relay; then
+    rm -f -- /etc/systemd/system/owntransit-relay-exchange@.service
     rm -f -- /etc/owntransit/relay-container.env
   fi
   systemctl daemon-reload

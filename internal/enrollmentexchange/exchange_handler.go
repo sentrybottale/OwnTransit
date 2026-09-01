@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -39,10 +40,11 @@ func AllocationCapabilitySHA256(capability string) (string, error) {
 // endpoint. Every action is one bounded binary WebSocket request and one
 // bounded binary response. All mailbox-level failures are indistinguishable.
 type ExchangeHandler struct {
-	store          *MailboxStore
-	allocationHash [sha256.Size]byte
-	slots          chan struct{}
-	now            func() time.Time
+	store                 *MailboxStore
+	allocationHash        [sha256.Size]byte
+	slots                 chan struct{}
+	now                   func() time.Time
+	allowPrivateProxyPeer bool
 }
 
 func NewExchangeHandler(store *MailboxStore, allocationCapabilitySHA256 string) (*ExchangeHandler, error) {
@@ -58,10 +60,24 @@ func NewExchangeHandler(store *MailboxStore, allocationCapabilitySHA256 string) 
 	return handler, nil
 }
 
+// NewContainerExchangeHandler admits the private bridge-gateway source address
+// produced by the authenticated packaged relay's rootful Podman loopback port
+// publication. The ordinary constructor remains TLS-or-loopback only. This is
+// deployment admission plumbing inside the already-malicious relay host; it is
+// never enrollment, issuance, human-identity, or endpoint authority.
+func NewContainerExchangeHandler(store *MailboxStore, allocationCapabilitySHA256 string) (*ExchangeHandler, error) {
+	handler, err := NewExchangeHandler(store, allocationCapabilitySHA256)
+	if err != nil {
+		return nil, err
+	}
+	handler.allowPrivateProxyPeer = true
+	return handler, nil
+}
+
 // Serve upgrades one exact exchange request. Cleartext is accepted only from
 // the loopback reverse-proxy hop; forwarded headers never affect this check.
 func (handler *ExchangeHandler) Serve(root context.Context, output http.ResponseWriter, request *http.Request) {
-	if handler == nil || root == nil || output == nil || request == nil || !exchangeHTTPShape(request) {
+	if handler == nil || root == nil || output == nil || request == nil || !exchangeHTTPShape(request, handler.allowPrivateProxyPeer) {
 		http.NotFound(output, request)
 		return
 	}
@@ -152,7 +168,7 @@ func (handler *ExchangeHandler) writeFailure(ctx context.Context, connection *we
 	_ = connection.Write(ctx, websocket.MessageBinary, encoded)
 }
 
-func exchangeHTTPShape(request *http.Request) bool {
+func exchangeHTTPShape(request *http.Request, allowPrivateProxyPeer bool) bool {
 	if request.Method != http.MethodGet || request.ProtoMajor != 1 || !request.ProtoAtLeast(1, 1) || request.Host == "" ||
 		request.URL == nil || request.URL.RawQuery != "" || request.URL.ForceQuery || request.URL.RawPath != "" ||
 		headerPresentFold(request.Header, "Origin") || headerPresentFold(request.Header, "Sec-WebSocket-Extensions") ||
@@ -166,8 +182,12 @@ func exchangeHTTPShape(request *http.Request) bool {
 	if err != nil {
 		return false
 	}
-	address := net.ParseIP(host)
-	return address != nil && address.IsLoopback()
+	address, err := netip.ParseAddr(host)
+	if err != nil || address.Zone() != "" {
+		return false
+	}
+	address = address.Unmap()
+	return address.IsLoopback() || allowPrivateProxyPeer && address.IsPrivate()
 }
 
 func hasExactExchangeSubprotocol(header http.Header) bool {

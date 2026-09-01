@@ -1,9 +1,10 @@
 # OwnTransit release checklist
 
-This is the immutable-candidate procedure. It does not authorize publication,
-infrastructure changes, credential rotation, or a production claim. The v1 tag
-is created only after every repository-controlled and manual stop gate below is
-recorded against one exact commit.
+This is the immutable-release procedure for stable and prerelease versions. It
+does not itself authorize publication, infrastructure changes or credential
+rotation. It separates hard artifact-integrity requirements from additional
+assurance and owner-governance decisions so their status is recorded against
+one exact commit without inventing external certification.
 
 ## 1. Freeze the public source candidate
 
@@ -30,29 +31,34 @@ Run on the exact full-history checkout:
 ./scripts/qualify/test-signature-tools.sh
 ```
 
-After the new public root commit exists, an independent secret scanner must
-inspect only the complete exported/new public object graph. Do not upload the
-private development history to a third-party scanner or treat a scan of it as
-public-release evidence. The repository checks are defense in depth and are
-not that independent scan.
+After the new public root commit exists, run an independent secret scanner on
+only the complete exported/new public object graph when available, and record
+or explicitly disclose its status. Do not upload the private development
+history to a third-party scanner or treat a scan of it as public-release
+evidence. The repository checks are defense in depth and are not that
+independent scan.
 
 ## Release-readiness matrix
 
-| Gate | Evidence class | V1 status |
+| Item | Class | Required disposition |
 |---|---|---|
-| Prospective public tree, both race/vet profiles, pinned vulnerability analysis, release/qualification static checks and signature-helper tests | Automated | Must report **PASS** for the exact frozen candidate in both required read-only CI jobs |
-| Complete one-root public history and clean-export boundary | Automated | Must report **PASS** after the sanitized root commit exists; the private development history is not a candidate |
-| Independent secret scan of the exported/new public object graph | External/manual | **OPEN** |
-| Independent clean-builder reproduction and authenticated release/policy signatures | External/manual | **OPEN** |
-| macOS/Linux clean-host lifecycle, interruption, rollback, uninstall and recovery matrices | External/manual | **OPEN** |
-| Signer/issuer custody and clean-room recovery rehearsal | External/manual | **OPEN** |
-| Independent security review, authorized penetration test and Critical/High disposition | External/manual | **OPEN** |
-| Name, contract, patent, assignment and publishing-entity review | External/manual | **OPEN** |
-| Private canary, recovery rehearsal and burn-in decision | External/manual | **OPEN** |
+| Prospective public tree, both race/vet profiles, pinned vulnerability analysis, release/qualification static checks and signature-helper tests | Hard publish gate | **PASS** for the exact frozen candidate in both required read-only CI jobs |
+| Complete one-root public history and clean-export boundary | Hard publish gate | **PASS**; the private development history is not a candidate |
+| Actual release-manifest and release-policy signatures used by installers | Hard publish gate | **PASS** under independently obtained verifier trust for the exact artifacts |
+| macOS/Linux clean-host lifecycle, interruption, rollback, uninstall and recovery matrices | Hard publish gate | **PASS** for every supported platform and the exact released bytes |
+| Signed qualification record binding the candidate commit, release identity, outer asset inventory and exact platform results | Hard publish gate | **PASS** only after independent signature verification and confirmation that every other hard gate is recorded accurately |
+| Every known Critical/High defect | Hard publish gate | Closed or explicitly accepted in the public release risk record |
+| Independent secret scan of the exported/new public object graph | Additional assurance | Record exact evidence or disclose **NOT PERFORMED** |
+| Independent clean-builder reproduction | Additional assurance | Record exact evidence or disclose **NOT PERFORMED** |
+| Signer/issuer custody and clean-room recovery rehearsal | Operator assurance | Record exact evidence or disclose **NOT PERFORMED** |
+| Independent security review and authorized penetration test | Additional assurance | Record exact evidence/findings or disclose **NOT PERFORMED** |
+| Name, contract, patent, assignment and publishing-entity review | Owner governance | Record the owner's disposition; repository tooling cannot certify it |
+| Private canary, recovery rehearsal and burn-in | Operator assurance | Attach results when performed; preserve an alternate recovery path |
 
-Automated PASS means only that the frozen bytes passed repository-controlled
-checks. It cannot substitute for an external/manual gate or make the release
-production-ready.
+A hard-gate PASS authenticates and qualifies the frozen installable bytes within
+their documented scope. It does not imply that an external/manual assurance
+activity happened. An open assurance item does not require another candidate
+unless it reveals a source or artifact change; its status must be disclosed.
 
 ## 2. Assign the version and release identity
 
@@ -62,24 +68,27 @@ production-ready.
   canonical release ID and one monotonic release sequence.
 - Replace the matching `Unreleased` entries in `CHANGELOG.md` with an exact
   `## [VERSION]` heading, including the full `-rc.N` suffix for a prerelease.
-  The heading freezes a qualification candidate; it is not a release decision,
-  support statement or production claim. Do not date or announce a release
-  that has not passed the remaining gates.
+  The heading freezes a qualification candidate; it is not a release decision
+  or support statement. Do not date or announce a release that has not passed
+  the hard publish gates.
 - Record the exact candidate commit and its commit timestamp as the
   `SOURCE_DATE_EPOCH`. Never use a mutable branch name or `latest` identifier
   as a release input.
 - Create the qualification-only candidate ledger with `releasectl
-  candidate-init`. Store it beneath the ignored operator boundary, review its
-  version, fresh release ID, sequences, floors, source commit and source date,
-  and never regenerate or overwrite it for the same candidate.
+  candidate-init`. The command accepts the canonical stable and `-rc.N` forms
+  above and rejects every other prerelease and build-metadata form. Store the
+  ledger beneath the ignored operator boundary, review its version, fresh
+  release ID, sequences, floors, source commit and source date, and never
+  regenerate or overwrite it for the same candidate.
 
 ## 3. Build and authenticate the candidate
 
 - Build the exact nine-artifact matrix twice with
   `scripts/release/build-artifacts.sh`; require byte-identical same-builder
   outputs.
-- Reproduce the unsigned artifacts on an independent clean builder from a
-  fresh clone of the candidate public history.
+- When available, reproduce the unsigned artifacts on an independent clean
+  builder from a fresh clone of the candidate public history and record the
+  result as additional assurance. Disclose when it was not performed.
 - Review `BUILD-INPUTS`, `SOURCE-MANIFEST.txt`, every artifact digest and size,
   the relay OCI identity, all SPDX records, third-party license evidence,
   provenance and the exact Apache-2.0 license digest.
@@ -99,8 +108,9 @@ production-ready.
   the native archive; then verify the nested native checksums, release manifest
   and policy signatures. The copied public files beside the candidate are
   comparison material, not trust bootstrap.
-- Rehearse release-key and policy-key recovery from the documented independent
-  custody locations before accepting their signatures.
+- Record any release-key and policy-key recovery rehearsal from independent
+  custody locations as operator assurance. The actual signatures and their
+  verification remain hard requirements even when that rehearsal is pending.
 
 Checksums delivered beside unauthenticated artifacts are not authentication.
 The relay, DNS, a download redirect and GitHub release text are not release
@@ -108,6 +118,17 @@ authorities.
 
 ## 4. Qualify the frozen bytes
 
+- After completing the tests below, produce one canonical signed qualification
+  record that binds the frozen commit, release identity, outer asset inventory,
+  exact platform results and Critical/High disposition. Independently verify
+  that record before promotion. A detached log, unsigned JSON file or statement
+  in this repository is not qualification evidence. Use
+  `scripts/release/sign-qualification-record.sh` with the fixed result set
+  documented in `scripts/release/README.md`; keep its two-file output outside
+  `assets/`, independently authenticate its reported SHA-256 handle, verify the
+  `owntransit-qualification-v1` SSHSIG, and inspect every evidence digest. The
+  helper signs an honest `BLOCKED` record when any fixed test is not `PASS` or
+  either unresolved Critical/High count is nonzero; it does not execute tests.
 - Complete the clean macOS arm64 and Linux amd64 matrices in `ROADMAP.md`,
   including cold boot, reconnect, upgrade, interrupted apply, concurrency,
   authenticated rollback, non-purging uninstall and clean OwnTransit recovery.
@@ -115,19 +136,24 @@ authorities.
   `tcp4 127.0.0.1:22`; prove the client writes only SSH bytes to stdout.
 - Complete hostile-relay and resource-exhaustion qualification against the
   exact candidate.
-- Obtain the independent implementation review and authorized penetration
-  test defined by `SECURITY_REVIEW.md`. Close or explicitly accept every
-  Critical or High finding without changing the frozen bytes.
-- Record professional name, applicable-contract, targeted patent,
-  contributor-assignment and publishing-entity clearance. Repository tooling
-  cannot perform or certify those reviews.
+- Record whether the independent implementation review and authorized
+  penetration test defined by `SECURITY_REVIEW.md` were performed. Do not imply
+  that they passed when absent. Close or explicitly accept every known Critical
+  or High finding without changing the frozen bytes.
+- Record the owner disposition for professional name, applicable-contract,
+  targeted-patent, contributor-assignment and publishing-entity review.
+  Repository tooling cannot perform or certify those reviews.
 
 ## 5. Tag without granting CI publication authority
 
-After every prior item passes, create one signed annotated tag locally. An
+After every hard publish gate passes and every assurance/governance item has an
+honest recorded disposition, create one signed annotated tag locally. An
 `-rc.N` tag names an immutable nonproduction candidate; it does not waive any
 manual gate or authorize promotion. A correction gets a new positive `rc.N`
-number and new candidate rather than a moved tag.
+number and new candidate rather than a moved tag. A stable tag uses the exact
+canonical `MAJOR.MINOR.PATCH` version already bound into its qualification
+ledger and artifacts; it is not created by stripping `-rc.N` from existing
+candidate bytes.
 
 ```text
 git tag -s -a vVERSION COMMIT -m "OwnTransit vVERSION"
@@ -149,12 +175,14 @@ Enable GitHub's immutable-release setting when available, disable tag deletion
 or force updates through repository rules, and publish only the already
 authenticated frozen files.
 
-## 6. Canary and promotion
+## 6. Operator canary and continuing assurance
 
 - Keep operator-owned out-of-band SSH and host recovery throughout canary and
   burn-in.
 - Rehearse install, upgrade, rotation, revocation, rollback and clean-room
   OwnTransit recovery using the signed release.
-- Promote the release to supported v1 only after the burn-in and every manual
-  gate is recorded. Otherwise publish no production claim and cut a new
-  candidate for any correction.
+- Attach canary and burn-in results to the exact signed release when available;
+  do not describe missing evidence as a successful exercise.
+- A source or artifact correction receives a new immutable version, normally
+  the next stable patch after 0.1.0. Assurance records that do not change bytes
+  do not require a new RC or release version.

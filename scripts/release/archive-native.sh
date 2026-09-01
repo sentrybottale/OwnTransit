@@ -125,12 +125,14 @@ evidence/owntransit-relay-linux-amd64.oci.tar.spdx.json
 evidence/owntransitctl-darwin-arm64.spdx.json
 evidence/owntransitctl-linux-amd64.spdx.json
 packaging/launchd/README.md
+packaging/scripts/install.sh
 packaging/scripts/install-linux.sh
 packaging/scripts/install-macos.sh
 packaging/scripts/uninstall-linux.sh
 packaging/scripts/uninstall-macos.sh
 packaging/systemd/README.md
 packaging/systemd/owntransit-connector.service
+packaging/systemd/owntransit-relay-exchange-template.service
 packaging/systemd/owntransit-relay.service
 EOF
 }

@@ -3,10 +3,16 @@
 This project originated in a private development and operations workspace. A
 clean working tree is not proof that its Git history is safe to publish.
 
-Source publication and a production binary release are separate events. The
-source may be published as explicitly pre-release software after the public
-source gates pass. No binary may be described as production-ready until the
-release gates in `ROADMAP.md` pass.
+Source publication and an authenticated binary release are separate events. A
+public checkout is never an authenticated installation. OwnTransit 0.1.0 is
+currently a candidate line: its tooling can produce a signed installable
+handoff for qualification, but that handoff is not an official stable release
+until the exact artifact set satisfies every hard integrity and
+supported-platform requirement below and carries the independently verified
+signed qualification record. Until then, describe it as a candidate and never
+as stable or production-ready. After those gates pass, the bounded claim is
+“stable and installable within the documented scope,” not an unqualified
+“production-ready” claim.
 
 ## Required public-history boundary
 
@@ -63,9 +69,10 @@ remote for the public repository.
 
 Retain that private history as a hashed, encrypted, access-controlled evidence
 archive. A clean public root is a publication boundary, not authorization to
-destroy the development record. Complete the applicable-contract,
-independent-development, name, patent, ownership-assignment, and publishing
-entity reviews tracked in `ROADMAP.md` before the first push.
+destroy the development record. Record the project owner's disposition for the
+applicable-contract, independent-development, name, patent,
+ownership-assignment and publishing-entity reviews tracked in `ROADMAP.md`;
+repository tooling cannot perform or certify them.
 
 ## One-time source publication gates
 
@@ -79,12 +86,15 @@ Before creating that root commit:
    artifact names and compatibility entrypoints.
 4. Review all public documentation and examples for reserved-only endpoints and
    invented identities.
-5. Run both build profiles, vet, security checks, publication checks, and an
-   independent secret scanner on the exact export.
+5. Run both build profiles, vet, security checks and publication checks on the
+   exact export. Record an independent secret scan when available, or disclose
+   that it was not performed.
 6. Run `scripts/tests/dependency-licenses.sh --full`, review the exact pinned
    production-module inventory in `THIRD_PARTY_NOTICES.md`, and review the
    upstream license/notice/patent files captured by generated release evidence.
-7. Reproduce the candidate from a fresh clone of the new public root history.
+7. Rebuild the candidate from a fresh clone of the new public root history;
+   record an independent clean-builder reproduction when available, or disclose
+   that it was not performed.
 
 After creating the reviewed root commit, the read-only
 `.github/workflows/release-candidate.yml` gate requires the complete public
@@ -102,8 +112,10 @@ Run the same repository-controlled gate locally with:
 ./scripts/tests/publication-tools.sh
 ```
 
-These checks are not the independent secret scan, legal review, clean-builder
-reproduction or outside security review required elsewhere in this document.
+These checks are not an independent secret scan, legal review, clean-builder
+reproduction or outside security review. The status of those separate
+assurance activities must be recorded without implying that repository tooling
+performed them.
 
 The frozen values isolated in `COMPATIBILITY.md` are authenticated protocol and
 release inputs, not permission to publish old operational material or product
@@ -111,21 +123,28 @@ branding.
 
 ## Binary release rule
 
-Do not publish a production binary release until all of these are complete:
+Do not publish an official stable artifact set until all hard release-integrity
+requirements are complete for the exact bytes:
 
 - executed and independently verified software-release and release-policy
-  signatures with recovered, rehearsed key custody;
-- end-to-end qualified verifier-first credential/capability-root rotation,
-  authenticated revocation distribution, floor advancement, exact rollback
-  and record retirement using the implemented source primitives;
+  signatures used by the installers;
 - signed native artifacts, free macOS Homebrew/source-install qualification,
   and Linux service ownership and sandbox qualification; Developer ID
   packaging remains disabled and is not a v1 requirement;
 - clean-host install, boot, reconnect, upgrade, interrupted-apply, rollback,
-  uninstall, and recovery matrices; and
-- independent implementation review and authorized penetration testing.
+  uninstall and recovery checks on every supported platform; and
+- closure or explicit public acceptance of every known Critical or High defect;
+  and
+- an independently verified signed qualification record binding the exact
+  candidate, outer asset inventory, platform results and those dispositions.
 
-Initial enrollment working in source does not close those gates.
+Independent implementation review, authorized penetration testing,
+clean-builder reproduction, legal/name review, key-custody recovery rehearsal
+and operator canary/burn-in are separate assurance or governance activities.
+Their status must be disclosed for the exact release, but absence of an
+external certification is not represented as missing client, connector, relay
+or installer functionality. Actual usable release signatures remain a hard
+requirement; a custody rehearsal does not substitute for them.
 
 `RELEASE_MANIFEST.example.json` is an unsigned illustrative record with
 reserved example locations and placeholder digests. It is not release evidence.

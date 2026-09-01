@@ -219,52 +219,66 @@ func applyResponse(rootPath string, envelope []byte, now time.Time, afterSecretR
 // which durably retained the response before activation but did not yet record
 // its own applied phase. It never decrypts or reapplies the response.
 func ReconcileAppliedResponse(rootPath string, envelope []byte, requestSHA256 string) (ApplyResult, error) {
-	if len(envelope) == 0 || len(envelope) > enrollment.MaxEnvelopeSize || !validDigest(requestSHA256) {
-		return ApplyResult{}, errors.New("enrollmenttarget: bounded response and request binding are required for reconciliation")
+	var result ApplyResult
+	err := WithReconciledAppliedResponse(rootPath, envelope, requestSHA256, func(value ApplyResult) error {
+		result = value
+		return nil
+	})
+	return result, err
+}
+
+// WithReconciledAppliedResponse proves the exact committed response and keeps
+// the target lifecycle lock held while operation consumes its immutable apply
+// receipt. This is the narrow linearization gate used by READY: a concurrent
+// policy, rollback, recovery, rotation, or response apply cannot replace the
+// active record between reconciliation and the carrier proof being committed.
+func WithReconciledAppliedResponse(rootPath string, envelope []byte, requestSHA256 string, operation func(ApplyResult) error) error {
+	if len(envelope) == 0 || len(envelope) > enrollment.MaxEnvelopeSize || !validDigest(requestSHA256) || operation == nil {
+		return errors.New("enrollmenttarget: bounded response, request binding, and reconciliation operation are required")
 	}
 	root, err := securefs.OpenRoot(rootPath)
 	if err != nil {
-		return ApplyResult{}, err
+		return err
 	}
 	defer root.Close()
 	lock, err := root.TryLock(lockFile)
 	if err != nil {
-		return ApplyResult{}, err
+		return err
 	}
 	defer lock.Close()
 	state, _, err := readAnchoredState(root)
 	if err != nil {
-		return ApplyResult{}, err
+		return err
 	}
 	if state.PendingRequest != nil || state.ActiveRecordID == "" {
-		return ApplyResult{}, errors.New("enrollmenttarget: response has not been committed")
+		return errors.New("enrollmenttarget: response has not been committed")
 	}
 	recordName, err := recordDirectoryName(state.ActiveRecordID)
 	if err != nil {
-		return ApplyResult{}, err
+		return err
 	}
 	record, err := root.OpenDir(recordName)
 	if err != nil {
-		return ApplyResult{}, err
+		return err
 	}
 	defer record.Close()
 	manifest, _, err := readAndVerifyRecord(record, state)
 	if err != nil {
-		return ApplyResult{}, err
+		return err
 	}
 	digest := sha256.Sum256(envelope)
 	if manifest.RequestSHA256 != requestSHA256 || manifest.AppliedResponseSHA256 != hex.EncodeToString(digest[:]) {
-		return ApplyResult{}, errors.New("enrollmenttarget: active record does not bind the exact retained response")
+		return errors.New("enrollmenttarget: active record does not bind the exact retained response")
 	}
 	if err := record.UnlinkFile(responseIdentityFile); err != nil {
 		if !errors.Is(err, unix.ENOENT) {
-			return ApplyResult{}, err
+			return err
 		}
 	}
-	return ApplyResult{
+	return operation(ApplyResult{
 		Role: manifest.Role, InstallationID: manifest.InstallationID, RecordID: manifest.RecordID,
 		DeploymentSequence: manifest.DeploymentSequence, CredentialEpoch: manifest.CredentialSequence,
 		RequestSHA256: manifest.RequestSHA256, StateGeneration: state.StateGeneration,
 		OneTimeSecretRemoved: true,
-	}, nil
+	})
 }

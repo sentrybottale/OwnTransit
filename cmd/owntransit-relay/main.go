@@ -30,6 +30,7 @@ type relayCommands struct {
 	checkRuntime func(string, string, int) error
 	run          func(string, io.Writer) error
 	runRuntime   func(string, string, int, io.Writer) error
+	runExchange  func(string, io.Writer) error
 }
 
 type relayRuntimeSource struct {
@@ -58,6 +59,7 @@ func productionRelayCommands() relayCommands {
 		checkRuntime: checkRelayRuntime,
 		run:          runRelay,
 		runRuntime:   runRelayRuntime,
+		runExchange:  runRelayExchange,
 	}
 }
 
@@ -66,7 +68,7 @@ func executeRelay(arguments []string, output, diagnostics io.Writer, commands re
 	commandArguments := arguments
 	if len(arguments) > 0 {
 		switch arguments[0] {
-		case "version", "check-config", "run":
+		case "version", "check-config", "run", "exchange":
 			command = arguments[0]
 			commandArguments = arguments[1:]
 		}
@@ -135,9 +137,66 @@ func executeRelay(arguments []string, output, diagnostics io.Writer, commands re
 			return 1
 		}
 		return 0
+	case "exchange":
+		allocationHash, code, ok := parseRelayExchangeArguments(commandArguments, diagnostics)
+		if !ok {
+			return code
+		}
+		if commands.runExchange == nil {
+			fmt.Fprintln(diagnostics, "owntransit-relay exchange: bootstrap exchange is unavailable")
+			return 1
+		}
+		if err := commands.runExchange(allocationHash, diagnostics); err != nil {
+			fmt.Fprintf(diagnostics, "owntransit-relay exchange: %v\n", err)
+			return 1
+		}
+		return 0
 	default:
 		panic("unreachable relay command")
 	}
+}
+
+func parseRelayExchangeArguments(arguments []string, diagnostics io.Writer) (string, int, bool) {
+	flags := flag.NewFlagSet("owntransit-relay exchange", flag.ContinueOnError)
+	flags.SetOutput(diagnostics)
+	var allocationHash relayExchangeHashFlag
+	flags.Var(&allocationHash, "allocation-sha256", "relay-visible SHA-256 of the protected courier allocation credential")
+	if err := flags.Parse(arguments); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return "", 0, false
+		}
+		return "", 2, false
+	}
+	if flags.NArg() != 0 || !allocationHash.set || allocationHash.value == "" {
+		fmt.Fprintln(diagnostics, "owntransit-relay exchange: exactly one -allocation-sha256 is required")
+		return "", 2, false
+	}
+	probe, err := enrollmentexchange.NewExchangeHandler(enrollmentexchange.NewMailboxStore(), allocationHash.value)
+	if err != nil || probe == nil {
+		fmt.Fprintln(diagnostics, "owntransit-relay exchange: -allocation-sha256 is invalid")
+		return "", 2, false
+	}
+	return allocationHash.value, 0, true
+}
+
+type relayExchangeHashFlag struct {
+	value string
+	set   bool
+}
+
+func (value *relayExchangeHashFlag) String() string {
+	if value == nil {
+		return ""
+	}
+	return value.value
+}
+
+func (value *relayExchangeHashFlag) Set(next string) error {
+	if value == nil || value.set {
+		return errors.New("allocation hash may be specified only once")
+	}
+	value.value, value.set = next, true
+	return nil
 }
 
 func parseRelayConfigArguments(command string, arguments []string, diagnostics io.Writer) (relayRuntimeSource, int, bool) {
@@ -212,6 +271,41 @@ func runRelayRuntime(runtimeRoot, anchorViewRoot string, readerGID int, diagnost
 	return serveRelay(value, service, diagnostics, handle.FinalCheck)
 }
 
+// runRelayExchange exposes only the existing bounded opaque enrollment
+// mailbox on the packaged relay address. It is the credential-free first-route
+// bootstrap mode: it has no carrier service, endpoint key, issuer, signer,
+// target selector, persistence, or enrollment authority. The reverse proxy
+// keeps the container listener host-loopback-only exactly like the full relay.
+func runRelayExchange(allocationCapabilitySHA256 string, diagnostics io.Writer) error {
+	exchange, err := enrollmentexchange.NewContainerExchangeHandler(
+		enrollmentexchange.NewMailboxStore(),
+		allocationCapabilitySHA256,
+	)
+	if err != nil {
+		return fmt.Errorf("initialize bootstrap enrollment exchange: %w", err)
+	}
+	root, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	return serveRelayHTTP(
+		root,
+		enrollment.PackagedRelayListen,
+		bootstrapExchangeHandler(root, exchange),
+		diagnostics,
+		"owntransit-relay: bootstrap exchange ready",
+		nil,
+	)
+}
+
+func bootstrapExchangeHandler(root context.Context, exchange *enrollmentexchange.ExchangeHandler) http.Handler {
+	return http.HandlerFunc(func(output http.ResponseWriter, request *http.Request) {
+		if exchange == nil || !exactRelayRequest(request, config.RelayPath+"/enrollment") {
+			http.NotFound(output, request)
+			return
+		}
+		exchange.Serve(root, output, request)
+	})
+}
+
 func prepareRelayRuntime(runtimeRoot, anchorViewRoot string, readerGID int) (*enrollmenttarget.RuntimeGenerationHandle, config.Relay, *relay.Service, error) {
 	handle, err := enrollmenttarget.OpenRuntimeGeneration(runtimeRoot, anchorViewRoot, readerGID, enrollment.RoleRelay)
 	if err != nil {
@@ -233,14 +327,13 @@ func prepareRelayRuntime(runtimeRoot, anchorViewRoot string, readerGID int) (*en
 }
 
 func serveRelay(value config.Relay, service *relay.Service, diagnostics io.Writer, finalCheck func() error) error {
-
 	root, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	carrierSlots := make(chan struct{}, value.Limits.CarrierGlobal())
 	var exchange *enrollmentexchange.ExchangeHandler
 	if value.EnrollmentAllocationCapabilitySHA256 != "" {
 		var err error
-		exchange, err = enrollmentexchange.NewExchangeHandler(
+		exchange, err = enrollmentexchange.NewContainerExchangeHandler(
 			enrollmentexchange.NewMailboxStore(),
 			value.EnrollmentAllocationCapabilitySHA256,
 		)
@@ -268,8 +361,19 @@ func serveRelay(value config.Relay, service *relay.Service, diagnostics io.Write
 		service.Handle(root, carrier)
 	})
 
+	return serveRelayHTTP(root, value.Listen, handler, diagnostics, "owntransit-relay: ready", finalCheck)
+}
+
+func serveRelayHTTP(
+	root context.Context,
+	address string,
+	handler http.Handler,
+	diagnostics io.Writer,
+	readyMessage string,
+	finalCheck func() error,
+) error {
 	server := &http.Server{
-		Addr:              value.Listen,
+		Addr:              address,
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       30 * time.Second,
@@ -279,17 +383,22 @@ func serveRelay(value config.Relay, service *relay.Service, diagnostics io.Write
 			return root
 		},
 	}
-	errorChannel := make(chan error, 1)
-	// ListenAndServe is the first network action for a state-backed relay.
+	// Binding is the first network action for a state-backed relay. It is
+	// synchronous so a port conflict can never emit a false readiness message.
 	if finalCheck != nil {
 		if err := finalCheck(); err != nil {
 			return err
 		}
 	}
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return fmt.Errorf("listen: %w", err)
+	}
+	errorChannel := make(chan error, 1)
 	go func() {
-		errorChannel <- server.ListenAndServe()
+		errorChannel <- server.Serve(listener)
 	}()
-	fmt.Fprintln(diagnostics, "owntransit-relay: ready")
+	fmt.Fprintln(diagnostics, readyMessage)
 
 	select {
 	case <-root.Done():

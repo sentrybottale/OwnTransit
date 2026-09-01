@@ -1,0 +1,48 @@
+[Unit]
+Description=OwnTransit temporary first-route enrollment exchange
+Documentation=https://github.com/sentrybottale/owntransit
+Wants=network-online.target
+After=network-online.target
+Conflicts=owntransit-relay.service
+Before=owntransit-relay.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+ConditionPathExists=/etc/owntransit/relay-container.env
+ConditionPathExists=!/var/lib/owntransit/package-supervisor/relay.intent
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/owntransit/relay-container.env
+UMask=0077
+WorkingDirectory=/
+ExecStartPre=/usr/bin/podman image exists ${OWNTRANSIT_RELAY_IMAGE}
+ExecStart=/usr/bin/podman run --rm --name=owntransit-relay-exchange --pull=never --read-only --cap-drop=all --security-opt=no-new-privileges --pids-limit=128 --memory=256m --env=GOMEMLIMIT=192MiB --user ${OWNTRANSIT_RELAY_UID}:${OWNTRANSIT_RELAY_READER_GID} --network=bridge --publish=127.0.0.1:9087:9087/tcp --log-driver=journald ${OWNTRANSIT_RELAY_IMAGE} exchange --allocation-sha256=%i
+ExecStop=/usr/bin/podman stop --ignore --time=10 owntransit-relay-exchange
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=30s
+TimeoutStopSec=20s
+KillSignal=SIGTERM
+KillMode=mixed
+StandardOutput=null
+StandardError=journal
+SyslogIdentifier=owntransit-relay-exchange
+
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+InaccessiblePaths=/var/lib/owntransit
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+TasksMax=256
+LimitNOFILE=4096
+MemoryMax=512M
+OOMPolicy=stop
+Delegate=yes

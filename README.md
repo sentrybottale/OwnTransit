@@ -2,13 +2,16 @@
 
 **Your SSH. Your keys. Untrusted transit.**
 
-> [!WARNING]
-> This tree is the OwnTransit v1 release candidate, not a production release.
-> The tunnel, guided client enrollment, signed continuity, native lifecycle,
-> deterministic release evidence and installer boundaries are implemented in
-> source. Real clean-host/reboot qualification, an actual signed release and key
-> ceremony, recovery drills, and independent security review are still release
-> gates. Do not make this candidate your only access or recovery path.
+> [!IMPORTANT]
+> OwnTransit 0.1.0 is the candidate release line for Apple-silicon macOS and
+> Linux amd64 within the SSH-only boundary described here. The repository can
+> build a signed, installable candidate handoff, but that handoff is not an
+> official stable release until its exact assets and policy are authenticated,
+> its signed qualification record reports every hard release gate as passed,
+> and that record is independently verified. This checkout does not claim that
+> those platform gates passed or that an independent external security
+> certification exists. Keep an operator-owned alternative access and recovery
+> path throughout qualification and deployment canarying.
 
 ## Installed operator experience
 
@@ -127,13 +130,27 @@ client exchange:
 - a carrier-only `READY` proof followed by local-authoritative retirement of
   one-time mailbox and response authority.
 
+For a brand-new deployment, the authenticated relay artifact first runs in a
+temporary **exchange-only** mode. That mode exposes only the fixed bounded
+opaque enrollment mailbox on `/connects/enrollment`; it has no carrier,
+endpoint credentials, runtime state, issuer, signer, persistence, or target
+selection. After the client has durably applied its bound response, the
+operator replaces that process with the enrolled relay on the same loopback
+port, starts the connector, and the client resumes to authenticated `READY`.
+The relay remains untrusted throughout both phases.
+
+The 0.1.0 initial-route workflow installs exactly one relay, one connector,
+one route, and one client. Adding another client to an existing route is not
+implemented in 0.1.0; route rotation is not a substitute for client
+enrollment. This limit is fail-closed and documented in the roadmap.
+
 The machines move only opaque encrypted requests and responses. The invitation
 is the only setup file the client recipient handles. They never manually move
 generated keys, certificates, enrollment requests, enrollment responses or
 runtime configuration, and OwnTransit never edits their SSH configuration.
 The words are only a human view of a full transcript digest; they never
 authorize enrollment. The relay remains an opaque hostile mailbox. The exact
-protocol and remaining external review gates are documented in
+protocol and disclosed external-review status are documented in
 [ENROLLMENT_EXCHANGE.md](ENROLLMENT_EXCHANGE.md).
 
 ## What OwnTransit does not own
@@ -150,7 +167,7 @@ OwnTransit is not a VPN, TUN interface, subnet router, DNS layer, service mesh,
 identity provider, dashboard, general reverse proxy or remotely managed policy
 plane.
 
-## V1 release-candidate artifacts
+## OwnTransit 0.1.0 artifact contract
 
 - `owntransit` for macOS arm64 and Linux amd64;
 - `owntransit-connector` for Linux amd64, compiled only for the fixed SSH
@@ -179,8 +196,8 @@ byte-exact boundary is documented in [COMPATIBILITY.md](COMPATIBILITY.md).
 Read [ARCHITECTURE.md](ARCHITECTURE.md), [SECURITY.md](SECURITY.md),
 [COMPATIBILITY.md](COMPATIBILITY.md), [CREDENTIALS.md](CREDENTIALS.md) and
 [ENROLLMENT_EXCHANGE.md](ENROLLMENT_EXCHANGE.md)
-before evaluating the design. Shipment gates
-are tracked in [ROADMAP.md](ROADMAP.md) and
+before evaluating the design. Release integrity requirements and additional
+assurance work are tracked in [ROADMAP.md](ROADMAP.md) and
 [OWNTRANSIT_SHIPPING_PLAN.md](OWNTRANSIT_SHIPPING_PLAN.md). The immutable
 handoff and exit criteria for the required outside assessment are in
 [SECURITY_REVIEW.md](SECURITY_REVIEW.md). Candidate freeze, versioning,

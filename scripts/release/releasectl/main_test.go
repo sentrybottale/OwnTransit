@@ -35,6 +35,38 @@ func TestPublicKeyIDPrintsCanonicalParsedKeyIdentity(t *testing.T) {
 	}
 }
 
+func TestManifestAuthenticatesTheInstallEntrypoint(t *testing.T) {
+	var matches int
+	for _, evidence := range manifestPackageEvidence() {
+		if evidence.Name != "package-install-entrypoint" {
+			continue
+		}
+		matches++
+		if evidence.File != "packaging/scripts/install.sh" || evidence.Kind != "package-payload" {
+			t.Fatalf("install entrypoint evidence = %+v", evidence)
+		}
+	}
+	if matches != 1 {
+		t.Fatalf("install entrypoint evidence count = %d, want 1", matches)
+	}
+}
+
+func TestManifestAuthenticatesTheRelayBootstrapExchangeUnit(t *testing.T) {
+	var matches int
+	for _, evidence := range manifestPackageEvidence() {
+		if evidence.Name != "systemd-relay-exchange" {
+			continue
+		}
+		matches++
+		if evidence.File != "packaging/systemd/owntransit-relay-exchange-template.service" || evidence.Kind != "package-payload" {
+			t.Fatalf("relay bootstrap exchange unit evidence = %+v", evidence)
+		}
+	}
+	if matches != 1 {
+		t.Fatalf("relay bootstrap exchange unit evidence count = %d, want 1", matches)
+	}
+}
+
 func TestCandidateInitCreatesStrictQualificationLedgerFromGit(t *testing.T) {
 	repository := newCandidateTestRepository(t)
 	output := filepath.Join(t.TempDir(), "candidate.json")
@@ -91,6 +123,27 @@ func TestCandidateInitCreatesStrictQualificationLedgerFromGit(t *testing.T) {
 	}
 }
 
+func TestCandidateInitAcceptsStableVersion(t *testing.T) {
+	repository := newCandidateTestRepository(t)
+	output := filepath.Join(t.TempDir(), "candidate.json")
+	arguments := replaceCandidateOption(validCandidateArguments(output), "--version", "1.0.0")
+	if err := candidateInitAt(arguments, io.Discard, repository); err != nil {
+		t.Fatalf("candidateInitAt stable version: %v", err)
+	}
+
+	encoded, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ledger, err := parseCandidateLedger(encoded)
+	if err != nil {
+		t.Fatalf("parse stable candidate ledger: %v", err)
+	}
+	if ledger.Version != "1.0.0" {
+		t.Fatalf("stable candidate version = %q, want 1.0.0", ledger.Version)
+	}
+}
+
 func TestCandidateInitNeverOverwritesLedger(t *testing.T) {
 	repository := newCandidateTestRepository(t)
 	output := filepath.Join(t.TempDir(), "candidate.json")
@@ -120,12 +173,19 @@ func TestCandidateInitRejectsInvalidInputs(t *testing.T) {
 		option string
 		value  string
 	}{
-		{name: "stable version", option: "--version", value: "0.1.0"},
 		{name: "leading major zero", option: "--version", value: "01.1.0-rc.1"},
 		{name: "leading minor zero", option: "--version", value: "0.01.0-rc.1"},
 		{name: "leading patch zero", option: "--version", value: "0.1.00-rc.1"},
+		{name: "stable leading major zero", option: "--version", value: "01.1.0"},
+		{name: "stable leading minor zero", option: "--version", value: "0.01.0"},
+		{name: "stable leading patch zero", option: "--version", value: "0.1.00"},
 		{name: "zero rc", option: "--version", value: "0.1.0-rc.0"},
 		{name: "leading rc zero", option: "--version", value: "0.1.0-rc.01"},
+		{name: "unsupported alpha prerelease", option: "--version", value: "0.1.0-alpha.1"},
+		{name: "unsupported beta prerelease", option: "--version", value: "0.1.0-beta.1"},
+		{name: "missing rc number", option: "--version", value: "0.1.0-rc"},
+		{name: "extended rc prerelease", option: "--version", value: "0.1.0-rc.1.1"},
+		{name: "build metadata", option: "--version", value: "0.1.0+build.1"},
 		{name: "release sequence zero", option: "--release-sequence", value: "0"},
 		{name: "policy sequence zero", option: "--policy-sequence", value: "0"},
 		{name: "release floor zero", option: "--release-floor", value: "0"},
@@ -177,6 +237,19 @@ func TestCandidateVerifyBindsCanonicalLedgerBundleAndPolicy(t *testing.T) {
 	}
 }
 
+func TestCandidateVerifyAcceptsStableVersion(t *testing.T) {
+	fixture := newCandidateVerifyFixtureWithVersion(t, "1.0.0")
+	var output bytes.Buffer
+	if err := candidateVerifyCommand(validCandidateVerifyArguments(fixture.candidate, fixture.bundle, fixture.source), &output); err != nil {
+		t.Fatalf("candidateVerifyCommand stable version: %v", err)
+	}
+	want := "verified qualification-only candidate version=1.0.0 release_id=" + fixture.ledger.ReleaseID +
+		" release_sequence=1 policy_sequence=1 minimum_release_sequence=1 minimum_lifecycle=1 source_commit=" + fixture.ledger.SourceCommit + " source_date_epoch=1700000000\n"
+	if output.String() != want {
+		t.Fatalf("stable candidate-verify output = %q, want %q", output.String(), want)
+	}
+}
+
 func TestCandidateVerifyRejectsLedgerTampering(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -188,7 +261,7 @@ func TestCandidateVerifyRejectsLedgerTampering(t *testing.T) {
 		}},
 		{name: "noncanonical whitespace", mutate: func(value string) string { return " " + value }},
 		{name: "wrong status", mutate: func(value string) string { return strings.Replace(value, candidateLedgerStatus, "production", 1) }},
-		{name: "stable version", mutate: func(value string) string { return strings.Replace(value, "0.1.0-rc.1", "0.1.0", 1) }},
+		{name: "unsupported prerelease", mutate: func(value string) string { return strings.Replace(value, "0.1.0-rc.1", "0.1.0-beta.1", 1) }},
 		{name: "zero release ID", mutate: func(value string) string {
 			return strings.Replace(value, candidateVerifyReleaseID(1), strings.Repeat("a", protocol.EncodedIDSize), 1)
 		}},
@@ -220,6 +293,9 @@ func TestCandidateVerifyRejectsBuildInputTampering(t *testing.T) {
 	}{
 		{name: "version", mutate: func(value string) string {
 			return strings.Replace(value, "version=0.1.0-rc.1", "version=0.1.0-rc.2", 1)
+		}},
+		{name: "unsupported prerelease", mutate: func(value string) string {
+			return strings.Replace(value, "version=0.1.0-rc.1", "version=0.1.0-beta.1", 1)
 		}},
 		{name: "release ID", mutate: func(value string) string {
 			return strings.Replace(value, candidateVerifyReleaseID(1), candidateVerifyReleaseID(2), 1)
@@ -348,6 +424,10 @@ type candidateVerifyFixture struct {
 }
 
 func newCandidateVerifyFixture(t *testing.T) candidateVerifyFixture {
+	return newCandidateVerifyFixtureWithVersion(t, "0.1.0-rc.1")
+}
+
+func newCandidateVerifyFixtureWithVersion(t *testing.T, version string) candidateVerifyFixture {
 	t.Helper()
 	root := t.TempDir()
 	source := newCandidateTestRepository(t)
@@ -356,7 +436,7 @@ func newCandidateVerifyFixture(t *testing.T) candidateVerifyFixture {
 		t.Fatal(err)
 	}
 	ledger := candidateLedger{
-		Schema: candidateLedgerSchema, Status: candidateLedgerStatus, Version: "0.1.0-rc.1",
+		Schema: candidateLedgerSchema, Status: candidateLedgerStatus, Version: version,
 		ReleaseID: candidateVerifyReleaseID(1), ReleaseSequence: 1, PolicySequence: 1,
 		MinimumReleaseSequence: 1, MinimumLifecycle: 1,
 		SourceCommit: candidateTestGitOutput(t, source, "rev-parse", "--verify", "HEAD^{commit}"), SourceDateEpoch: candidateTestTimestamp,
@@ -370,7 +450,7 @@ func newCandidateVerifyFixture(t *testing.T) candidateVerifyFixture {
 	if err := os.WriteFile(candidate, encoded, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	buildInputs := "version=0.1.0-rc.1\n" +
+	buildInputs := "version=" + version + "\n" +
 		"release_id=" + ledger.ReleaseID + "\n" +
 		"release_sequence=1\n" +
 		"source_commit=" + ledger.SourceCommit + "\n" +

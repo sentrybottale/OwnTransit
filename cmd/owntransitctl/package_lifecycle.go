@@ -55,7 +55,7 @@ func parsePackageApplyArguments(arguments []string, diagnostics io.Writer) (pack
 	flags := flag.NewFlagSet("owntransitctl package-apply", flag.ContinueOnError)
 	flags.SetOutput(diagnostics)
 	var options packageApplyOptions
-	flags.StringVar(&options.role, "role", "", "local package role: client, connector, or relay")
+	flags.StringVar(&options.role, "role", "", "local package role: client, connector, relay, or provisioner")
 	flags.StringVar(&options.bundleRoot, "bundle", "", "absolute protected signed release bundle root")
 	flags.StringVar(&options.manifestPath, "manifest", "", "signed software release manifest")
 	flags.StringVar(&options.manifestSigPath, "manifest-signature", "", "software release manifest signature")
@@ -84,7 +84,7 @@ func parsePackageApplyArguments(arguments []string, diagnostics io.Writer) (pack
 		}
 	}
 	if !validPackageRole(options.role) {
-		fmt.Fprintln(diagnostics, "owntransitctl package-apply: -role must be client, connector, or relay")
+		fmt.Fprintln(diagnostics, "owntransitctl package-apply: -role must be client, connector, relay, or provisioner")
 		return packageApplyOptions{}, 2, false
 	}
 	return options, 0, true
@@ -94,7 +94,7 @@ func parsePackageRollbackArguments(arguments []string, diagnostics io.Writer) (p
 	flags := flag.NewFlagSet("owntransitctl package-rollback", flag.ContinueOnError)
 	flags.SetOutput(diagnostics)
 	var options packageRollbackOptions
-	flags.StringVar(&options.role, "role", "", "local package role: client, connector, or relay")
+	flags.StringVar(&options.role, "role", "", "local package role: client, connector, relay, or provisioner")
 	flags.StringVar(&options.toReleaseID, "to-release", "", "exact retained previous release ID")
 	if err := flags.Parse(arguments); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -113,7 +113,7 @@ func parsePackageStateArguments(command string, arguments []string, diagnostics 
 	flags := flag.NewFlagSet("owntransitctl "+command, flag.ContinueOnError)
 	flags.SetOutput(diagnostics)
 	var options packageStateOptions
-	flags.StringVar(&options.role, "role", "", "local package role: client, connector, or relay")
+	flags.StringVar(&options.role, "role", "", "local package role: client, connector, relay, or provisioner")
 	if err := flags.Parse(arguments); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return packageStateOptions{}, 0, false
@@ -121,7 +121,7 @@ func parsePackageStateArguments(command string, arguments []string, diagnostics 
 		return packageStateOptions{}, 2, false
 	}
 	if flags.NArg() != 0 || !validPackageRole(options.role) {
-		fmt.Fprintf(diagnostics, "owntransitctl %s: -role must be client, connector, or relay\n", command)
+		fmt.Fprintf(diagnostics, "owntransitctl %s: -role must be client, connector, relay, or provisioner\n", command)
 		return packageStateOptions{}, 2, false
 	}
 	return options, 0, true
@@ -269,11 +269,13 @@ func roleRuntimeName(role string) (string, error) {
 		return "owntransit-connector", nil
 	case "relay":
 		return "owntransit-relay.oci.tar", nil
+	case "provisioner":
+		return "owntransit-provision", nil
 	default:
-		return "", errors.New("package role must be client, connector, or relay")
+		return "", errors.New("package role must be client, connector, relay, or provisioner")
 	}
 }
 
 func validPackageRole(role string) bool {
-	return role == "client" || role == "connector" || role == "relay"
+	return role == "client" || role == "connector" || role == "relay" || role == "provisioner"
 }

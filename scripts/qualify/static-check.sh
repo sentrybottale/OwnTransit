@@ -50,7 +50,8 @@ require_text packaging/homebrew/owntransit.rb.in 'assert_predicate pkgshare/"LIC
 require_text packaging/homebrew/owntransit.rb.in 'assert_predicate pkgshare/"THIRD_PARTY_NOTICES.md", :file?'
 require_text packaging/homebrew/owntransit.rb.in 'intentionally does not install owntransitctl'
 require_text packaging/homebrew/owntransit.rb.in '/Library/OwnTransit/roles/client/current/owntransitctl'
-require_text packaging/homebrew/owntransit.rb.in 'implemented but have not passed'
+require_text packaging/homebrew/owntransit.rb.in 'signed qualification record reports PASS'
+require_text packaging/homebrew/owntransit.rb.in 'any hard gate is not PASS'
 if grep -Fq './cmd/owntransitctl' packaging/homebrew/owntransit.rb.in ||
    grep -Fq 'bin/"owntransitctl"' packaging/homebrew/owntransit.rb.in; then
   fail 'Homebrew formula must not build, install, or test a Cellar lifecycle executable'
@@ -74,6 +75,32 @@ require_text scripts/qualify/linux-amd64-vm.sh 'connector unlinked published mat
 require_text scripts/qualify/linux-amd64-vm.sh 'connector chown succeeded on published material'
 require_text scripts/qualify/linux-amd64-vm.sh 'private lifecycle root is not root:root 0700'
 require_text scripts/qualify/linux-amd64-vm.sh 'runtime view root is not root:reader 0750'
+require_text scripts/qualify/README.md 'owntransit-relay-exchange@.service'
+require_text scripts/qualify/README.md '`podman port owntransit-relay-exchange 9087/tcp`'
+require_text scripts/qualify/README.md '`127.0.0.1:9087`'
+require_text scripts/qualify/README.md 'at least one create/read-or-write mailbox'
+require_text scripts/qualify/README.md "Probe the host's non-loopback"
+require_text scripts/qualify/README.md 'NATIVE-SHA256SUMS.sig'
+require_text scripts/qualify/README.md 'OWNTRANSIT_RELAY_EXCHANGE_DISPOSABLE=1'
+require_text scripts/qualify/linux-relay-exchange.sh 'OWNTRANSIT_RELAY_EXCHANGE_DISPOSABLE=1'
+require_text scripts/qualify/linux-relay-exchange.sh '--native-checksums-signature'
+require_text scripts/qualify/linux-relay-exchange.sh 'require_protected_bundle_descendants'
+require_text scripts/qualify/linux-relay-exchange.sh 'require_protected_ancestor_chain "$trust_input"'
+require_text scripts/qualify/linux-relay-exchange.sh 'stage_executable "$bundle/artifacts/owntransit-linux-amd64"'
+require_text scripts/qualify/linux-relay-exchange.sh '"$installed_lifecycle" package-apply'
+require_text scripts/qualify/linux-relay-exchange.sh '"idempotent":true'
+require_text scripts/qualify/linux-relay-exchange.sh 'relay endpoint state already exists; qualification requires a pristine un-enrolled role'
+require_text scripts/qualify/linux-relay-exchange.sh 'one-time disposable marker was not consumed'
+require_text scripts/qualify/linux-relay-exchange.sh "podman info --format '{{.Host.Security.Rootless}}'"
+require_text scripts/qualify/linux-relay-exchange.sh "podman info --format '{{.Host.ServiceIsRemote}}'"
+require_text scripts/qualify/linux-relay-exchange.sh 'podman port owntransit-relay-exchange 9087/tcp'
+require_text scripts/qualify/linux-relay-exchange.sh 'test "$non_loopback_result" -eq 7'
+require_text scripts/qualify/linux-relay-exchange.sh 'courier-register --registration'
+require_text scripts/qualify/linux-relay-exchange.sh 'courier-upload-response --registration'
+require_text scripts/qualify/linux-relay-exchange.sh 'mailbox accepted a conflicting second opaque response'
+require_text scripts/qualify/linux-relay-exchange.sh '"target_response_read_qualified":false'
+require_text scripts/qualify/linux-relay-exchange.sh '"endpoint_recorded":false'
+require_text scripts/qualify/linux-relay-exchange.sh '"$uninstaller" --role relay --release-id "$release_id"'
 require_text packaging/macos/README.md 'rejects every extended ACL and fails'
 require_text scripts/qualify/macos-client-boundary.sh '--client-user'
 require_text scripts/qualify/macos-client-boundary.sh '--reader-gid'
@@ -131,6 +158,12 @@ if client_pkg_output=$(packaging/macos/package-pkg.sh --mode unsigned --role cli
 fi
 printf '%s\n' "$client_pkg_output" | grep -Fq 'client .pkg generation is disabled' ||
   fail 'macOS package tool did not fail client generation at the reader-identity boundary'
+
+if provisioner_pkg_output=$(packaging/macos/package-pkg.sh --mode unsigned --role provisioner 2>&1); then
+  fail 'macOS package tool emitted a provisioner package outside the manager-bound release transaction'
+fi
+printf '%s\n' "$provisioner_pkg_output" | grep -Fq 'provisioner .pkg generation is disabled' ||
+  fail 'macOS package tool did not fail provisioner generation at the manager-bound package boundary'
 
 if developer_pkg_output=$(packaging/macos/package-pkg.sh --mode developer-id --role provisioner 2>&1); then
   fail 'macOS package tool accepted the unauthenticated Developer ID output lane'

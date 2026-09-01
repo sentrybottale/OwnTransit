@@ -53,12 +53,14 @@ evidence/owntransit-relay-linux-amd64.oci.tar.spdx.json
 evidence/owntransitctl-darwin-arm64.spdx.json
 evidence/owntransitctl-linux-amd64.spdx.json
 packaging/launchd/README.md
+packaging/scripts/install.sh
 packaging/scripts/install-linux.sh
 packaging/scripts/install-macos.sh
 packaging/scripts/uninstall-linux.sh
 packaging/scripts/uninstall-macos.sh
 packaging/systemd/README.md
 packaging/systemd/owntransit-connector.service
+packaging/systemd/owntransit-relay-exchange-template.service
 packaging/systemd/owntransit-relay.service
 EOF
 }
@@ -270,6 +272,7 @@ signer="$project_root/scripts/release/sign-candidate.sh"
 invoke_signer() {
   selected_policy_public=$1
   selected_output=$2
+  selected_allowed_signers=${3:-$workspace/keys/allowed_signers}
   "$signer" \
     --bundle "$bundle" \
     --candidate "$candidate" \
@@ -280,7 +283,7 @@ invoke_signer() {
     --policy-public-key "$selected_policy_public" \
     --distribution-key "$distribution_key" \
     --distribution-public-key "$distribution_public_key" \
-    --allowed-signers "$workspace/keys/allowed_signers" \
+    --allowed-signers "$selected_allowed_signers" \
     --source-root "$workspace/source" \
     --version "$version" \
     --source-commit "$source_commit" \
@@ -310,6 +313,29 @@ printf '%s\n' \
   verify-policy \
   verify-bundle > "$expected_releasectl_calls"
 cmp -s "$expected_releasectl_calls" "$workspace/fake-releasectl.calls" || fail "positive conductor did not invoke the exact release/policy component sequence"
+
+extra_allowed_signers="$workspace/keys/allowed_signers-extra"
+{
+  cat "$workspace/keys/allowed_signers"
+  printf '%s\n' "unexpected-release $public_fields"
+} > "$extra_allowed_signers"
+if extra_allowed_output=$(invoke_signer "$workspace/keys/policy-public.pem" "$workspace/output-parent/rejected-extra-allowed" "$extra_allowed_signers" 2>&1); then
+  fail "signing conductor accepted an extra bootstrap authority"
+fi
+printf '%s\n' "$extra_allowed_output" | grep -Fq 'allowed-signers must contain exactly the two canonical v1 principals' ||
+  fail "extra bootstrap authority was rejected for the wrong reason"
+test ! -e "$workspace/output-parent/rejected-extra-allowed" || fail "rejected extra-authority output was created"
+
+ssh-keygen -q -t ed25519 -N '' -f "$workspace/keys/other-distribution"
+other_public_fields=$(awk '{print $1 " " $2}' "$workspace/keys/other-distribution.pub")
+wrong_source_allowed_signers="$workspace/keys/allowed_signers-wrong-source"
+printf '%s\n' "owntransit-release $public_fields" "owntransit-source $other_public_fields" > "$wrong_source_allowed_signers"
+if wrong_source_output=$(invoke_signer "$workspace/keys/policy-public.pem" "$workspace/output-parent/rejected-wrong-source" "$wrong_source_allowed_signers" 2>&1); then
+  fail "signing conductor accepted a source principal under another key"
+fi
+printf '%s\n' "$wrong_source_output" | grep -Fq 'allowed-signers source principal is not bound to the distribution public key' ||
+  fail "wrong source bootstrap authority was rejected for the wrong reason"
+test ! -e "$workspace/output-parent/rejected-wrong-source" || fail "rejected wrong-source output was created"
 
 expected_directories="$workspace/expected-output-directories"
 printf '%s\n' . ./assets ./trust > "$expected_directories"
@@ -342,6 +368,8 @@ cmp -s "$expected_assets" "$actual_assets" || fail "signed handoff has an unexpe
 expected_trust="$workspace/expected-trust"
 printf '%s\n' \
   SHA256SUMS.sig \
+  TRUST-STATEMENT.txt \
+  TRUST-STATEMENT.txt.sig \
   allowed_signers \
   distribution-public.key \
   policy-public.pem \
@@ -369,6 +397,29 @@ outer_checksum_sha256=$(sha256_file "$output/assets/SHA256SUMS")
   --allowed-signers "$output/trust/allowed_signers" \
   --signer owntransit-release \
   --namespace owntransit-release-v1 >/dev/null || fail "outer asset SSHSIG did not verify"
+expected_trust_statement="$workspace/expected-trust-statement"
+printf '%s\n' \
+  'schema=owntransit.release-trust.v1' \
+  'product=owntransit' \
+  "version=$version" \
+  "release_id=$release_id" \
+  "source_commit=$source_commit" \
+  "distribution_public_sha256=$(sha256_file "$output/trust/distribution-public.key")" \
+  "release_public_sha256=$(sha256_file "$output/trust/release-public.pem")" \
+  "policy_public_sha256=$(sha256_file "$output/trust/policy-public.pem")" \
+  "allowed_signers_sha256=$(sha256_file "$output/trust/allowed_signers")" \
+  "outer_sha256sums_sha256=$outer_checksum_sha256" \
+  > "$expected_trust_statement"
+cmp -s "$expected_trust_statement" "$output/trust/TRUST-STATEMENT.txt" || fail "trust statement is not the canonical trust/identity binding"
+trust_statement_sha256=$(sha256_file "$output/trust/TRUST-STATEMENT.txt")
+grep -Fq "trust_statement_sha256=$trust_statement_sha256" "$workspace/sign-candidate.out" || fail "positive conductor did not report the trust-statement handle"
+"$project_root/packaging/macos/verify-sshsig.sh" \
+  --subject "$output/trust/TRUST-STATEMENT.txt" \
+  --sha256 "$trust_statement_sha256" \
+  --signature "$output/trust/TRUST-STATEMENT.txt.sig" \
+  --allowed-signers "$output/trust/allowed_signers" \
+  --signer owntransit-release \
+  --namespace owntransit-trust-v1 >/dev/null || fail "trust statement SSHSIG did not verify"
 
 native_extract="$workspace/native-extract"
 mkdir "$native_extract"

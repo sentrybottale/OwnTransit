@@ -39,6 +39,45 @@ func TestExchangeWireCapabilitiesAreBinaryAndNeverURLMaterial(t *testing.T) {
 	}
 }
 
+func TestExchangeRequestParserBorrowsCapacityBoundedPayload(t *testing.T) {
+	target, operator, _, err := newMailboxExchange("wss://relay.example.com/connects/enrollment")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := make([]byte, MaxBoundResponseSize)
+	payload[0], payload[len(payload)-1] = 0x5a, 0xa5
+	encoded, err := encodeExchangeRequest(actionPutResponse, target.MailboxID, operator.ResponseWriteCapability, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := parseExchangeRequest(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.payload) != MaxBoundResponseSize || cap(parsed.payload) != len(parsed.payload) {
+		t.Fatalf("borrowed payload len=%d cap=%d", len(parsed.payload), cap(parsed.payload))
+	}
+	if &parsed.payload[0] != &encoded[exchangeRequestHeaderSize] {
+		t.Fatal("parser copied the attacker-controlled payload before authorization")
+	}
+
+	store := NewMailboxStore()
+	hash, err := AllocationCapabilitySHA256(operator.ResponseWriteCapability)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := NewExchangeHandler(store, hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handler.perform(parsed); !errors.Is(err, ErrMailboxUnavailable) {
+		t.Fatalf("absent maximum response = %v", err)
+	}
+	if store.storedBytes != 0 || len(store.slots) != 0 {
+		t.Fatalf("rejected maximum response changed store: slots=%d bytes=%d", len(store.slots), store.storedBytes)
+	}
+}
+
 func TestExchangeHandlerRegistersAndCarriesOpaqueExactIdempotentBlobs(t *testing.T) {
 	now, registrationBytes, registration, allocation := exchangeRegistrationFixture(t)
 	store := NewMailboxStore()
@@ -120,7 +159,7 @@ func TestExchangeHTTPShapeRejectsBrowserAliasesAndCleartextNonLoopback(t *testin
 		URL: &urlForExchangeShape, Header: http.Header{"Sec-WebSocket-Protocol": []string{ExchangeWebSocketSubprotocol}},
 		RemoteAddr: "127.0.0.1:1234",
 	}
-	if !exchangeHTTPShape(base.Clone(context.Background())) {
+	if !exchangeHTTPShape(base.Clone(context.Background()), false) {
 		t.Fatal("canonical loopback reverse-proxy request rejected")
 	}
 	checks := []func(*http.Request){
@@ -135,9 +174,41 @@ func TestExchangeHTTPShapeRejectsBrowserAliasesAndCleartextNonLoopback(t *testin
 		value := base.Clone(context.Background())
 		value.URL = cloneURL(base.URL)
 		mutate(value)
-		if exchangeHTTPShape(value) {
+		if exchangeHTTPShape(value, false) {
 			t.Fatalf("unsafe HTTP shape %d accepted", index)
 		}
+	}
+}
+
+func TestContainerExchangeHTTPShapeAdmitsOnlyPrivateBridgeProxyPeers(t *testing.T) {
+	base := &http.Request{
+		Method: http.MethodGet, ProtoMajor: 1, ProtoMinor: 1, Host: "relay.example.com",
+		URL: &urlForExchangeShape, Header: http.Header{"Sec-WebSocket-Protocol": []string{ExchangeWebSocketSubprotocol}},
+	}
+	for _, remote := range []string{"10.88.0.1:1234", "172.17.0.1:1234", "192.168.127.254:1234", "[fd00::1]:1234", "[::ffff:10.88.0.1]:1234"} {
+		request := base.Clone(context.Background())
+		request.RemoteAddr = remote
+		if exchangeHTTPShape(request, false) {
+			t.Fatalf("ordinary exchange handler admitted private proxy %q", remote)
+		}
+		if !exchangeHTTPShape(request, true) {
+			t.Fatalf("container exchange handler rejected private proxy %q", remote)
+		}
+	}
+	for _, remote := range []string{
+		"203.0.113.10:1234", "100.64.0.1:1234", "169.254.1.2:1234", "224.0.0.1:1234",
+		"0.0.0.0:1234", "[fe80::1]:1234", "[ff02::1]:1234", "[fe80::1%eth0]:1234", "10.88.0.1", "invalid",
+	} {
+		request := base.Clone(context.Background())
+		request.RemoteAddr = remote
+		if exchangeHTTPShape(request, true) {
+			t.Fatalf("container exchange handler admitted unsafe proxy %q", remote)
+		}
+	}
+
+	handler, err := NewContainerExchangeHandler(NewMailboxStore(), strings.Repeat("a", 64))
+	if err != nil || !handler.allowPrivateProxyPeer {
+		t.Fatalf("container exchange constructor did not bind private proxy policy: handler=%v err=%v", handler, err)
 	}
 }
 

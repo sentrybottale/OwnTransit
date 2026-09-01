@@ -102,12 +102,12 @@ func TestCTLPackageApplyPassesSignedInputsWithoutCallerSuppliedDigests(t *testin
 		},
 	}
 	code := executeCTL([]string{
-		"package-apply", "--role", "client", "--bundle", "/protected/bundle",
+		"package-apply", "--role", "provisioner", "--bundle", "/protected/bundle",
 		"--manifest", "/trusted/release.json", "--manifest-signature", "/trusted/release.sig",
 		"--release-public-key", "/trusted/release.pem", "--policy", "/trusted/policy.json",
 		"--policy-signature", "/trusted/policy.sig", "--policy-public-key", "/trusted/policy.pem",
 	}, &output, &diagnostics, commands)
-	if code != 0 || diagnostics.Len() != 0 || got.role != "client" || got.bundleRoot != "/protected/bundle" ||
+	if code != 0 || diagnostics.Len() != 0 || got.role != "provisioner" || got.bundleRoot != "/protected/bundle" ||
 		got.releaseKeyPath != "/trusted/release.pem" || got.policyKeyPath != "/trusted/policy.pem" {
 		t.Fatalf("package-apply = %d, options=%+v, stderr=%q", code, got, diagnostics.String())
 	}
@@ -126,16 +126,28 @@ func TestCTLPackageRollbackAndRecoveryAreRoleScoped(t *testing.T) {
 		},
 	}
 	for _, arguments := range [][]string{
-		{"package-rollback", "--role", "connector", "--to-release", "retained-release"},
-		{"package-recover", "--role", "relay"},
+		{"package-rollback", "--role", "provisioner", "--to-release", "retained-release"},
+		{"package-recover", "--role", "provisioner"},
 	} {
 		var output, diagnostics bytes.Buffer
 		if code := executeCTL(arguments, &output, &diagnostics, commands); code != 0 || diagnostics.Len() != 0 {
 			t.Fatalf("executeCTL(%v)=%d stderr=%q", arguments, code, diagnostics.String())
 		}
 	}
-	if rollbackRole != "connector" || rollbackRelease != "retained-release" || recoveryRole != "relay" {
+	if rollbackRole != "provisioner" || rollbackRelease != "retained-release" || recoveryRole != "provisioner" {
 		t.Fatalf("rollback=(%q,%q), recover=%q", rollbackRole, rollbackRelease, recoveryRole)
+	}
+}
+
+func TestProvisionerPackageLifecycleHasNoRuntimeReader(t *testing.T) {
+	if !validPackageRole("provisioner") {
+		t.Fatal("provisioner package role is not accepted")
+	}
+	if name, err := roleRuntimeName("provisioner"); err != nil || name != "owntransit-provision" {
+		t.Fatalf("provisioner runtime name = %q, %v", name, err)
+	}
+	if gid, err := nativePackageReaderGID("provisioner"); err != nil || gid != 0 {
+		t.Fatalf("provisioner package reader GID = %d, %v; want zero", gid, err)
 	}
 }
 

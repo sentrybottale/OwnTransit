@@ -263,8 +263,21 @@ test "$(wc -l < "$distribution_public_key" | tr -d '[:space:]')" -eq 1 || fail "
 read -r public_type public_data public_comment < "$distribution_public_key" || fail "cannot read distribution public key"
 test "$public_type" = "$derived_type" && test "$public_data" = "$derived_data" || fail "distribution private and public keys do not match"
 ssh-keygen -l -f "$distribution_public_key" >/dev/null 2>&1 || fail "distribution public key is invalid"
+expected_release_signer="owntransit-release $public_type $public_data"
+expected_source_signer="owntransit-source $public_type $public_data"
+test "$(wc -l < "$allowed_signers" | tr -d '[:space:]')" -eq 2 ||
+  fail "allowed-signers must contain exactly the two canonical v1 principals"
+test "$(sed -n '1p' "$allowed_signers")" = "$expected_release_signer" ||
+  fail "allowed-signers release principal is not bound to the distribution public key"
+test "$(sed -n '2p' "$allowed_signers")" = "$expected_source_signer" ||
+  fail "allowed-signers source principal is not bound to the distribution public key"
+expected_allowed_signers_size=$(printf '%s\n%s\n' "$expected_release_signer" "$expected_source_signer" | wc -c | tr -d '[:space:]')
+test "$(wc -c < "$allowed_signers" | tr -d '[:space:]')" -eq "$expected_allowed_signers_size" ||
+  fail "allowed-signers is not the exact canonical v1 byte representation"
 derived_distribution_public=
 derived_data=
+expected_release_signer=
+expected_source_signer=
 
 build_inputs="$bundle/BUILD-INPUTS"
 canonical_file "$build_inputs" BUILD-INPUTS
@@ -518,6 +531,32 @@ outer_checksum_digest=$(sha256_file "$publish/assets/SHA256SUMS")
   --signer owntransit-release \
   --namespace owntransit-release-v1 >/dev/null || fail "outer asset checksum verification failed"
 
+trust_statement="$publish/trust/TRUST-STATEMENT.txt"
+printf '%s\n' \
+  'schema=owntransit.release-trust.v1' \
+  'product=owntransit' \
+  "version=$version" \
+  "release_id=$release_id" \
+  "source_commit=$source_commit" \
+  "distribution_public_sha256=$(sha256_file "$trusted_distribution_public")" \
+  "release_public_sha256=$(sha256_file "$trusted_release_public")" \
+  "policy_public_sha256=$(sha256_file "$trusted_policy_public")" \
+  "allowed_signers_sha256=$(sha256_file "$trusted_allowed_signers")" \
+  "outer_sha256sums_sha256=$outer_checksum_digest" \
+  > "$trust_statement"
+ssh-keygen -q -Y sign \
+  -f "$distribution_key" \
+  -n owntransit-trust-v1 \
+  "$trust_statement" <"$key_prompt_input" || fail "trust statement signing failed"
+trust_statement_digest=$(sha256_file "$trust_statement")
+"$project_root/packaging/macos/verify-sshsig.sh" \
+  --subject "$trust_statement" \
+  --sha256 "$trust_statement_digest" \
+  --signature "$trust_statement.sig" \
+  --allowed-signers "$trusted_allowed_signers" \
+  --signer owntransit-release \
+  --namespace owntransit-trust-v1 >/dev/null || fail "trust statement verification failed"
+
 find "$publish" -type d -exec chmod 0755 {} +
 find "$publish/trust" -type f -exec chmod 0644 {} +
 chmod 0644 \
@@ -540,6 +579,14 @@ outer_checksum_digest=$(sha256_file "$publish/assets/SHA256SUMS")
   --allowed-signers "$trusted_allowed_signers" \
   --signer owntransit-release \
   --namespace owntransit-release-v1 >/dev/null || fail "published asset checksum verification failed"
+trust_statement_digest=$(sha256_file "$publish/trust/TRUST-STATEMENT.txt")
+"$project_root/packaging/macos/verify-sshsig.sh" \
+  --subject "$publish/trust/TRUST-STATEMENT.txt" \
+  --sha256 "$trust_statement_digest" \
+  --signature "$publish/trust/TRUST-STATEMENT.txt.sig" \
+  --allowed-signers "$trusted_allowed_signers" \
+  --signer owntransit-release \
+  --namespace owntransit-trust-v1 >/dev/null || fail "published trust statement verification failed"
 test ! -e "$output" && test ! -L "$output" || fail "output appeared before atomic publication"
 mv -- "$publish" "$output" || fail "cannot atomically publish candidate handoff"
 trap - EXIT HUP INT TERM
@@ -549,3 +596,4 @@ printf 'created signed candidate handoff: %s\n' "$output"
 printf 'release_id=%s\n' "$release_id"
 printf 'release_sequence=%s\n' "$release_sequence"
 printf 'source_archive_sha256=%s\n' "$source_archive_sha256"
+printf 'trust_statement_sha256=%s\n' "$trust_statement_digest"

@@ -19,6 +19,7 @@ import (
 	"github.com/sentrybottale/owntransit/internal/enrollmenttarget"
 	"github.com/sentrybottale/owntransit/internal/pki"
 	"github.com/sentrybottale/owntransit/internal/protocol"
+	"github.com/sentrybottale/owntransit/internal/securefs"
 	"github.com/sentrybottale/owntransit/internal/signing"
 )
 
@@ -113,6 +114,200 @@ func TestClientSetupDurablyReachesReadyThenRetiresLocalEnrollmentAuthority(t *te
 	}
 }
 
+func TestOnlyAppliedSetupCanResumeAfterInvitationExpiry(t *testing.T) {
+	fixture := newClientSetupFixture(t)
+	expired := fixture.now.Add(2 * time.Hour)
+
+	appliedClient := fixture.appliedClient(t)
+	state, err := appliedClient.Status(expired)
+	if err != nil || state.Phase() != enrollmentexchange.PhaseApplied {
+		t.Fatalf("expired Applied status phase=%q err=%v", state.Phase(), err)
+	}
+	probeFailure := errors.New("connector unavailable")
+	if _, err := appliedClient.CompleteReady(context.Background(), func(context.Context) error { return probeFailure }, expired); !errors.Is(err, probeFailure) {
+		t.Fatalf("expired Applied failed probe error=%v", err)
+	}
+	if state, err := appliedClient.Status(expired.Add(time.Second)); err != nil || state.Phase() != enrollmentexchange.PhaseApplied {
+		t.Fatalf("failed probe did not retain Applied phase=%q err=%v", state.Phase(), err)
+	}
+	ready, err := appliedClient.CompleteReady(context.Background(), func(context.Context) error { return nil }, expired.Add(2*time.Second))
+	if err != nil || ready.Phase() != enrollmentexchange.PhaseReady {
+		t.Fatalf("expired Applied READY phase=%q err=%v", ready.Phase(), err)
+	}
+
+	mismatchFixture := newClientSetupFixture(t)
+	mismatchClient := mismatchFixture.appliedClient(t)
+	mismatchClient.runtime.ReleaseSequence++
+	if _, err := mismatchClient.Status(mismatchFixture.now.Add(2 * time.Hour)); err == nil {
+		t.Fatal("expired Applied setup survived a current-runtime mismatch")
+	}
+
+	pendingFixture := newClientSetupFixture(t)
+	pendingClient := pendingFixture.client(t)
+	if state, err := pendingClient.Stage(pendingFixture.issued.Invitation, pendingFixture.now); err != nil || state.Phase() != enrollmentexchange.PhasePendingComparison {
+		t.Fatalf("stage pre-apply phase=%q err=%v", state.Phase(), err)
+	}
+	if _, err := pendingClient.Status(pendingFixture.now.Add(2 * time.Hour)); err == nil {
+		t.Fatal("expired pre-apply setup resumed")
+	}
+
+	confirmedFixture := newClientSetupFixture(t)
+	confirmedClient, _ := confirmedFixture.confirmedClientAndBoundResponse(t)
+	if _, err := confirmedClient.Status(confirmedFixture.now.Add(2 * time.Hour)); err == nil {
+		t.Fatal("expired transcript-confirmed setup resumed")
+	}
+
+	verifiedFixture := newClientSetupFixture(t)
+	verifiedClient, bound := verifiedFixture.confirmedClientAndBoundResponse(t)
+	current, err := verifiedClient.openCurrent(verifiedFixture.now.Add(2*time.Second), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := current.session.Generation()
+	if _, err := current.session.AcceptBoundResponse(bound); err != nil {
+		current.Close()
+		t.Fatal(err)
+	}
+	if err := enrollmentexchange.ReplaceTargetStore(verifiedClient.exchangePath(current.plan), expected, current.session, verifiedFixture.now.Add(2*time.Second)); err != nil {
+		current.Close()
+		t.Fatal(err)
+	}
+	current.Close()
+	if _, err := verifiedClient.Status(verifiedFixture.now.Add(2 * time.Hour)); err == nil {
+		t.Fatal("expired response-verified setup resumed")
+	}
+}
+
+func TestSelectedInvitationRebasesHistoricalValidationToDelayedSignedRequest(t *testing.T) {
+	fixture := newClientSetupFixture(t)
+	client := fixture.client(t)
+	bootstrap, err := enrollmentexchange.PrepareClientBootstrap(fixture.issued.Invitation, client.runtime, fixture.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Simulate the supported crash window after plan/selector durability but
+	// before pending request or exchange-session creation.
+	func() {
+		root, openErr := client.openSetupRoot(true)
+		if openErr != nil {
+			t.Fatal(openErr)
+		}
+		defer root.Close()
+		lock, lockErr := root.TryLock(setupLockFile)
+		if lockErr != nil {
+			t.Fatal(lockErr)
+		}
+		defer lock.Close()
+		workspace, _, selectErr := client.selectInvitation(root, fixture.issued.Invitation, bootstrap, fixture.now)
+		if selectErr != nil {
+			t.Fatal(selectErr)
+		}
+		defer workspace.Close()
+		if _, readErr := workspace.ReadFile(pendingFile, maxPendingSize); !errors.Is(readErr, os.ErrNotExist) {
+			t.Fatalf("pre-request crash fixture unexpectedly has pending material: %v", readErr)
+		}
+	}()
+
+	delayed := fixture.now.Add(10 * time.Minute)
+	staged, err := client.Stage(fixture.issued.Invitation, delayed)
+	if err != nil || staged.Phase() != enrollmentexchange.PhasePendingComparison {
+		t.Fatalf("delayed stage phase=%q err=%v", staged.Phase(), err)
+	}
+	root, err := client.openSetupRoot(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selector, err := readSelector(root)
+	if err != nil {
+		root.Close()
+		t.Fatal(err)
+	}
+	workspace, err := root.OpenDir(selector.Workspace)
+	if err != nil {
+		root.Close()
+		t.Fatal(err)
+	}
+	plan, _, err := readPlan(workspace, false, client.runtime, delayed)
+	workspace.Close()
+	root.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.VerifiedUnix != delayed.Unix() {
+		t.Fatalf("historical validation=%d, want signed request time %d", plan.VerifiedUnix, delayed.Unix())
+	}
+
+	client, bound := fixture.confirmedClientAndBoundResponseFrom(t, client, staged, delayed)
+	applied, err := client.AcceptAndApply(bound, delayed.Add(3*time.Second))
+	if err != nil || applied.Phase() != enrollmentexchange.PhaseApplied {
+		t.Fatalf("delayed apply phase=%q err=%v", applied.Phase(), err)
+	}
+	ready, err := client.CompleteReady(context.Background(), func(context.Context) error { return nil }, fixture.now.Add(2*time.Hour))
+	if err != nil || ready.Phase() != enrollmentexchange.PhaseReady {
+		t.Fatalf("expired delayed READY phase=%q err=%v", ready.Phase(), err)
+	}
+}
+
+func TestCompleteReadySerializesSignedLifecycleTransitionAcrossCarrierProof(t *testing.T) {
+	fixture := newClientSetupFixture(t)
+	client := fixture.appliedClient(t)
+	before, err := enrollmenttarget.ReadStatus(client.paths.privateRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := enrollmenttarget.LoadClient(client.paths.privateRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readyTime := fixture.now.Add(5 * time.Second)
+	policy := enrollment.LifecyclePolicy{
+		Schema: enrollment.LifecyclePolicySchema, Role: enrollment.RoleClient,
+		InstallationID: before.State.InstallationID, Sequence: 1,
+		IssuedUnix: readyTime.Unix(), ExpiresUnix: readyTime.Add(time.Hour).Unix(),
+		ExpectedStateGeneration: before.State.StateGeneration, ExpectedStateSHA256: before.StateSHA256,
+		Trust: fixture.trust, CapabilityClientRoots: []string{},
+		RelayServerSPKIPins: append([]string(nil), current.OuterTLS.SPKIPins...),
+		ConnectorSPKIPins:   append([]string(nil), current.InnerTLS.SPKIPins...),
+		RelayClients:        []config.AuthorizedPeer{}, RelayRoutes: []config.RelayRoute{},
+		RevokedClientInstallationIDs: []string{}, RevokedClientSPKIPins: []string{},
+	}
+	encodedPolicy, err := enrollment.SignLifecyclePolicy(policy, fixture.signer.Private, readyTime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready, err := client.CompleteReady(context.Background(), func(context.Context) error {
+		result := make(chan error, 1)
+		go func() {
+			_, applyErr := enrollmenttarget.ApplyLifecyclePolicy(client.paths.privateRoot, encodedPolicy, readyTime)
+			result <- applyErr
+		}()
+		if applyErr := <-result; !errors.Is(applyErr, securefs.ErrLocked) {
+			return errors.New("concurrent signed lifecycle transition was not excluded by the READY lease")
+		}
+		return nil
+	}, readyTime)
+	if err != nil || ready.Phase() != enrollmentexchange.PhaseReady {
+		t.Fatalf("serialized READY phase=%q err=%v", ready.Phase(), err)
+	}
+	after, err := enrollmenttarget.ReadStatus(client.paths.privateRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.State.ActiveRecordID != before.State.ActiveRecordID || after.State.StateGeneration != before.State.StateGeneration {
+		t.Fatal("READY returned after a concurrent lifecycle transition changed its exact active record")
+	}
+	transition, err := enrollmenttarget.ApplyLifecyclePolicy(client.paths.privateRoot, encodedPolicy, readyTime)
+	if err != nil {
+		t.Fatalf("the competing signed lifecycle transition was not independently valid: %v", err)
+	}
+	if transition.RecordID == before.State.ActiveRecordID {
+		t.Fatal("valid lifecycle transition did not replace the active record after the READY lease released")
+	}
+	if _, err := client.Status(readyTime.Add(time.Second)); err == nil {
+		t.Fatal("READY receipt survived a later active-record transition")
+	}
+}
+
 func TestClientSetupResumesReceiptWrittenBeforeReadySessionCAS(t *testing.T) {
 	fixture := newClientSetupFixture(t)
 	client := fixture.appliedClient(t)
@@ -157,11 +352,56 @@ func TestClientSetupResumesReceiptWrittenBeforeReadySessionCAS(t *testing.T) {
 	}
 	// Deliberately omit ReplaceTargetStore: this is the receipt-before-CAS crash.
 	current.Close()
-	if resumed, err := client.Status(fixture.now.Add(6 * time.Second)); err != nil || resumed.Phase() != enrollmentexchange.PhaseReady {
+	if resumed, err := client.Status(fixture.now.Add(2 * time.Hour)); err != nil || resumed.Phase() != enrollmentexchange.PhaseReady {
 		t.Fatalf("resume phase=%q err=%v", resumed.Phase(), err)
 	}
-	if _, err := client.CleanupReady(fixture.now.Add(7 * time.Second)); err != nil {
+	if _, err := client.CleanupReady(fixture.now.Add(2*time.Hour + time.Second)); err != nil {
 		t.Fatalf("cleanup of pre-CAS Applied session: %v", err)
+	}
+}
+
+func TestReadyRequiresReceiptBoundToCurrentActiveRecord(t *testing.T) {
+	fixture := newClientSetupFixture(t)
+	client := fixture.appliedClient(t)
+	if _, err := client.CompleteReady(context.Background(), func(context.Context) error { return nil }, fixture.now.Add(5*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	root, err := client.openSetupRoot(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := readReady(root)
+	if err != nil {
+		root.Close()
+		t.Fatal(err)
+	}
+	other, err := protocol.NewID()
+	if err != nil {
+		root.Close()
+		t.Fatal(err)
+	}
+	receipt.ActiveRecordID = other.String()
+	if err := client.validateReadyTarget(receipt); err == nil {
+		root.Close()
+		t.Fatal("READY receipt survived an active-record change")
+	}
+	if err := root.UnlinkFile(readyFile); err != nil {
+		root.Close()
+		t.Fatal(err)
+	}
+	if err := root.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Status(fixture.now.Add(6 * time.Second)); err == nil {
+		t.Fatal("receiptless READY session was reported as authoritative")
+	}
+}
+
+func TestAppliedExpiryFallbackRejectsClockBeforeOriginalVerification(t *testing.T) {
+	fixture := newClientSetupFixture(t)
+	client := fixture.appliedClient(t)
+	if _, err := client.Status(fixture.now.Add(-10 * time.Minute)); err == nil {
+		t.Fatal("Applied setup resumed before its authenticated verification time")
 	}
 }
 
@@ -350,18 +590,23 @@ func (fixture clientSetupFixture) client(t *testing.T) *Client {
 	}
 }
 
-func (fixture clientSetupFixture) appliedClient(t *testing.T) *Client {
+func (fixture clientSetupFixture) confirmedClientAndBoundResponse(t *testing.T) (*Client, []byte) {
 	t.Helper()
 	client := fixture.client(t)
 	staged, err := client.Stage(fixture.issued.Invitation, fixture.now)
 	if err != nil {
 		t.Fatal(err)
 	}
+	return fixture.confirmedClientAndBoundResponseFrom(t, client, staged, fixture.now)
+}
+
+func (fixture clientSetupFixture) confirmedClientAndBoundResponseFrom(t *testing.T, client *Client, staged State, operationTime time.Time) (*Client, []byte) {
+	t.Helper()
 	action, ok := staged.MailboxAction()
 	if !ok {
 		t.Fatal("staged client omitted its mailbox action")
 	}
-	operator, err := enrollmentexchange.NewOperatorSession(fixture.issued.OperatorReceipt, action.EncryptedRequest, fixture.now)
+	operator, err := enrollmentexchange.NewOperatorSession(fixture.issued.OperatorReceipt, action.EncryptedRequest, operationTime)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -376,7 +621,7 @@ func (fixture clientSetupFixture) appliedClient(t *testing.T) *Client {
 	if err != nil {
 		t.Fatal(err)
 	}
-	confirmed, err := client.Confirm(reverse, fixture.now.Add(time.Second))
+	confirmed, err := client.Confirm(reverse, operationTime.Add(time.Second))
 	if err != nil || confirmed.Phase() != enrollmentexchange.PhaseTranscriptConfirmed {
 		t.Fatalf("target confirmation = %q, %v", confirmed.Phase(), err)
 	}
@@ -397,7 +642,7 @@ func (fixture clientSetupFixture) appliedClient(t *testing.T) *Client {
 	makeRequest := func(role enrollment.Role, installationID, routeID, connectorID string) enrollment.PendingMaterial {
 		material, makeErr := enrollment.NewPendingRequest(enrollment.InitOptions{
 			Role: role, InstallationID: installationID, RouteID: routeID, ConnectorInstallationID: connectorID,
-			Sequence: 1, Now: fixture.now, RequestValidity: 30 * time.Minute,
+			Sequence: 1, Now: operationTime, RequestValidity: 30 * time.Minute,
 			Trust: fixture.trust, DeploymentSigner: fixture.signer.Public, Runtime: runtimeFor(role),
 		})
 		if makeErr != nil {
@@ -414,7 +659,7 @@ func (fixture clientSetupFixture) appliedClient(t *testing.T) *Client {
 	responses, err := enrollment.ApproveInitialRoute(enrollment.RouteApproval{
 		RelayRequest: relayRequest.RequestBytes, ConnectorRequest: connectorRequest.RequestBytes,
 		ClientRequest: clientRequest.RequestBytes, RelayURL: "wss://relay.example.com/connects",
-		RelayListen: enrollment.PackagedRelayListen, DeploymentSequence: 1, Now: fixture.now,
+		RelayListen: enrollment.PackagedRelayListen, DeploymentSequence: 1, Now: operationTime,
 		LeafValidity: 24 * time.Hour, DeploymentValidity: time.Hour,
 		Issuers: fixture.issuers, DeploymentSigner: fixture.signer.Private,
 	})
@@ -422,7 +667,7 @@ func (fixture clientSetupFixture) appliedClient(t *testing.T) *Client {
 		t.Fatal(err)
 	}
 	approvedDigest, err := enrollmentexchange.ApprovedRequestSetSHA256(
-		relayRequest.RequestBytes, connectorRequest.RequestBytes, clientRequest.RequestBytes, fixture.now,
+		relayRequest.RequestBytes, connectorRequest.RequestBytes, clientRequest.RequestBytes, operationTime,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -431,6 +676,12 @@ func (fixture clientSetupFixture) appliedClient(t *testing.T) *Client {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return client, bound
+}
+
+func (fixture clientSetupFixture) appliedClient(t *testing.T) *Client {
+	t.Helper()
+	client, bound := fixture.confirmedClientAndBoundResponse(t)
 	applied, err := client.AcceptAndApply(bound, fixture.now.Add(3*time.Second))
 	if err != nil || applied.Phase() != enrollmentexchange.PhaseApplied {
 		t.Fatalf("apply phase=%q err=%v", applied.Phase(), err)

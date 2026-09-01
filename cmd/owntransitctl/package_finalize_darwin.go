@@ -17,6 +17,12 @@ const (
 )
 
 func finalizeNativePackageMutation(role string, result packagetxn.Result) error {
+	if role == "provisioner" {
+		if result.Role != role || result.Current == "" || result.Runtime.ReleaseID != result.Current || result.Runtime.Role != role {
+			return errors.New("Darwin package finalization requires the authenticated current provisioner result")
+		}
+		return nil
+	}
 	if role != "client" || result.Role != role || result.Current == "" || result.Runtime.ReleaseID != result.Current {
 		return errors.New("Darwin package finalization requires the authenticated current client result")
 	}

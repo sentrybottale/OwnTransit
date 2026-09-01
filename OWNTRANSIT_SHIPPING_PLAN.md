@@ -1,10 +1,14 @@
 # OwnTransit v1 shipping plan
 
-Status: **v1 release candidate**. The tunnel, guided client exchange,
-target-local credential lifecycle, signed package transaction and publication
-boundaries exist in source. Production status still requires real
-supported-host qualification, release-key/custody execution, independent
-reproduction and outside security/legal review.
+Status: **OwnTransit 0.1.0 release-candidate contract; not an official stable
+publication**. The tunnel, guided client exchange, target-local credential
+lifecycle, signed package transaction and publication boundaries exist in
+source, and the tooling can build a signed installable candidate handoff. An
+official stable handoff must execute the signing path, carry an independently
+verified signed qualification record for the exact bytes, and report PASS for
+every hard supported-host gate. Independent reproduction, security/legal
+review, custody rehearsal and environment canary work are additional assurance
+whose status must be disclosed, not fabricated.
 
 ## Product contract
 
@@ -91,8 +95,7 @@ pins without becoming a positive allowlist.
 
 ## Public release artifacts
 
-The v1 release candidate contains exactly these logical
-artifacts:
+An official OwnTransit 0.1.0 handoff contains exactly these logical artifacts:
 
 | Artifact | Platform | Responsibility |
 |---|---|---|
@@ -110,9 +113,10 @@ separate artifact records. Each record binds its bytes, SHA-256 digest, size,
 role, platform, format, and named SBOM evidence. Licenses are independent
 evidence.
 
-Other architectures are unsupported until their native package, clean-host,
-upgrade, rollback, and qualification matrices pass. Cross-compilation alone is
-not support evidence.
+Platform support attaches to exact released bytes only after their native
+package, clean-host, upgrade, rollback and qualification matrices pass. The
+candidate targets macOS arm64 and Linux amd64; other architectures are outside
+the 0.1.0 scope. Cross-compilation alone is not support evidence.
 
 ## Intended command surface
 
@@ -180,31 +184,43 @@ enrollment response itself cannot supply that trust.
 
 The implemented initial path is:
 
-1. Each target bootstraps only its local role and trusted public identities.
-2. The target generates a unique installation ID, fresh OwnTransit private
-   keys and CSRs, a nonce, a first sequence, and an ephemeral response-recipient
-   key. Private keys never leave the target.
-3. For guided client enrollment, target and offline provisioner retain durable
-   sessions for the exact invitation/request/ciphertext transcript. The target
-   reads its three comparison words first; only their exact operator-side match
-   reveals the reverse group, which the target then verifies.
-4. An offline provisioner checks the relay, connector, and client requests,
-   issues only their CSR leaves under separate route authorities, signs each
-   deployment, and encrypts each response to its intended target.
-5. Apply verifies bootstrap pins, signer identity, role, installation ID,
-   nonce, request digest and sequence, release/runtime binding, certificate key
-   match, chain, EKU, exact SAN, validity, connector pins, and capability root.
-6. The lifecycle code creates a complete write-once generation, syncs it, and
-   atomically selects its exact digest and release/deployment/credential
-   sequence tuple. The request
-   digest becomes consumed durable state before leftover request material can
-   be considered reusable.
-7. The installed lifecycle copy runs the carrier-only proof as the exact bound
-   client identity while holding the current package/runtime selector stable.
-   A runtime-bound READY receipt is durable before one-time exchange authority
-   is destroyed locally. Relay-side consume is best-effort and cannot veto
-   cleanup. The operator separately tests SSH using operator-owned identities
-   and policy.
+1. Install each authenticated role package, but do not start the relay or
+   connector services.
+2. The online courier creates one allocation credential and supplies only its
+   domain-separated SHA-256 to the relay host. The authenticated relay image
+   starts in temporary exchange-only mode behind the exact public reverse-proxy
+   location. This process has a mailbox only: no carrier, endpoint state,
+   signer, issuer, route, persistence, or target selector.
+3. Relay and connector bootstrap only their own local roles and generate their
+   first signed requests. Each target creates its unique installation ID,
+   OwnTransit private keys and CSRs, nonce, sequence, and one-response recipient
+   locally; private keys never leave the target.
+4. The provisioner issues one client invitation registered through the
+   temporary exchange. The client generates its request and both sides retain
+   durable sessions for the exact invitation/request/ciphertext transcript.
+5. The client reads its three comparison words first; only their exact
+   operator-side match reveals the reverse group, which the client then
+   verifies over the independently authenticated human channel.
+6. The offline provisioner checks the exact relay, connector, and client
+   requests, issues only their CSR leaves under separate route authorities,
+   signs each deployment, and encrypts each response to its intended target.
+7. The courier uploads the bound client response. The client verifies and
+   durably applies it, then reports `SETUP SAVED — NOT READY` because the
+   carrier is intentionally not running yet. Keep the exchange process alive
+   until this Applied state exists.
+8. Apply the relay and connector responses. Every apply checks bootstrap pins,
+   signer identity, role, installation ID, nonce, request digest and sequence,
+   release/runtime binding, key/certificate match, chain, EKU, exact SAN,
+   validity, connector pins, and capability root, then atomically selects a
+   complete synced generation and consumes the request digest.
+9. Stop temporary exchange-only mode, start the enrolled full relay on the
+   same loopback publication port, then start the connector. No mailbox content
+   is needed after the client has applied.
+10. The installed lifecycle copy resumes and runs the carrier-only proof as the
+    exact bound client identity while holding the package/runtime selector
+    stable. A runtime-bound READY receipt is durable before one-time exchange
+    authority is destroyed locally; relay-side consume is best-effort. The
+    operator separately tests SSH using operator-owned identities and policy.
 
 The exchange validates canonical signed invitations, creates four independent
 mailbox capabilities with operator-capability commitments, encrypts and pads
@@ -213,13 +229,17 @@ plus six display words, cross-binds the signed encrypted response and approved
 three-target request set, and resumes without regenerating identity material.
 
 Initial enrollment is not rotation. Its approval accepts only first-sequence
-requests and a single active identity. The source also implements signed
+requests and exactly one relay, connector, route, and client. Adding a later
+client needs a separately versioned approval-context binding plus a narrowly
+authenticated relay-policy append and is not implemented in 0.1.0. The source
+also implements signed
 verifier-first lifecycle policy, post-initial route issuance,
 revocation/tombstone overlays, an external exact-state rollback anchor, signed
 exact-record rollback, interrupted anchor-first recovery and current/previous
-package retention. Production still requires documented expiry operations,
-real-host service qualification and a two-location clean-room custody/recovery
-rehearsal.
+package retention. OwnTransit 0.1.0 does not make expiry monitoring,
+two-location custody or clean-room recovery automatic. Those remain documented
+operator procedures, while each official release must qualify its exact
+installed service path on the supported hosts.
 
 ## Native lifecycle requirements
 
@@ -264,32 +284,48 @@ listener. The relay image must be digest-addressed, non-root, read-only,
 capability-free, resource-bounded, and supplied only immutable credential
 mounts.
 
-## Remaining release work
+## Release integrity requirements
 
-Before production v1, the project must complete:
+Every official 0.1.0 handoff must complete these functional release steps for
+one exact source revision and artifact set:
 
-1. publication from the reviewed sanitized snapshot as a new public root
-   commit, followed by an independent secret scan of its complete object graph;
-2. actual independent release/policy signing keys, signatures, custody and
-   two-location recovery rehearsal using the implemented formats and floors;
-3. independent clean-builder reproduction of the nine authenticated artifacts;
-4. disposable Linux amd64 install/systemd/reboot, reconnect, interruption,
-   upgrade, rollback, uninstall and recovery qualification;
-5. disposable Apple-silicon Directory Services, zero-member setgid launcher,
-   ACL, upgrade/rollback and reboot qualification;
-6. operator expiry/revocation monitoring and clean-room credential recovery
-   rehearsal;
-7. hostile-relay, disk-full, signal and power-loss qualification beyond the
-   in-repository adversarial tests; and
-8. independent implementation, penetration, name, license and targeted patent
-   review with every release-blocking finding closed or explicitly accepted.
+1. build the nine-artifact matrix from the canonical public history and bind
+   its source, inputs, digests, SBOMs and licenses;
+2. create and independently verify the actual release-manifest and monotonic
+   release-policy signatures used by the installers;
+3. qualify disposable Linux amd64 install/systemd/reboot, reconnect,
+   interruption, upgrade, rollback, uninstall and recovery behavior;
+4. qualify disposable Apple-silicon Directory Services, zero-member setgid
+   launcher, ACL, upgrade/rollback and reboot behavior;
+5. close or explicitly accept every known Critical or High defect affecting
+   those exact bytes; and
+6. create and independently verify a signed qualification record binding the
+   exact source, release identity, outer asset inventory and all hard-gate
+   results without representing missing evidence as PASS.
+
+## Additional assurance and operator operations
+
+OwnTransit 0.1.0 does not claim completion or certification of these activities:
+
+- independent clean-builder reproduction and an external public-object secret
+  scan;
+- independent implementation review and authorized penetration testing;
+- professional name, applicable-contract, license and targeted-patent review;
+- two-location release/issuer custody and clean-room recovery rehearsal;
+- broader hostile-relay, disk-full, signal and power-loss exercises; and
+- operator expiry/revocation monitoring, canary and burn-in.
+
+Their status should be attached to the exact release when evidence exists.
+They improve assurance and deployment operations but are not substitutes for,
+or missing implementations of, the client, connector, relay and installer.
 
 No network auto-updater, mutable `latest` pointer, relay-delivered policy, or
 relay-delivered trust bootstrap is permitted.
 
-## Definition of shippable
+## Definition of an installable stable release
 
-OwnTransit v1 is shippable only when all of these are true:
+OwnTransit 0.1.0 is installable and stable within its stated scope only when all
+of these are true for the exact released bytes:
 
 - a clean supported client reaches a clean connector without source checkout,
   a client-side container runtime, hand-edited JSON, or copied PEM files;
@@ -305,10 +341,13 @@ OwnTransit v1 is shippable only when all of these are true:
 - connector reboot and relay restart recover without weakening trust;
 - normal uninstall preserves OwnTransit recovery state and touches no SSH or
   unrelated host configuration;
-- native release signing, clean-host qualification, clean-room OwnTransit
-  recovery, and independent security review pass; and
+- native release signing and supported-platform clean-host qualification pass;
+- the status of independent review, reproduction, custody and recovery
+  assurance is disclosed without implying certification; and
 - an operator-owned out-of-band SSH and host-recovery path remains available
   throughout canary and burn-in.
 
-Until every gate passes, this repository remains a release candidate and must
-not be described as a production access or recovery system.
+Meeting this definition means the release is distributable and installable
+within the documented platform and SSH-only boundary. Suitability for a
+particular production environment remains the operator's risk decision;
+OwnTransit is not an SSH or host-recovery system.

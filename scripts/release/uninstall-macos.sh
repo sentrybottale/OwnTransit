@@ -15,13 +15,12 @@ usage() {
   cat <<'EOF'
 usage: uninstall-macos.sh --role client|provisioner --release-id 52_CHAR_BASE32_ID
 
-Detaches only the selected role's exact public launcher. For the client, the
-manager-owned current/previous selectors, immutable releases, receipts,
-installed license notices, protected launcher binding, external rollback
-anchor, reader identity, credentials and recovery state remain intact so exact
-reinstall/recovery cannot silently reset a floor. Provisioner bytes and notices
-remain in their separate role namespace. Destructive package-state retirement
-requires a future authenticated lifecycle action.
+Detaches only the selected role's exact public launcher. The manager-owned current/previous selectors,
+immutable releases, receipts, installed license
+notices and external rollback anchors remain intact so exact reinstall/recovery
+cannot silently reset a floor. Client launcher binding, reader identity,
+credentials and recovery state are also preserved. Destructive package-state
+retirement requires a future authenticated lifecycle action.
 EOF
 }
 
@@ -132,15 +131,18 @@ case "$role" in
     test "$(sed -n '5{s/^release_id=//p;}' "$install_root/launcher-auth/client.v1")" = "$release_id" || fail "protected launcher binding identifies another release"
     ;;
   provisioner)
-    release_directory="$install_root/provisioner/releases/$release_id"
+    current_link="$install_root/roles/provisioner/current"
+    release_directory="$install_root/roles/provisioner/releases/$release_id"
     public_launcher="$bin_directory/owntransit-provision"
-    expected_public_target="../provisioner/releases/$release_id/owntransit-provision"
+    expected_public_target="../roles/provisioner/current/owntransit-provision"
+    test -L "$current_link" || fail "provisioner current selector is absent"
+    test "$(readlink "$current_link")" = "releases/$release_id" || fail "provisioner current selector identifies another release"
     require_root_directory "$release_directory" 755
     require_root_file "$release_directory/owntransit-provision" 755
+    require_root_file "$release_directory/owntransitctl" 700
+    require_root_file "$release_directory/receipt.json" 600
     require_root_file "$release_directory/LICENSE" 644
     require_root_file "$release_directory/THIRD_PARTY_LICENSES.txt" 644
-    require_root_file "$release_directory/release-id" 644
-    test "$(cat "$release_directory/release-id")" = "$release_id" || fail "provisioner release identity differs"
     ;;
   *) fail "role must be client or provisioner" ;;
 esac

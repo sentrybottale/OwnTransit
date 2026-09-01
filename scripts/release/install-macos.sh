@@ -35,12 +35,14 @@ free source/Homebrew lane. The client role requires one
 explicit existing non-root local --client-user. It creates or exactly adopts a
 dedicated local reader group and protected identity receipt; it never creates a
 user, downloads, imports trust, edits SSH configuration, or installs launchd.
-For the client role, the signed manifest and signed monotonic policy inputs are
+For both roles, the signed manifest and signed monotonic policy inputs are
 mandatory. The authenticated current owntransitctl performs the per-role
 package transaction; only a true first install executes the authenticated
 candidate from the bundle. Exact reinstall resumes/idempotently verifies the
-same selector. This script does not bootstrap trust: verify this installer and
-every supplied public key through the independent release channel first.
+same selector. Provisioner package lifecycle creates no reader identity,
+endpoint state or credential. This script does not bootstrap trust: verify this
+installer and every supplied public key through the independent release
+channel first.
 EOF
 }
 
@@ -118,7 +120,7 @@ case "$role" in
   provisioner)
     artifact_name=owntransit-provision-darwin-arm64
     installed_name=owntransit-provision
-    needs_lifecycle=no
+    needs_lifecycle=yes
     test -z "$launcher_sha256" || fail "--launcher-sha256 is valid only for the client role"
     test -z "$client_user" || fail "--client-user is valid only for the client role"
     ;;
@@ -129,13 +131,9 @@ if test "$needs_lifecycle" = yes; then
   for signed_input in "$manifest_signature" "$release_public_key" "$policy" "$policy_signature" "$policy_public_key"; do
     case "$signed_input" in
       /*) ;;
-      *) fail "client role requires every signed release/policy input as an absolute path" ;;
+      *) fail "each role requires every signed release/policy input as an absolute path" ;;
     esac
   done
-elif test -n "$lifecycle_sha256"; then
-  fail "--lifecycle-sha256 is invalid for the provisioner role"
-elif test -n "$manifest_signature$release_public_key$policy$policy_signature$policy_public_key"; then
-  fail "signed lifecycle inputs are valid only for the client role"
 fi
 
 case "$bundle" in
@@ -258,8 +256,10 @@ if test "$needs_lifecycle" = yes; then
   test "$(listed_digest RELEASE-MANIFEST.json)" = "$(sha256_file "$manifest_path")" || fail "release manifest is not authenticated by SHA256SUMS"
   lifecycle_path=artifacts/owntransitctl-darwin-arm64
   test "$(listed_digest "$lifecycle_path")" = "$lifecycle_sha256" || fail "lifecycle artifact digest does not match the authenticated release"
-  launcher_path=artifacts/owntransit-launcher-darwin-arm64
-  test "$(listed_digest "$launcher_path")" = "$launcher_sha256" || fail "client launcher artifact digest does not match the authenticated release"
+  if test "$role" = client; then
+    launcher_path=artifacts/owntransit-launcher-darwin-arm64
+    test "$(listed_digest "$launcher_path")" = "$launcher_sha256" || fail "client launcher artifact digest does not match the authenticated release"
+  fi
   for signed_input in "$manifest_signature" "$release_public_key" "$policy" "$policy_signature" "$policy_public_key"; do
     require_root_owned_regular "$signed_input"
     signed_parent=$(CDPATH= cd -P -- "$(dirname "$signed_input")" && pwd) || fail "cannot resolve signed input parent"
@@ -732,12 +732,10 @@ bin_directory="$install_root/bin"
 launcher_auth_directory="$install_root/launcher-auth"
 launcher_binding="$launcher_auth_directory/client.v1"
 reader_receipt_temporary=
-provisioner_temporary=
 identity_mutation_attempted=no
 
 cleanup_install() {
   test -z "$reader_receipt_temporary" || rm -f -- "$reader_receipt_temporary"
-  test -z "$provisioner_temporary" || rm -rf -- "$provisioner_temporary"
   rm -rf -- "$verification_directory"
   if test "$identity_mutation_attempted" = yes; then
     printf '%s\n' 'install-macos: dedicated zero-member reader identity mutation was attempted; the protected group/receipt remains for exact retry and must be reviewed before choosing another identity' >&2
@@ -762,64 +760,32 @@ ensure_exact_symlink() {
 ensure_root_directory /Library 755
 ensure_root_directory "$install_root" 755
 ensure_root_directory "$bin_directory" 755
-
-if test "$needs_lifecycle" = no; then
-  provisioner_root="$install_root/provisioner"
-  provisioner_releases="$provisioner_root/releases"
-  release_directory="$provisioner_releases/$release_id"
-  ensure_root_directory "$provisioner_root" 755
-  ensure_root_directory "$provisioner_releases" 755
-  if test -e "$release_directory" || test -L "$release_directory"; then
-    test -d "$release_directory" && test ! -L "$release_directory" || fail "provisioner release path is not a directory"
-    test "$(stat -f %u "$release_directory")" -eq 0 && test "$(stat -f %g "$release_directory")" -eq 0 && test "$(stat -f %Lp "$release_directory")" = 755 || fail "provisioner release directory metadata is invalid"
-    require_no_extended_acl "$release_directory"
-  else
-    provisioner_temporary=$(mktemp -d "$provisioner_releases/.new-$release_id.XXXXXX") || fail "cannot create provisioner release stage"
-    install -o root -g wheel -m 0755 "$bundle/$artifact_path" "$provisioner_temporary/owntransit-provision"
-    install -o root -g wheel -m 0644 "$bundle/$project_license_path" "$provisioner_temporary/LICENSE"
-    install -o root -g wheel -m 0644 "$bundle/$third_party_licenses_path" "$provisioner_temporary/THIRD_PARTY_LICENSES.txt"
-    printf '%s\n' "$release_id" > "$provisioner_temporary/release-id"
-    chmod 0644 "$provisioner_temporary/release-id"
-    chmod 0755 "$provisioner_temporary"
-    mv "$provisioner_temporary" "$release_directory"
-    provisioner_temporary=
-  fi
-  test "$(sha256_file "$release_directory/owntransit-provision")" = "$artifact_sha256" || fail "installed provisioner differs from the authenticated artifact"
-  test "$(sha256_file "$release_directory/LICENSE")" = "$(sha256_file "$bundle/$project_license_path")" || fail "installed project license differs from the authenticated evidence"
-  test "$(sha256_file "$release_directory/THIRD_PARTY_LICENSES.txt")" = "$(sha256_file "$bundle/$third_party_licenses_path")" || fail "installed third-party notices differ from the authenticated evidence"
-  test "$(cat "$release_directory/release-id")" = "$release_id" || fail "installed provisioner release identity differs"
-  ensure_exact_symlink "$bin_directory/owntransit-provision" "../provisioner/releases/$release_id/owntransit-provision"
-  trap - EXIT HUP INT TERM
-  rm -rf -- "$verification_directory"
-  printf 'installed exact OwnTransit macOS provisioner release %s\n' "$release_id"
-  printf 'installed license evidence: %s/LICENSE and %s/THIRD_PARTY_LICENSES.txt\n' "$release_directory" "$release_directory"
-  exit 0
-fi
-
 ensure_root_directory "$roles_root" 755
-ensure_root_directory "$install_root/client" 755
 ensure_root_directory /private/var/db/OwnTransit 755
-ensure_root_directory /private/var/db/OwnTransit/client 755
 ensure_root_directory /private/var/db/OwnTransit/package-rollback 700
-prepare_client_reader_identity
-ensure_reader_directory "$launcher_auth_directory" 750
+if test "$role" = client; then
+  ensure_root_directory "$install_root/client" 755
+  ensure_root_directory /private/var/db/OwnTransit/client 755
+  prepare_client_reader_identity
+  ensure_reader_directory "$launcher_auth_directory" 750
+fi
 
 lifecycle_candidate="$bundle/$lifecycle_path"
 lifecycle_runner=$lifecycle_candidate
-current_link="$roles_root/client/current"
+current_link="$roles_root/$role/current"
 if test -e "$current_link" || test -L "$current_link"; then
-  test -L "$current_link" || fail "client current selector exists and is not a symlink"
+  test -L "$current_link" || fail "role current selector exists and is not a symlink"
   current_target=$(readlink "$current_link")
   case "$current_target" in
     releases/*) current_release=${current_target#releases/} ;;
-    *) fail "client current selector has an invalid target" ;;
+    *) fail "role current selector has an invalid target" ;;
   esac
-  case "$current_release" in *[!a-z2-7]*|'') fail "client current selector has an invalid release ID" ;; esac
-  test "${#current_release}" -eq 52 || fail "client current selector release ID has the wrong length"
-  case "$current_release" in *[aq]) ;; *) fail "client current selector release ID is non-canonical" ;; esac
-  test "$current_release" != aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa || fail "client current selector release ID is zero"
-  test "$current_target" = "releases/$current_release" || fail "client current selector target is not canonical"
-  lifecycle_runner="$roles_root/client/releases/$current_release/owntransitctl"
+  case "$current_release" in *[!a-z2-7]*|'') fail "role current selector has an invalid release ID" ;; esac
+  test "${#current_release}" -eq 52 || fail "role current selector release ID has the wrong length"
+  case "$current_release" in *[aq]) ;; *) fail "role current selector release ID is non-canonical" ;; esac
+  test "$current_release" != aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa || fail "role current selector release ID is zero"
+  test "$current_target" = "releases/$current_release" || fail "role current selector target is not canonical"
+  lifecycle_runner="$roles_root/$role/releases/$current_release/owntransitctl"
   test -f "$lifecycle_runner" && test ! -L "$lifecycle_runner" || fail "selected lifecycle executable is absent or not regular"
   test "$(stat -f %u "$lifecycle_runner")" -eq 0 && test "$(stat -f %g "$lifecycle_runner")" -eq 0 || fail "selected lifecycle executable is not root:wheel owned"
   test "$(stat -f %Lp "$lifecycle_runner")" = 700 && test "$(stat -f %l "$lifecycle_runner")" -eq 1 || fail "selected lifecycle executable metadata is invalid"
@@ -832,7 +798,7 @@ fi
   LC_ALL=C \
   PATH=/usr/bin:/bin:/usr/sbin:/sbin \
   "$lifecycle_runner" package-apply \
-    --role client \
+    --role "$role" \
     --bundle "$bundle" \
     --manifest "$manifest_path" \
     --manifest-signature "$manifest_signature" \
@@ -841,9 +807,36 @@ fi
     --policy-signature "$policy_signature" \
     --policy-public-key "$policy_public_key"
 
-test -L "$current_link" || fail "package transaction did not publish the client current selector"
+test -L "$current_link" || fail "package transaction did not publish the role current selector"
 test "$(readlink "$current_link")" = "releases/$release_id" || fail "package transaction selected another release"
-release_directory="$roles_root/client/releases/$release_id"
+release_directory="$roles_root/$role/releases/$release_id"
+
+test "$(sha256_file "$release_directory/owntransitctl")" = "$lifecycle_sha256" || fail "installed lifecycle artifact changed"
+test "$(sha256_file "$release_directory/LICENSE")" = "$(sha256_file "$bundle/$project_license_path")" || fail "installed project license differs from the authenticated evidence"
+test "$(sha256_file "$release_directory/THIRD_PARTY_LICENSES.txt")" = "$(sha256_file "$bundle/$third_party_licenses_path")" || fail "installed third-party notices differ from the authenticated evidence"
+
+if test "$role" = provisioner; then
+  test -d "$release_directory" && test ! -L "$release_directory" || fail "provisioner release path is not a regular directory"
+  test "$(stat -f %u "$release_directory")" -eq 0 && test "$(stat -f %g "$release_directory")" -eq 0 && test "$(stat -f %Lp "$release_directory")" = 755 || fail "provisioner release directory metadata is invalid"
+  require_no_extended_acl "$release_directory"
+  for installed_record in 'owntransit-provision:755' 'owntransitctl:700' 'receipt.json:600' 'LICENSE:644' 'THIRD_PARTY_LICENSES.txt:644'; do
+    installed_file=${installed_record%%:*}
+    installed_mode=${installed_record#*:}
+    installed_path="$release_directory/$installed_file"
+    test -f "$installed_path" && test ! -L "$installed_path" || fail "provisioner package file is absent or not regular: $installed_file"
+    test "$(stat -f %u "$installed_path")" -eq 0 && test "$(stat -f %g "$installed_path")" -eq 0 || fail "provisioner package file is not root:wheel owned: $installed_file"
+    test "$(stat -f %Lp "$installed_path")" = "$installed_mode" && test "$(stat -f %l "$installed_path")" -eq 1 || fail "provisioner package file metadata is invalid: $installed_file"
+    require_no_extended_acl "$installed_path"
+  done
+  test "$(sha256_file "$release_directory/owntransit-provision")" = "$artifact_sha256" || fail "installed provisioner differs from the authenticated artifact"
+  ensure_exact_symlink "$bin_directory/owntransit-provision" "../roles/provisioner/current/owntransit-provision"
+  trap - EXIT HUP INT TERM
+  rm -rf -- "$verification_directory"
+  printf 'installed OwnTransit macOS provisioner release %s under selector %s\n' "$release_id" "$current_link"
+  printf 'installed license evidence: %s/LICENSE and %s/THIRD_PARTY_LICENSES.txt\n' "$current_link" "$current_link"
+  printf '%s\n' 'provisioner package lifecycle created no reader identity, endpoint state, credential, or launchd job'
+  exit 0
+fi
 
 ensure_exact_symlink "$bin_directory/owntransit" "../roles/client/current/owntransit"
 verify_client_executable_boundary "$release_directory/owntransit" "$release_directory/owntransit-real"
@@ -852,9 +845,6 @@ test -f "$public_frontend" && test ! -L "$public_frontend" || fail "package fina
 test "$(stat -f %u "$public_frontend")" -eq 0 && test "$(stat -f %g "$public_frontend")" -eq 0 && test "$(stat -f %Lp "$public_frontend")" = 755 || fail "normal client frontend activation is invalid"
 test "$(sha256_file "$public_frontend")" = "$artifact_sha256" || fail "normal client frontend changed during activation"
 require_no_extended_acl "$public_frontend"
-test "$(sha256_file "$release_directory/owntransitctl")" = "$lifecycle_sha256" || fail "installed lifecycle artifact changed"
-test "$(sha256_file "$release_directory/LICENSE")" = "$(sha256_file "$bundle/$project_license_path")" || fail "installed project license differs from the authenticated evidence"
-test "$(sha256_file "$release_directory/THIRD_PARTY_LICENSES.txt")" = "$(sha256_file "$bundle/$third_party_licenses_path")" || fail "installed third-party notices differ from the authenticated evidence"
 if find "$install_root" -type f -perm -4000 -print | grep . >/dev/null; then
   fail "installation root contains a setuid file"
 fi

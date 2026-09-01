@@ -2,14 +2,16 @@
 
 ## Purpose
 
-This brief defines the minimum independent implementation review and authorized
-penetration-test scope required before an OwnTransit v1 release. It is not a
-self-attestation. A reviewer is independent only when they did not design or
-implement the reviewed revision and have no release-approval conflict.
+This brief defines the recommended independent implementation-review and
+authorized penetration-test scope for OwnTransit 0.1.0 and later releases. It
+is not a self-attestation, and 0.1.0 does not claim that this external
+certification has occurred. A reviewer is independent only when they did not
+design or implement the reviewed revision and have no release-approval
+conflict.
 
 The review target must be one immutable, clean public-root Git revision and the
 exact release manifest and artifact digests produced from it. Findings against
-another revision do not qualify the release candidate.
+another revision do not qualify the reviewed release.
 
 ## Security claim under review
 
@@ -123,10 +125,12 @@ Use these release severities:
 - **Low:** hardening, diagnosability or misuse resistance with limited direct
   security impact.
 
-## Release exit rule
+## Finding disposition rule
 
 Every Critical and High finding must be fixed and independently retested, or
 explicitly accepted in a public release risk record by the project owner. An
 unreviewed change to cryptography, identity, parsing, lifecycle, packaging or
 release verification after the review invalidates the affected portion and
-requires focused re-review.
+requires focused re-review. This rule applies whenever a review is performed;
+the absence of a commissioned independent review must be disclosed and must
+not be described as a passing assessment.
