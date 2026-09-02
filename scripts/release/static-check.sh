@@ -48,6 +48,26 @@ require_text scripts/release/archive-native.sh 'packaging/scripts/install.sh'
 require_text scripts/tests/sign-candidate.sh 'packaging/scripts/install.sh'
 require_text scripts/release/releasectl/main.go 'package-install-entrypoint'
 require_text scripts/qualify/test-native-archive.sh 'packaging/scripts/install.sh'
+for full_mode_script in \
+  scripts/release/install.sh \
+  scripts/release/archive-native.sh \
+  scripts/release/sign-candidate.sh \
+  scripts/release/sign-qualification-record.sh \
+  scripts/tests/sign-candidate.sh; do
+  require_text "$full_mode_script" 'stat -f %p -- "$1"'
+  require_text "$full_mode_script" '& 07777'
+done
+if grep -Fq '%Lp' \
+  scripts/release/install.sh \
+  scripts/release/archive-native.sh \
+  scripts/release/sign-candidate.sh \
+  scripts/release/sign-qualification-record.sh \
+  scripts/tests/sign-candidate.sh; then
+  fail 'Darwin release mode check hides special permission bits'
+fi
+require_text scripts/tests/install-entrypoint.sh 'chmod 1644 "$trust/policy-public.pem"'
+require_text scripts/tests/sign-candidate.sh 'chmod 1644 "$bundle/LICENSE"'
+require_text scripts/tests/qualification-record.sh 'chmod 1600 "$workspace/keys/distribution"'
 require_text scripts/release/install-macos.sh '"$lifecycle_runner" package-apply'
 require_text scripts/release/install-macos.sh 'roles_root="$install_root/roles"'
 require_text scripts/release/install-macos.sh 'ensure_exact_symlink "$bin_directory/owntransit" "../roles/client/current/owntransit"'
@@ -92,6 +112,8 @@ require_text scripts/release/install-macos.sh '/usr/bin/sudo -n -u "#$target_uid
 require_text scripts/release/install-macos.sh 'unrelated user is unexpectedly a reader-group member'
 require_text scripts/release/install-macos.sh 'installation root contains a setuid file'
 require_text scripts/release/install-macos.sh 'manual residue review is required'
+require_text scripts/release/install-macos.sh 'macos_mode_raw=$(stat -f %p -- "$1")'
+require_text scripts/release/install-macos.sh '"$((0$macos_mode_raw & 07777))"'
 require_text scripts/release/install-macos.sh 'for (field_number = 1; field_number <= NF; field_number++)'
 if grep -Eq 'for \(index[[:space:]]*=' scripts/release/install-macos.sh; then
   fail 'macOS installer assigns to the awk index builtin'
@@ -99,6 +121,11 @@ fi
 require_text scripts/release/uninstall-macos.sh 'manager-owned current/previous selectors'
 require_text scripts/release/uninstall-macos.sh 'cmp -s "$release_directory/owntransit-real" "$public_frontend"'
 require_text scripts/release/uninstall-macos.sh 'destructive reader-identity purge is intentionally not implemented'
+require_text scripts/release/uninstall-macos.sh 'macos_mode_raw=$(stat -f %p -- "$1")'
+require_text scripts/release/uninstall-macos.sh '"$((0$macos_mode_raw & 07777))"'
+if grep -Fq '%Lp' scripts/release/install-macos.sh scripts/release/uninstall-macos.sh; then
+  fail 'macOS install or uninstall mode check hides special permission bits'
+fi
 if grep -Eq 'dseditgroup .* -o edit|dseditgroup .* -a |GroupMembership.*client_user|GroupMembers.*client_uuid' scripts/release/install-macos.sh; then
   fail 'macOS client installer grants the selected user direct reader-group membership'
 fi

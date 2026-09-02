@@ -192,9 +192,18 @@ sha256_file() {
   fi
 }
 
+darwin_mode() {
+  darwin_mode_raw=$(stat -f %p -- "$1") || return 1
+  case "$darwin_mode_raw" in ''|*[!0-7]*) return 1 ;; esac
+  printf '%o\n' "$((0$darwin_mode_raw & 07777))"
+}
+
 file_metadata() {
   if test "$(uname -s)" = Darwin; then
-    stat -f '%HT|%l|%Lp' -- "$1"
+    file_kind=$(stat -f %HT -- "$1") || return 1
+    file_links=$(stat -f %l -- "$1") || return 1
+    file_permissions=$(darwin_mode "$1") || return 1
+    printf '%s|%s|%s\n' "$file_kind" "$file_links" "$file_permissions"
   else
     stat -c '%F|%h|%a' -- "$1"
   fi
@@ -202,7 +211,10 @@ file_metadata() {
 
 directory_metadata() {
   if test "$(uname -s)" = Darwin; then
-    stat -f '%HT|%u|%Lp' -- "$1"
+    directory_kind=$(stat -f %HT -- "$1") || return 1
+    directory_owner=$(stat -f %u -- "$1") || return 1
+    directory_permissions=$(darwin_mode "$1") || return 1
+    printf '%s|%s|%s\n' "$directory_kind" "$directory_owner" "$directory_permissions"
   else
     stat -c '%F|%u|%a' -- "$1"
   fi
@@ -276,7 +288,7 @@ parent_owner=${parent_rest%%|*}
 parent_mode=${parent_rest#*|}
 case "$parent_kind" in Directory|directory) ;; *) fail "output parent must be a directory" ;; esac
 test "$parent_owner" -eq "$(id -u)" || fail "output parent must be owned by the effective user"
-case "$parent_mode" in [0-7][0-7][0-7]|[0-7][0-7][0-7][0-7]) ;; *) fail "output parent mode is invalid" ;; esac
+case "$parent_mode" in [0-7][0-7][0-7]) ;; *) fail "output parent mode has special or invalid bits" ;; esac
 parent_permissions=$((0$parent_mode))
 test $((parent_permissions & 022)) -eq 0 || fail "output parent must not be group- or world-writable"
 
@@ -381,6 +393,7 @@ validate_bundle() {
   checksum_mode=${checksum_rest#*|}
   case "$checksum_kind" in "Regular File"|"regular file") ;; *) fail "$label SHA256SUMS is not a regular file" ;; esac
   test "$checksum_links" -eq 1 || fail "$label SHA256SUMS has multiple hard links"
+  case "$checksum_mode" in [0-7][0-7][0-7]) ;; *) fail "$label SHA256SUMS has special or invalid mode bits" ;; esac
   checksum_permissions=$((0$checksum_mode))
   test $((checksum_permissions & 022)) -eq 0 || fail "$label SHA256SUMS is group- or world-writable"
   directories="$workspace/$label.directories"
@@ -389,6 +402,7 @@ validate_bundle() {
     metadata=$(directory_metadata "$directory") || fail "cannot inspect $label directory"
     kind=${metadata%%|*}; rest=${metadata#*|}; mode=${rest#*|}
     case "$kind" in Directory|directory) ;; *) fail "$label contains a non-directory entry" ;; esac
+    case "$mode" in [0-7][0-7][0-7]) ;; *) fail "$label contains a directory with special or invalid mode bits" ;; esac
     permissions=$((0$mode))
     test $((permissions & 022)) -eq 0 || fail "$label contains a group- or world-writable directory"
   done < "$directories"
@@ -413,6 +427,7 @@ validate_bundle() {
     kind=${metadata%%|*}; rest=${metadata#*|}; links=${rest%%|*}; mode=${rest#*|}
     case "$kind" in "Regular File"|"regular file") ;; *) fail "$label member is not a regular file: $relative" ;; esac
     test "$links" -eq 1 || fail "$label member has multiple hard links: $relative"
+    case "$mode" in [0-7][0-7][0-7]) ;; *) fail "$label member has special or invalid mode bits: $relative" ;; esac
     permissions=$((0$mode))
     test $((permissions & 022)) -eq 0 || fail "$label member is group- or world-writable: $relative"
     test "$(sha256_file "$member")" = "$digest" || fail "$label checksum mismatch: $relative"

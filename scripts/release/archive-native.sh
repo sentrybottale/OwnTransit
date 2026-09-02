@@ -82,9 +82,18 @@ sha256_file() {
   fi
 }
 
+darwin_mode() {
+  darwin_mode_raw=$(stat -f %p -- "$1") || return 1
+  case "$darwin_mode_raw" in ''|*[!0-7]*) return 1 ;; esac
+  printf '%o\n' "$((0$darwin_mode_raw & 07777))"
+}
+
 file_metadata() {
   if test "$(uname -s)" = Darwin; then
-    stat -f '%HT|%l|%Lp' -- "$1"
+    file_kind=$(stat -f %HT -- "$1") || return 1
+    file_links=$(stat -f %l -- "$1") || return 1
+    file_permissions=$(darwin_mode "$1") || return 1
+    printf '%s|%s|%s\n' "$file_kind" "$file_links" "$file_permissions"
   else
     stat -c '%F|%h|%a' -- "$1"
   fi
@@ -92,7 +101,7 @@ file_metadata() {
 
 directory_mode() {
   if test "$(uname -s)" = Darwin; then
-    stat -f '%Lp' -- "$1"
+    darwin_mode "$1"
   else
     stat -c '%a' -- "$1"
   fi

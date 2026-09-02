@@ -152,7 +152,9 @@ path_owner() {
 
 path_mode() {
   if test "$(uname -s)" = Darwin; then
-    stat -f %Lp -- "$1"
+    path_mode_raw=$(stat -f %p -- "$1") || return 1
+    case "$path_mode_raw" in ''|*[!0-7]*) return 1 ;; esac
+    printf '%o\n' "$((0$path_mode_raw & 07777))"
   else
     stat -c %a -- "$1"
   fi

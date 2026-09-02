@@ -13,6 +13,7 @@ import (
 
 	"github.com/sentrybottale/owntransit/internal/protocol"
 	"github.com/sentrybottale/owntransit/internal/signing"
+	"golang.org/x/sys/unix"
 )
 
 const candidateTestTimestamp = int64(1700000000)
@@ -568,6 +569,13 @@ func TestReadBoundedUsesOnePrivateDescriptor(t *testing.T) {
 	}
 	if _, err := readBounded(key, 64, false); err != nil {
 		t.Fatalf("public bounded input was rejected: %v", err)
+	}
+
+	if err := unix.Chmod(key, 0o1600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readBounded(key, 64, true); err == nil {
+		t.Fatal("sticky private input was accepted")
 	}
 }
 

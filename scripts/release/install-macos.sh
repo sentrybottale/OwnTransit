@@ -148,11 +148,16 @@ for command_name in awk basename cat chmod chown cmp dirname dscl dseditgroup ds
   command -v "$command_name" >/dev/null 2>&1 || fail "required command is unavailable: $command_name"
 done
 
+macos_mode() {
+  macos_mode_raw=$(stat -f %p -- "$1") || return 1
+  case "$macos_mode_raw" in ''|*[!0-7]*) return 1 ;; esac
+  printf '%o\n' "$((0$macos_mode_raw & 07777))"
+}
 
 require_root_owned_protected() {
   protected_path=$1
   test "$(stat -f %u "$protected_path")" -eq 0 || fail "bundle path is not root-owned: $protected_path"
-  protected_mode=$(stat -f %Lp "$protected_path")
+  protected_mode=$(macos_mode "$protected_path") || fail "cannot read bundle path mode: $protected_path"
   case "$protected_mode" in
     [0-7][0-7][0-7]) ;;
     *) fail "bundle path has special or non-canonical mode bits: $protected_path" ;;
@@ -197,7 +202,7 @@ require_root_owned_regular "$checksums"
 test "$(sha256_file "$checksums")" = "$checksums_sha256" || fail "SHA256SUMS does not match its independently supplied digest"
 
 verification_directory=$(mktemp -d /var/tmp/owntransit-install.XXXXXX) || fail "cannot create checksum workspace"
-test "$(stat -f %u "$verification_directory")" -eq 0 && test "$(stat -f %g "$verification_directory")" -eq 0 && test "$(stat -f %Lp "$verification_directory")" = 700 || fail "checksum workspace is not private and root:wheel owned"
+test "$(stat -f %u "$verification_directory")" -eq 0 && test "$(stat -f %g "$verification_directory")" -eq 0 && test "$(macos_mode "$verification_directory")" = 700 || fail "checksum workspace is not private and root:wheel owned"
 require_no_extended_acl "$verification_directory"
 seen_paths="$verification_directory/seen-paths"
 cleanup_seen() { rm -rf "$verification_directory"; }
@@ -277,7 +282,7 @@ ensure_root_directory() {
   if test -e "$directory" || test -L "$directory"; then
     test -d "$directory" && test ! -L "$directory" || fail "$directory is not a regular directory"
     test "$(stat -f %u "$directory")" -eq 0 && test "$(stat -f %g "$directory")" -eq 0 || fail "$directory is not root:wheel owned"
-    test "$(stat -f %Lp "$directory")" = "$permissions" || fail "$directory mode is not $permissions"
+    test "$(macos_mode "$directory")" = "$permissions" || fail "$directory mode is not $permissions"
   else
     install -d -o root -g wheel -m "$permissions" "$directory"
   fi
@@ -290,7 +295,7 @@ ensure_reader_directory() {
   if test -e "$directory" || test -L "$directory"; then
     test -d "$directory" && test ! -L "$directory" || fail "$directory is not a regular directory"
     test "$(stat -f %u "$directory")" -eq 0 && test "$(stat -f %g "$directory")" = "$reader_gid" || fail "$directory is not root:reader owned"
-    test "$(stat -f %Lp "$directory")" = "$permissions" || fail "$directory mode is not $permissions"
+    test "$(macos_mode "$directory")" = "$permissions" || fail "$directory mode is not $permissions"
   else
     install -d -o root -g wheel -m 0700 "$directory"
     chown "0:$reader_gid" "$directory"
@@ -442,11 +447,11 @@ verify_group_record() {
 require_reader_receipt_protected() {
   test -d "$identity_directory" && test ! -L "$identity_directory" || fail "client reader identity directory is absent or not regular"
   test "$(stat -f %u "$identity_directory")" -eq 0 && test "$(stat -f %g "$identity_directory")" -eq 0 || fail "client reader identity directory is not root:wheel owned"
-  test "$(stat -f %Lp "$identity_directory")" = 700 || fail "client reader identity directory mode is not 0700"
+  test "$(macos_mode "$identity_directory")" = 700 || fail "client reader identity directory mode is not 0700"
   require_no_extended_acl "$identity_directory"
   test -f "$reader_receipt" && test ! -L "$reader_receipt" || fail "client reader identity receipt is absent or not regular"
   test "$(stat -f %u "$reader_receipt")" -eq 0 && test "$(stat -f %g "$reader_receipt")" -eq 0 || fail "client reader identity receipt is not root:wheel owned"
-  test "$(stat -f %Lp "$reader_receipt")" = 600 || fail "client reader identity receipt mode is not 0600"
+  test "$(macos_mode "$reader_receipt")" = 600 || fail "client reader identity receipt mode is not 0600"
   test "$(stat -f %l "$reader_receipt")" -eq 1 || fail "client reader identity receipt has multiple hard links"
   require_no_extended_acl "$reader_receipt"
 }
@@ -488,7 +493,7 @@ write_reader_receipt() {
   test ! -e "$reader_receipt" && test ! -L "$reader_receipt" || fail "client reader identity receipt appeared concurrently"
   reader_receipt_temporary=$(mktemp "$identity_directory/.client-reader.v1.XXXXXX") || fail "cannot create client reader identity receipt"
   test "$(stat -f %u "$reader_receipt_temporary")" -eq 0 && test "$(stat -f %g "$reader_receipt_temporary")" -eq 0 || fail "temporary identity receipt is not root:wheel owned"
-  test "$(stat -f %Lp "$reader_receipt_temporary")" = 600 || fail "temporary identity receipt mode is not 0600"
+  test "$(macos_mode "$reader_receipt_temporary")" = 600 || fail "temporary identity receipt mode is not 0600"
   require_no_extended_acl "$reader_receipt_temporary"
   printf '%s\n' \
     'schema=owntransit.macos-client-reader.v1' \
@@ -680,14 +685,14 @@ verify_client_executable_boundary() {
   client_real=$2
   test -f "$client_launcher" && test ! -L "$client_launcher" || fail "client launcher is not a regular non-symlink file"
   test "$(stat -f %u "$client_launcher")" -eq 0 && test "$(stat -f %g "$client_launcher")" = "$reader_gid" || fail "client launcher is not root:reader owned"
-  test "$(stat -f %Lp "$client_launcher")" = 2751 || fail "client launcher mode is not setgid 2751"
+  test "$(macos_mode "$client_launcher")" = 2751 || fail "client launcher mode is not setgid 2751"
   test "$(stat -f %l "$client_launcher")" -eq 1 || fail "client launcher is not a fresh single-link inode"
   require_no_extended_acl "$client_launcher"
   test "$(sha256_file "$client_launcher")" = "$launcher_sha256" || fail "authenticated client launcher changed during installation"
 
   test -f "$client_real" && test ! -L "$client_real" || fail "real client is not a regular non-symlink file"
   test "$(stat -f %u "$client_real")" -eq 0 && test "$(stat -f %g "$client_real")" = "$reader_gid" || fail "real client is not root:reader owned"
-  test "$(stat -f %Lp "$client_real")" = 750 || fail "real client mode is not 0750"
+  test "$(macos_mode "$client_real")" = 750 || fail "real client mode is not 0750"
   test "$(stat -f %l "$client_real")" -eq 1 || fail "real client is not a fresh single-link inode"
   require_no_extended_acl "$client_real"
   test "$(sha256_file "$client_real")" = "$artifact_sha256" || fail "authenticated real client changed during installation"
@@ -788,7 +793,7 @@ if test -e "$current_link" || test -L "$current_link"; then
   lifecycle_runner="$roles_root/$role/releases/$current_release/owntransitctl"
   test -f "$lifecycle_runner" && test ! -L "$lifecycle_runner" || fail "selected lifecycle executable is absent or not regular"
   test "$(stat -f %u "$lifecycle_runner")" -eq 0 && test "$(stat -f %g "$lifecycle_runner")" -eq 0 || fail "selected lifecycle executable is not root:wheel owned"
-  test "$(stat -f %Lp "$lifecycle_runner")" = 700 && test "$(stat -f %l "$lifecycle_runner")" -eq 1 || fail "selected lifecycle executable metadata is invalid"
+  test "$(macos_mode "$lifecycle_runner")" = 700 && test "$(stat -f %l "$lifecycle_runner")" -eq 1 || fail "selected lifecycle executable metadata is invalid"
   require_no_extended_acl "$lifecycle_runner"
 fi
 
@@ -817,7 +822,7 @@ test "$(sha256_file "$release_directory/THIRD_PARTY_LICENSES.txt")" = "$(sha256_
 
 if test "$role" = provisioner; then
   test -d "$release_directory" && test ! -L "$release_directory" || fail "provisioner release path is not a regular directory"
-  test "$(stat -f %u "$release_directory")" -eq 0 && test "$(stat -f %g "$release_directory")" -eq 0 && test "$(stat -f %Lp "$release_directory")" = 755 || fail "provisioner release directory metadata is invalid"
+  test "$(stat -f %u "$release_directory")" -eq 0 && test "$(stat -f %g "$release_directory")" -eq 0 && test "$(macos_mode "$release_directory")" = 755 || fail "provisioner release directory metadata is invalid"
   require_no_extended_acl "$release_directory"
   for installed_record in 'owntransit-provision:755' 'owntransitctl:700' 'receipt.json:600' 'LICENSE:644' 'THIRD_PARTY_LICENSES.txt:644'; do
     installed_file=${installed_record%%:*}
@@ -825,7 +830,7 @@ if test "$role" = provisioner; then
     installed_path="$release_directory/$installed_file"
     test -f "$installed_path" && test ! -L "$installed_path" || fail "provisioner package file is absent or not regular: $installed_file"
     test "$(stat -f %u "$installed_path")" -eq 0 && test "$(stat -f %g "$installed_path")" -eq 0 || fail "provisioner package file is not root:wheel owned: $installed_file"
-    test "$(stat -f %Lp "$installed_path")" = "$installed_mode" && test "$(stat -f %l "$installed_path")" -eq 1 || fail "provisioner package file metadata is invalid: $installed_file"
+    test "$(macos_mode "$installed_path")" = "$installed_mode" && test "$(stat -f %l "$installed_path")" -eq 1 || fail "provisioner package file metadata is invalid: $installed_file"
     require_no_extended_acl "$installed_path"
   done
   test "$(sha256_file "$release_directory/owntransit-provision")" = "$artifact_sha256" || fail "installed provisioner differs from the authenticated artifact"
@@ -842,7 +847,7 @@ ensure_exact_symlink "$bin_directory/owntransit" "../roles/client/current/owntra
 verify_client_executable_boundary "$release_directory/owntransit" "$release_directory/owntransit-real"
 public_frontend="$bin_directory/owntransit-cli"
 test -f "$public_frontend" && test ! -L "$public_frontend" || fail "package finalizer did not publish a regular normal client frontend"
-test "$(stat -f %u "$public_frontend")" -eq 0 && test "$(stat -f %g "$public_frontend")" -eq 0 && test "$(stat -f %Lp "$public_frontend")" = 755 || fail "normal client frontend activation is invalid"
+test "$(stat -f %u "$public_frontend")" -eq 0 && test "$(stat -f %g "$public_frontend")" -eq 0 && test "$(macos_mode "$public_frontend")" = 755 || fail "normal client frontend activation is invalid"
 test "$(sha256_file "$public_frontend")" = "$artifact_sha256" || fail "normal client frontend changed during activation"
 require_no_extended_acl "$public_frontend"
 if find "$install_root" -type f -perm -4000 -print | grep . >/dev/null; then

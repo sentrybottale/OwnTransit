@@ -29,7 +29,9 @@ sha256_file() {
 
 file_mode() {
   if test "$(uname -s)" = Darwin; then
-    stat -f '%Lp' -- "$1"
+    file_mode_raw=$(stat -f %p -- "$1") || return 1
+    case "$file_mode_raw" in ''|*[!0-7]*) return 1 ;; esac
+    printf '%o\n' "$((0$file_mode_raw & 07777))"
   else
     stat -c '%a' -- "$1"
   fi
@@ -257,6 +259,12 @@ hardlink_output_dir="$workspace/hardlink-output"
 mkdir "$hardlink_output_dir"
 expect_failure 'bundle file has multiple hard links' "$hardlink_output_dir/$archive_name"
 rm -f "$bundle/unexpected-hardlink"
+
+chmod 1644 "$bundle/LICENSE"
+special_mode_output_dir="$workspace/special-mode-output"
+mkdir "$special_mode_output_dir"
+expect_failure 'bundle member mode is not 644: LICENSE' "$special_mode_output_dir/$archive_name"
+chmod 0644 "$bundle/LICENSE"
 
 cp "$bundle/LICENSE" "$workspace/LICENSE.saved"
 printf '%s\n' tampered >> "$bundle/LICENSE"

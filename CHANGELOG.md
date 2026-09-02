@@ -11,6 +11,28 @@ or publish artifacts automatically.
 
 ## [Unreleased]
 
+## [0.1.0-rc.7]
+
+### Fixed
+
+- Normalized both bare and `sha256:`-prefixed Podman image identities during
+  Linux relay installation without weakening the manifest-pinned comparison.
+- Removed a BSD `awk` builtin-name collision from macOS client-reader identity
+  validation.
+- Read the complete Darwin permission mode in macOS install, uninstall,
+  qualification, archive, signing, and protected-key checks. The required
+  setgid client launcher is now recognized correctly, while unexpected setuid,
+  setgid, or sticky bits fail closed throughout the release path.
+- Keyed the supplied Nginx per-peer availability limits on the original TCP
+  peer address and moved them to fresh shared-memory zone names, preventing an
+  ambient Real-IP policy from making request headers select quota identities.
+
+### Assurance
+
+- Added cross-platform negative fixtures for special permission bits and for
+  request-rewritten reverse-proxy quota keys. This candidate remains subject to
+  the complete signed-artifact and supported-host qualification gates.
+
 ## [0.1.0-rc.5]
 
 ### Added

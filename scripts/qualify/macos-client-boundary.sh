@@ -78,10 +78,16 @@ for command_name in awk cat dscl dsmemberutil find grep id ls mktemp plutil read
   command -v "$command_name" >/dev/null 2>&1 || fail "required command is unavailable: $command_name"
 done
 
+macos_mode() {
+  macos_mode_raw=$(stat -f %p -- "$1") || return 1
+  case "$macos_mode_raw" in ''|*[!0-7]*) return 1 ;; esac
+  printf '%o\n' "$((0$macos_mode_raw & 07777))"
+}
+
 workspace=$(mktemp -d /var/tmp/owntransit-macos-qualify.XXXXXX) || fail "cannot create qualification workspace"
 cleanup() { rm -rf -- "$workspace"; }
 trap cleanup EXIT HUP INT TERM
-test "$(stat -f %u "$workspace")" -eq 0 && test "$(stat -f %g "$workspace")" -eq 0 && test "$(stat -f %Lp "$workspace")" = 700 || fail "qualification workspace is not root:wheel 0700"
+test "$(stat -f %u "$workspace")" -eq 0 && test "$(stat -f %g "$workspace")" -eq 0 && test "$(macos_mode "$workspace")" = 700 || fail "qualification workspace is not root:wheel 0700"
 
 require_no_extended_acl() {
   acl_path=$1
@@ -93,7 +99,7 @@ require_root_wheel_directory() {
   mode=$2
   test -d "$directory" && test ! -L "$directory" || fail "directory is absent, special, or a symlink: $directory"
   test "$(stat -f %u "$directory")" -eq 0 && test "$(stat -f %g "$directory")" -eq 0 || fail "directory is not root:wheel owned: $directory"
-  test "$(stat -f %Lp "$directory")" = "$mode" || fail "directory has the wrong mode: $directory"
+  test "$(macos_mode "$directory")" = "$mode" || fail "directory has the wrong mode: $directory"
   require_no_extended_acl "$directory"
 }
 
@@ -102,7 +108,7 @@ require_root_reader_directory() {
   mode=$2
   test -d "$directory" && test ! -L "$directory" || fail "reader directory is absent, special, or a symlink: $directory"
   test "$(stat -f %u "$directory")" -eq 0 && test "$(stat -f %g "$directory")" = "$reader_gid" || fail "directory is not root:reader owned: $directory"
-  test "$(stat -f %Lp "$directory")" = "$mode" || fail "reader directory has the wrong mode: $directory"
+  test "$(macos_mode "$directory")" = "$mode" || fail "reader directory has the wrong mode: $directory"
   require_no_extended_acl "$directory"
 }
 
@@ -214,7 +220,7 @@ require_root_reader_directory "$release_directory" 750
 test -L "$role_root/current" && test "$(readlink "$role_root/current")" = "releases/$release_id" || fail "authenticated client selector identifies another release"
 
 test -f "$receipt" && test ! -L "$receipt" || fail "reader identity receipt is absent or not regular"
-test "$(stat -f %u "$receipt")" -eq 0 && test "$(stat -f %g "$receipt")" -eq 0 && test "$(stat -f %Lp "$receipt")" = 600 || fail "reader identity receipt is not root:wheel 0600"
+test "$(stat -f %u "$receipt")" -eq 0 && test "$(stat -f %g "$receipt")" -eq 0 && test "$(macos_mode "$receipt")" = 600 || fail "reader identity receipt is not root:wheel 0600"
 test "$(stat -f %l "$receipt")" -eq 1 || fail "reader identity receipt has multiple hard links"
 require_no_extended_acl "$receipt"
 test "$(wc -l < "$receipt" | tr -d '[:space:]')" -eq 8 || fail "reader identity receipt has the wrong line count"
@@ -286,7 +292,7 @@ require_root_reader_directory "$runtime_directory" 750
 require_root_reader_directory "$anchor_directory" 750
 for protected_file in "$launcher_binding" "$runtime_file" "$anchor_file"; do
   test -f "$protected_file" && test ! -L "$protected_file" || fail "protected reader file is absent or not regular: $protected_file"
-  test "$(stat -f %u "$protected_file")" -eq 0 && test "$(stat -f %g "$protected_file")" = "$reader_gid" && test "$(stat -f %Lp "$protected_file")" = 640 || fail "protected reader file is not root:reader 0640: $protected_file"
+  test "$(stat -f %u "$protected_file")" -eq 0 && test "$(stat -f %g "$protected_file")" = "$reader_gid" && test "$(macos_mode "$protected_file")" = 640 || fail "protected reader file is not root:reader 0640: $protected_file"
   test "$(stat -f %l "$protected_file")" -eq 1 || fail "protected reader file has multiple hard links: $protected_file"
   require_no_extended_acl "$protected_file"
 done
@@ -311,30 +317,30 @@ test "$binding_gid" = "$reader_gid" && test "$binding_release" = "$release_id" |
 valid_digest "$binding_client_sha256" || fail "launcher binding client digest is invalid"
 
 test -f "$client_launcher" && test ! -L "$client_launcher" || fail "client launcher is absent or not regular"
-test "$(stat -f %u "$client_launcher")" -eq 0 && test "$(stat -f %g "$client_launcher")" = "$reader_gid" && test "$(stat -f %Lp "$client_launcher")" = 2751 || fail "client launcher is not root:reader setgid 2751"
+test "$(stat -f %u "$client_launcher")" -eq 0 && test "$(stat -f %g "$client_launcher")" = "$reader_gid" && test "$(macos_mode "$client_launcher")" = 2751 || fail "client launcher is not root:reader setgid 2751"
 test "$(stat -f %l "$client_launcher")" -eq 1 || fail "client launcher has multiple hard links"
 require_no_extended_acl "$client_launcher"
 test -f "$client_executable" && test ! -L "$client_executable" || fail "real client is absent or not regular"
-test "$(stat -f %u "$client_executable")" -eq 0 && test "$(stat -f %g "$client_executable")" = "$reader_gid" && test "$(stat -f %Lp "$client_executable")" = 750 || fail "real client is not root:reader 0750"
+test "$(stat -f %u "$client_executable")" -eq 0 && test "$(stat -f %g "$client_executable")" = "$reader_gid" && test "$(macos_mode "$client_executable")" = 750 || fail "real client is not root:reader 0750"
 test "$(stat -f %l "$client_executable")" -eq 1 || fail "real client has multiple hard links"
 require_no_extended_acl "$client_executable"
 test "$(sha256_file "$client_executable")" = "$binding_client_sha256" || fail "real client digest does not match the protected launcher binding"
 test -f "$client_frontend" && test ! -L "$client_frontend" || fail "normal client frontend is absent or not regular"
-test "$(stat -f %u "$client_frontend")" -eq 0 && test "$(stat -f %g "$client_frontend")" -eq 0 && test "$(stat -f %Lp "$client_frontend")" = 755 || fail "normal client frontend is not root:wheel 0755"
+test "$(stat -f %u "$client_frontend")" -eq 0 && test "$(stat -f %g "$client_frontend")" -eq 0 && test "$(macos_mode "$client_frontend")" = 755 || fail "normal client frontend is not root:wheel 0755"
 test "$(stat -f %l "$client_frontend")" -eq 1 || fail "normal client frontend has multiple hard links"
 require_no_extended_acl "$client_frontend"
 test "$(sha256_file "$client_frontend")" = "$binding_client_sha256" || fail "normal client frontend differs from the authenticated client artifact"
 test -f "$lifecycle_executable" && test ! -L "$lifecycle_executable" || fail "owntransitctl is absent or not regular"
-test "$(stat -f %u "$lifecycle_executable")" -eq 0 && test "$(stat -f %g "$lifecycle_executable")" -eq 0 && test "$(stat -f %Lp "$lifecycle_executable")" = 700 || fail "owntransitctl is not root:wheel 0700"
+test "$(stat -f %u "$lifecycle_executable")" -eq 0 && test "$(stat -f %g "$lifecycle_executable")" -eq 0 && test "$(macos_mode "$lifecycle_executable")" = 700 || fail "owntransitctl is not root:wheel 0700"
 test "$(stat -f %l "$lifecycle_executable")" -eq 1 || fail "owntransitctl has multiple hard links"
 require_no_extended_acl "$lifecycle_executable"
 test -f "$release_directory/receipt.json" && test ! -L "$release_directory/receipt.json" || fail "authenticated package receipt is absent"
-test "$(stat -f %u "$release_directory/receipt.json")" -eq 0 && test "$(stat -f %g "$release_directory/receipt.json")" -eq 0 && test "$(stat -f %Lp "$release_directory/receipt.json")" = 600 || fail "authenticated package receipt is not root:wheel 0600"
+test "$(stat -f %u "$release_directory/receipt.json")" -eq 0 && test "$(stat -f %g "$release_directory/receipt.json")" -eq 0 && test "$(macos_mode "$release_directory/receipt.json")" = 600 || fail "authenticated package receipt is not root:wheel 0600"
 test "$(stat -f %l "$release_directory/receipt.json")" -eq 1 || fail "authenticated package receipt has multiple hard links"
 require_no_extended_acl "$release_directory/receipt.json"
 for notice in LICENSE THIRD_PARTY_LICENSES.txt; do
   test -f "$release_directory/$notice" && test ! -L "$release_directory/$notice" || fail "installed license notice is absent: $notice"
-  test "$(stat -f %u "$release_directory/$notice")" -eq 0 && test "$(stat -f %g "$release_directory/$notice")" -eq 0 && test "$(stat -f %Lp "$release_directory/$notice")" = 644 || fail "installed license notice is not root:wheel 0644: $notice"
+  test "$(stat -f %u "$release_directory/$notice")" -eq 0 && test "$(stat -f %g "$release_directory/$notice")" -eq 0 && test "$(macos_mode "$release_directory/$notice")" = 644 || fail "installed license notice is not root:wheel 0644: $notice"
   require_no_extended_acl "$release_directory/$notice"
 done
 test -L "$bin_directory/owntransit" && test "$(readlink "$bin_directory/owntransit")" = "../roles/client/current/owntransit" || fail "client launcher does not select the fixed authenticated current path"

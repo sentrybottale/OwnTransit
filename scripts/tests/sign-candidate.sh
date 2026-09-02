@@ -75,7 +75,9 @@ native_mode() {
 
 file_mode() {
   if test "$(uname -s)" = Darwin; then
-    stat -f '%Lp' -- "$1"
+    file_mode_raw=$(stat -f %p -- "$1") || return 1
+    case "$file_mode_raw" in ''|*[!0-7]*) return 1 ;; esac
+    printf '%o\n' "$((0$file_mode_raw & 07777))"
   else
     stat -c '%a' -- "$1"
   fi
@@ -355,6 +357,16 @@ cmp -s "$expected_releasectl_calls" "$workspace/fake-releasectl.calls" || fail "
 printf '%s\n' 'policy=1 anchor=0/0/0' 'policy=1 anchor=0/0/0' > "$workspace/expected-policy-anchors"
 cmp -s "$workspace/expected-policy-anchors" "$workspace/fake-releasectl.policy-anchors" ||
   fail "initial conductor did not verify policy twice against the exact empty anchor"
+
+chmod 1644 "$bundle/LICENSE"
+special_mode_output="$workspace/output-parent/rejected-special-mode"
+if special_mode_rejection=$(invoke_signer "$workspace/keys/policy-public.pem" "$special_mode_output" 2>&1); then
+  fail "signing conductor accepted a native member with special mode bits"
+fi
+printf '%s\n' "$special_mode_rejection" | grep -Fq 'input-bundle member has special or invalid mode bits: LICENSE' ||
+  fail "special native member was rejected for the wrong reason: $special_mode_rejection"
+test ! -e "$special_mode_output" || fail "special-mode rejection created output"
+chmod 0644 "$bundle/LICENSE"
 
 advanced_output="$workspace/output-parent/advanced-candidate"
 invoke_signer "$workspace/keys/policy-public.pem" "$advanced_output" "$workspace/keys/allowed_signers" \

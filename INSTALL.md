@@ -259,6 +259,34 @@ The resumed command performs the live authenticated carrier proof and reports
 Applied state; its mailbox is intentionally memory-only. After apply, losing
 the mailbox is harmless and cannot block local cleanup.
 
+### Reverse-proxy quota boundary
+
+The supplied Nginx snippets deliberately rate-limit by
+`$realip_remote_addr`: the address of the immediate TCP peer before the
+[Nginx Real-IP module](https://nginx.org/en/docs/http/ngx_http_realip_module.html)
+applies any request-carried replacement address. Do not substitute
+`$remote_addr`, `$binary_remote_addr`, `X-Forwarded-For`, `X-Real-IP`, or
+another request header. A shared host may have an overly broad RealIP policy;
+that ambient policy must not let an Internet client select an OwnTransit quota
+identity.
+
+This boundary requires Nginx 1.9.7 or newer with `ngx_http_realip_module`. If
+Nginx reports an unknown `$realip_remote_addr`, that build is unsupported for
+these snippets; falling back to a rewritten address is not safe. Install both
+snippets, verify the
+complete candidate configuration with `nginx -t`, inspect `nginx -T` to ensure
+the four OwnTransit per-peer zones retain the exact key, and only then perform
+a graceful reload. The `*_per_peer` names intentionally do not reuse the
+earlier `*_per_ip` shared-memory zones: Nginx rejects a live zone whose key
+changes during reload.
+
+Do not remove or rewrite host-wide RealIP directives as part of an OwnTransit
+deployment. That could change unrelated website or control-panel behavior and
+is unnecessary for this boundary. If another proxy or CDN connects directly
+to Nginx, all clients using the same immediate proxy address share a per-peer
+bucket. That conservative availability tradeoff is intentional; the global
+virtual-server buckets remain an independent ceiling.
+
 OwnTransit 0.1.0 performs this initial ceremony for exactly one relay, one
 connector, one route, and one client. Adding a second client to an existing
 route is not implemented; do not treat route rotation as client enrollment.

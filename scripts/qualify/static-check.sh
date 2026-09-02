@@ -30,9 +30,22 @@ for signing_helper in packaging/macos/sign-checksums.sh packaging/homebrew/build
   require_text "$signing_helper" 'signing key mode must be 0400 or 0600'
   require_text "$signing_helper" 'protected key ancestor is group- or world-writable'
   require_text "$signing_helper" 'protected key ancestor has an extended ACL'
+  require_text "$signing_helper" 'darwin_mode_raw=$(stat -f %p -- "$1")'
+  require_text "$signing_helper" '"$((0$darwin_mode_raw & 07777))"'
+  require_text "$signing_helper" 'protected key ancestor has special or invalid mode bits'
   require_text "$signing_helper" 'signing key must be an Ed25519 private key'
   require_text "$signing_helper" 'require_key_outside_tree "$output_parent" output'
 done
+if grep -Fq '%Lp' \
+  packaging/macos/sign-checksums.sh \
+  packaging/homebrew/build-source-archive.sh \
+  scripts/qualify/test-native-archive.sh \
+  scripts/qualify/test-signature-tools.sh; then
+  fail 'Darwin qualification or signing mode check hides special permission bits'
+fi
+require_text scripts/qualify/test-native-archive.sh 'chmod 1644 "$bundle/LICENSE"'
+require_text scripts/qualify/test-signature-tools.sh 'chmod 1600 "$workspace/special-mode-key"'
+require_text scripts/qualify/test-signature-tools.sh 'chmod 1700 "$workspace/special-mode-ancestor"'
 require_text packaging/macos/sign-checksums.sh 'require_key_outside_tree "$subject_parent" "checksum staging"'
 require_text packaging/homebrew/build-source-archive.sh 'require_key_outside_tree "$source_root" "source staging"'
 require_text packaging/macos/package-pkg.sh 'developer-id package output is disabled until OwnTransit authenticates the final package bytes and BUILD-INPUTS version'
@@ -118,7 +131,12 @@ require_text scripts/qualify/macos-client-boundary.sh 'normal client frontend di
 require_text scripts/qualify/macos-client-boundary.sh 'normal client frontend exposed the protected proxy command'
 require_text scripts/qualify/macos-client-boundary.sh 'installation root contains an unexpected setgid file'
 require_text scripts/qualify/macos-client-boundary.sh 'installation root contains a setuid file'
+require_text scripts/qualify/macos-client-boundary.sh 'macos_mode_raw=$(stat -f %p -- "$1")'
+require_text scripts/qualify/macos-client-boundary.sh '"$((0$macos_mode_raw & 07777))"'
 require_text scripts/qualify/macos-client-boundary.sh '"ship_qualification":false'
+if grep -Fq '%Lp' scripts/qualify/macos-client-boundary.sh; then
+  fail 'macOS boundary qualification mode check hides special permission bits'
+fi
 require_text packaging/macos/CLIENT_READER_BOUNDARY.md 'client-reader.v1'
 require_text packaging/macos/CLIENT_READER_BOUNDARY.md '`package-pkg.sh` fails closed for the'
 require_text cmd/owntransit-launcher/main.go 'clientRealName      = "owntransit-real"'

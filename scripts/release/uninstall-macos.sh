@@ -48,6 +48,13 @@ test "$(id -u)" -eq 0 || fail "uninstall requires root"
 for command_name in cat cmp ls readlink rm sed stat tr uname wc; do
   command -v "$command_name" >/dev/null 2>&1 || fail "required command is unavailable: $command_name"
 done
+
+macos_mode() {
+  macos_mode_raw=$(stat -f %p -- "$1") || return 1
+  case "$macos_mode_raw" in ''|*[!0-7]*) return 1 ;; esac
+  printf '%o\n' "$((0$macos_mode_raw & 07777))"
+}
+
 case "$release_id" in *[!a-z2-7]*|'') fail "release ID must be lowercase unpadded RFC 4648 base32" ;; esac
 test "${#release_id}" -eq 52 || fail "release ID must contain 52 base32 characters"
 case "$release_id" in *[aq]) ;; *) fail "release ID has non-canonical unused trailing bits" ;; esac
@@ -63,7 +70,7 @@ require_root_directory() {
   permissions=$2
   test -d "$directory" && test ! -L "$directory" || fail "$directory is absent or not a regular directory"
   test "$(stat -f %u "$directory")" -eq 0 && test "$(stat -f %g "$directory")" -eq 0 || fail "$directory is not root:wheel owned"
-  test "$(stat -f %Lp "$directory")" = "$permissions" || fail "$directory mode is not $permissions"
+  test "$(macos_mode "$directory")" = "$permissions" || fail "$directory mode is not $permissions"
   require_no_extended_acl "$directory"
 }
 
@@ -72,7 +79,7 @@ require_root_file() {
   permissions=$2
   test -f "$file" && test ! -L "$file" || fail "$file is absent or not a regular file"
   test "$(stat -f %u "$file")" -eq 0 && test "$(stat -f %g "$file")" -eq 0 || fail "$file is not root:wheel owned"
-  test "$(stat -f %Lp "$file")" = "$permissions" || fail "$file mode is not $permissions"
+  test "$(macos_mode "$file")" = "$permissions" || fail "$file mode is not $permissions"
   test "$(stat -f %l "$file")" -eq 1 || fail "$file has multiple hard links"
   require_no_extended_acl "$file"
 }
@@ -82,7 +89,7 @@ require_root_reader_directory() {
   permissions=$2
   test -d "$directory" && test ! -L "$directory" || fail "$directory is absent or not a regular directory"
   test "$(stat -f %u "$directory")" -eq 0 && test "$(stat -f %g "$directory")" = "$reader_gid" || fail "$directory is not root:reader owned"
-  test "$(stat -f %Lp "$directory")" = "$permissions" || fail "$directory mode is not $permissions"
+  test "$(macos_mode "$directory")" = "$permissions" || fail "$directory mode is not $permissions"
   require_no_extended_acl "$directory"
 }
 
@@ -91,7 +98,7 @@ require_root_reader_file() {
   permissions=$2
   test -f "$file" && test ! -L "$file" || fail "$file is absent or not a regular file"
   test "$(stat -f %u "$file")" -eq 0 && test "$(stat -f %g "$file")" = "$reader_gid" || fail "$file is not root:reader owned"
-  test "$(stat -f %Lp "$file")" = "$permissions" || fail "$file mode is not $permissions"
+  test "$(macos_mode "$file")" = "$permissions" || fail "$file mode is not $permissions"
   test "$(stat -f %l "$file")" -eq 1 || fail "$file has multiple hard links"
   require_no_extended_acl "$file"
 }

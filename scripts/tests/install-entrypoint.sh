@@ -288,6 +288,11 @@ expect_rejection 'protected handoff path is group/world writable' \
   "$entrypoint" --bundle "$bundle" --assets "$assets" --trust "$trust" --role provisioner
 chmod 0644 "$trust/policy-public.pem"
 
+chmod 1644 "$trust/policy-public.pem"
+expect_rejection 'protected handoff path has special or non-canonical mode bits' \
+  "$entrypoint" --bundle "$bundle" --assets "$assets" --trust "$trust" --role provisioner
+chmod 0644 "$trust/policy-public.pem"
+
 chmod 0777 "$assets"
 expect_rejection 'protected handoff path is group/world writable' \
   "$entrypoint" --bundle "$bundle" --assets "$assets" --trust "$trust" --role provisioner

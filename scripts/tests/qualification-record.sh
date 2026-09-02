@@ -118,4 +118,13 @@ if nested_rejection=$(invoke_signer "$results" 0 0 "$workspace/assets/qualificat
 fi
 printf '%s\n' "$nested_rejection" | grep -Fq 'qualification output must remain outside the signed asset inventory' || fail "nested output was rejected for the wrong reason"
 
+chmod 1600 "$workspace/keys/distribution"
+if special_mode_rejection=$(invoke_signer "$results" 0 0 "$workspace/output/rejected-special-mode" 2>&1); then
+  fail "signer accepted a distribution key with special mode bits"
+fi
+printf '%s\n' "$special_mode_rejection" | grep -Fq 'distribution key mode must be 0600' ||
+  fail "special-mode distribution key was rejected for the wrong reason"
+test ! -e "$workspace/output/rejected-special-mode" || fail "rejected special-mode output was created"
+chmod 0600 "$workspace/keys/distribution"
+
 printf '%s\n' 'qualification record canonical signing and fail-closed tests passed'

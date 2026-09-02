@@ -53,6 +53,15 @@ Both endpoint roles originate every OwnTransit connection. Neither exposes an
 OwnTransit listener or requires a public address; only the relay is publicly
 reachable.
 
+Reverse-proxy connection and request limits are availability hygiene, never an
+authentication boundary. The supplied Nginx policy keys its per-peer buckets
+on the original TCP peer address retained before RealIP header processing and
+keeps independent virtual-server-wide ceilings. This prevents a request header
+from selecting a quota identity even under unsafe ambient RealIP trust, while
+deliberately grouping clients behind the same immediate CDN or proxy. A fully
+compromised reverse proxy may still ignore every limit or deny service without
+weakening the inner endpoint-authentication and confidentiality boundary.
+
 The client, connector, offline issuers and software/deployment signers are
 explicit OwnTransit trust anchors. OpenSSH host/user keys and policy form a
 separate, operator-owned security boundary inside the carried stream; they are

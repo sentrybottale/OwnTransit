@@ -1192,7 +1192,7 @@ func readBounded(path string, limit int, private bool) ([]byte, error) {
 		return nil, errors.New("input is not a bounded regular file")
 	}
 	if private {
-		permissions := mode & 0o777
+		permissions := mode & 0o7777
 		if before.Uid != uint32(unix.Geteuid()) || permissions != 0o400 && permissions != 0o600 {
 			return nil, errors.New("private key file must be owned by the effective user, single-linked, and mode 0400 or 0600")
 		}

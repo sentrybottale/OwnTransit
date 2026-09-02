@@ -114,6 +114,12 @@ require_key_outside_tree() {
   fi
 }
 
+darwin_mode() {
+  darwin_mode_raw=$(stat -f %p -- "$1") || return 1
+  case "$darwin_mode_raw" in ''|*[!0-7]*) return 1 ;; esac
+  printf '%o\n' "$((0$darwin_mode_raw & 07777))"
+}
+
 require_darwin_protected_key_chain() {
   expected_uid=$1
   protected_path=$signing_key
@@ -145,10 +151,10 @@ require_darwin_protected_key_chain() {
     }
 
     if test "$key_entry" -ne 1; then
-      protected_mode=$(stat -f %Lp -- "$protected_path") || fail "cannot read protected key mode: $protected_path"
+      protected_mode=$(darwin_mode "$protected_path") || fail "cannot read protected key mode: $protected_path"
       case "$protected_mode" in
-        [0-7][0-7][0-7]|[0-7][0-7][0-7][0-7]) ;;
-        *) fail "protected key ancestor mode is invalid: $protected_path" ;;
+        [0-7][0-7][0-7]) ;;
+        *) fail "protected key ancestor has special or invalid mode bits: $protected_path" ;;
       esac
       protected_permissions=$((0$protected_mode))
       test $((protected_permissions & 022)) -eq 0 ||
@@ -166,7 +172,11 @@ validate_signing_key() {
   case "$expected_uid" in ''|*[!0-9]*) fail "current effective UID is invalid" ;; esac
 
   if test "$(uname -s)" = Darwin; then
-    key_metadata=$(stat -f '%HT|%u|%l|%Lp' -- "$signing_key") || fail "cannot stat signing key"
+    key_kind=$(stat -f %HT -- "$signing_key") || fail "cannot read signing key type"
+    key_owner=$(stat -f %u -- "$signing_key") || fail "cannot read signing key owner"
+    key_links=$(stat -f %l -- "$signing_key") || fail "cannot read signing key link count"
+    key_mode=$(darwin_mode "$signing_key") || fail "cannot read signing key mode"
+    key_metadata="$key_kind|$key_owner|$key_links|$key_mode"
   else
     key_metadata=$(stat -c '%F|%u|%h|%a' -- "$signing_key") || fail "cannot stat signing key"
   fi
