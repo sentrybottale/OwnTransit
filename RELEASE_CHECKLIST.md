@@ -69,8 +69,9 @@ unless it reveals a source or artifact change; its status must be disclosed.
 - Replace the matching `Unreleased` entries in `CHANGELOG.md` with an exact
   `## [VERSION]` heading, including the full `-rc.N` suffix for a prerelease.
   The heading freezes a qualification candidate; it is not a release decision
-  or support statement. Do not date or announce a release that has not passed
-  the hard publish gates.
+  or support statement. Do not date or announce a stable release that has not
+  passed the hard publish gates. The narrowly owner-authorized public
+  qualification-prerelease exception is defined in section 5.
 - Record the exact candidate commit and its commit timestamp as the
   `SOURCE_DATE_EPOCH`. Never use a mutable branch name or `latest` identifier
   as a release input.
@@ -144,16 +145,46 @@ authorities.
   targeted-patent, contributor-assignment and publishing-entity review.
   Repository tooling cannot perform or certify those reviews.
 
-## 5. Tag without granting CI publication authority
+## 5. Tag and publish without granting CI authority
 
 After every hard publish gate passes and every assurance/governance item has an
-honest recorded disposition, create one signed annotated tag locally. An
-`-rc.N` tag names an immutable nonproduction candidate; it does not waive any
-manual gate or authorize promotion. A correction gets a new positive `rc.N`
-number and new candidate rather than a moved tag. A stable tag uses the exact
-canonical `MAJOR.MINOR.PATCH` version already bound into its qualification
-ledger and artifacts; it is not created by stripping `-rc.N` from existing
-candidate bytes.
+honest recorded disposition, a stable release may receive one signed annotated
+tag locally. A stable tag uses the exact canonical `MAJOR.MINOR.PATCH` version
+already bound into its qualification ledger and artifacts; it is not created
+by stripping `-rc.N` from existing candidate bytes.
+
+The project owner may instead authorize a public qualification prerelease so
+other machines can exercise one exact candidate before its hard platform gates
+are complete. That exception is valid only when all of the following are true:
+
+- the changelog heading, candidate ledger, embedded binary version, archives,
+  formula and tag all use the same canonical `MAJOR.MINOR.PATCH-rc.N` version;
+- the source/history gates and actual release, policy, native, source and outer
+  inventory signatures for those exact bytes have passed and been
+  independently verified;
+- the exact outer asset set has a signed qualification record whose status is
+  honestly derived as either `PASS` or `BLOCKED`; a public `BLOCKED` candidate
+  may contain only `NOT-PERFORMED` hard gates, never a `FAIL`, and both
+  unresolved Critical and High counts must be zero;
+- `NOT-PERFORMED` means no execution produced a result; an observed failed or
+  inconclusive execution may not be relabeled and blocks public publication
+  until a corrected new candidate exists, and no known Critical or High
+  finding may remain open or accepted for this lane;
+- the candidate receives one locally verified, signed annotated and immutable
+  `vMAJOR.MINOR.PATCH-rc.N` tag selecting its exact source commit;
+- the GitHub release is created as a draft, its complete downloaded asset set
+  is verified, and it is published only with GitHub's prerelease flag and a
+  prominent `QUALIFICATION ONLY — NOT STABLE OR PRODUCTION-QUALIFIED` warning;
+  and
+- the release text makes no stable, supported, production-ready, promotion,
+  certification or `latest` claim and directs testers to retain an independent
+  access and recovery path.
+
+This exception publishes testable evidence, not a supported release, and never
+satisfies or waives a stable hard gate. The owner authorization and all open
+gate dispositions must be recorded in the prerelease notes. A correction gets
+a new positive `rc.N` number and new candidate rather than a moved tag. Never
+attach a `BLOCKED` record to a stable `vMAJOR.MINOR.PATCH` tag.
 
 ```text
 git tag -s -a vVERSION COMMIT -m "OwnTransit vVERSION"
@@ -173,7 +204,9 @@ Before attaching artifacts, verify the tag and every OwnTransit release/policy
 signature from a fresh clone and a separately obtained signer trust root.
 Enable GitHub's immutable-release setting when available, disable tag deletion
 or force updates through repository rules, and publish only the already
-authenticated frozen files.
+authenticated frozen files. For the qualification-prerelease exception, upload
+and verify those files while the release remains a draft, then publish that
+same draft as a prerelease; never let GitHub synthesize a lightweight tag.
 
 ## 6. Operator canary and continuing assurance
 

@@ -14,6 +14,21 @@ as stable or production-ready. After those gates pass, the bounded claim is
 “stable and installable within the documented scope,” not an unqualified
 “production-ready” claim.
 
+The project owner may authorize a public qualification prerelease solely so
+other machines can test one exact candidate. That narrow lane requires a
+canonical `MAJOR.MINOR.PATCH-rc.N` version everywhere, an independently
+verified signed artifact handoff, an honest signed `PASS` or `BLOCKED`
+qualification record, a signed annotated immutable tag, and a GitHub release
+published with the prerelease flag. Its title and opening text must say
+`QUALIFICATION ONLY — NOT STABLE OR PRODUCTION-QUALIFIED`; every open hard gate
+must be `NOT-PERFORMED`, no fixed gate may be `FAIL`, both unresolved Critical
+and High counts must be zero, and the release must make no support, stable,
+promotion, certification or `latest` claim. A public qualification prerelease
+does not satisfy or waive any stable-release gate. `NOT-PERFORMED` means no
+execution produced a result: never relabel an observed failure or inconclusive
+run, and no known Critical or High finding may remain open or accepted for this
+lane.
+
 ## Required public-history boundary
 
 The public repository must begin with one reviewed sanitized snapshot committed
@@ -145,6 +160,17 @@ Their status must be disclosed for the exact release, but absence of an
 external certification is not represented as missing client, connector, relay
 or installer functionality. Actual usable release signatures remain a hard
 requirement; a custody rehearsal does not substitute for them.
+
+An owner-authorized public qualification prerelease may carry a signed
+`BLOCKED` record solely because supported-platform gates remain
+`NOT-PERFORMED`, but only under the exact prerelease boundary above and the
+tag/draft-verification order in `RELEASE_CHECKLIST.md`. It must first pass the
+public source/history gates and independently verified signing path for its
+exact bytes. Publish the complete assets into a GitHub draft, download and
+verify that draft, then expose the unchanged draft with the prerelease flag.
+Keep every canonical trust and qualification digest available through a
+pre-existing authenticated channel independent of GitHub and the OwnTransit
+relay. Never use a blocked candidate as the only access or recovery path.
 
 `RELEASE_MANIFEST.example.json` is an unsigned illustrative record with
 reserved example locations and placeholder digests. It is not release evidence.
