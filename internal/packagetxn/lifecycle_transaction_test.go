@@ -332,6 +332,9 @@ func TestLifecycleRequiresDistinctReleaseAndPolicySigners(t *testing.T) {
 }
 
 func TestProvisionerPackageLifecycleAppliesAndRollsBackWithoutRuntimeReader(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("requires root to exercise the provisioner reader-GID-zero filesystem boundary; CI runs this test in a dedicated root gate")
+	}
 	manager, base := newLifecycleManagerHarness(t, "provisioner")
 	manager.readerGID = 0
 	releaseKeys, _ := signing.Generate()
