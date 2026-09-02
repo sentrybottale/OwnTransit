@@ -142,11 +142,13 @@ printf '%s\n' policy-public > "$workspace/keys/policy-public.pem"
 printf '%s\n' policy-private > "$workspace/keys/policy-private.pem"
 chmod 0600 "$workspace/keys/release-private.pem" "$workspace/keys/policy-private.pem"
 
-mkdir -p "$workspace/source/cmd/example" "$workspace/source/internal/example"
+mkdir -p "$workspace/source/cmd/example" "$workspace/source/internal/example" "$workspace/source/tools"
 printf '%s\n' 'module example.invalid/owntransit-test' '' 'go 1.26' > "$workspace/source/go.mod"
 : > "$workspace/source/go.sum"
 printf '%s\n' 'package main' 'func main() {}' > "$workspace/source/cmd/example/main.go"
 printf '%s\n' 'package example' > "$workspace/source/internal/example/example.go"
+printf '%s\n' '#!/bin/sh' 'exit 0' > "$workspace/source/tools/example.sh"
+chmod 0755 "$workspace/source/tools/example.sh"
 printf '%s\n' 'Apache License Version 2.0' > "$workspace/source/LICENSE"
 printf '%s\n' 'No third-party notices.' > "$workspace/source/THIRD_PARTY_NOTICES.md"
 printf '%s\n' '# Changelog' '' '## [0.1.0-rc.1]' '' '## [0.1.0]' > "$workspace/source/CHANGELOG.md"
@@ -154,6 +156,7 @@ source_date_epoch=1700000000
 git -C "$workspace/source" init -q
 git -C "$workspace/source" config user.email test@example.invalid
 git -C "$workspace/source" config user.name 'OwnTransit Test'
+git -C "$workspace/source" config tar.umask 0000
 git -C "$workspace/source" add .
 GIT_AUTHOR_DATE="@$source_date_epoch +0000" GIT_COMMITTER_DATE="@$source_date_epoch +0000" \
   git -C "$workspace/source" commit -q -m fixture
@@ -643,8 +646,29 @@ done < "$workspace/native-directories"
 
 source_extract="$workspace/source-extract"
 mkdir "$source_extract"
-tar -xzf "$output/assets/owntransit-$version-source.tar.gz" -C "$source_extract"
+tar -xzpf "$output/assets/owntransit-$version-source.tar.gz" -C "$source_extract"
 source_archive_root="$source_extract/owntransit-$version"
+unexpected_source_member=$(find "$source_archive_root" ! -type f ! -type d -print)
+test -z "$unexpected_source_member" || fail "source archive contains a symlink or special entry"
+find "$source_archive_root" -type d -print > "$workspace/source-directories"
+while IFS= read -r source_directory; do
+  test "$(file_mode "$source_directory")" = 755 || fail "source archive contains a directory not mode 0755"
+done < "$workspace/source-directories"
+git -C "$workspace/source" ls-tree -r "$source_commit" > "$workspace/source-tree-modes"
+while IFS="$(printf '\t')" read -r tree_metadata relative; do
+  tree_mode=${tree_metadata%% *}
+  case "$tree_mode" in
+    100644) expected_mode=644 ;;
+    100755) expected_mode=755 ;;
+    *) fail "source fixture contains unsupported Git mode $tree_mode" ;;
+  esac
+  test "$(file_mode "$source_archive_root/$relative")" = "$expected_mode" ||
+    fail "source archive changed tracked mode for $relative"
+done < "$workspace/source-tree-modes"
+test "$(file_mode "$source_archive_root/SOURCE-MANIFEST.txt")" = 644 ||
+  fail "source archive changed generated manifest mode"
+test "$(file_mode "$source_archive_root/SOURCE-MANIFEST.txt.sig")" = 644 ||
+  fail "source archive changed generated signature mode"
 "$project_root/packaging/homebrew/verify-source-tree.sh" \
   --source "$source_archive_root" \
   --allowed-signers "$output/trust/allowed_signers" \
@@ -753,30 +777,55 @@ expect_stable_freeze_rejection() {
 version=0.1.0
 stable_candidate="$workspace/candidate-stable.json"
 printf '%s\n' \
-  "{\"schema\":\"owntransit.release-candidate-ledger.v1\",\"status\":\"qualification-only\",\"version\":\"$version\",\"release_id\":\"$release_id\",\"release_sequence\":8,\"policy_sequence\":4,\"minimum_release_sequence\":8,\"minimum_lifecycle\":1,\"source_commit\":\"$source_commit\",\"source_date_epoch\":$source_date_epoch}" \
+  "{\"schema\":\"owntransit.release-candidate-ledger.v1\",\"status\":\"qualification-only\",\"version\":\"$version\",\"release_id\":\"$release_id\",\"release_sequence\":9,\"policy_sequence\":5,\"minimum_release_sequence\":9,\"minimum_lifecycle\":1,\"source_commit\":\"$source_commit\",\"source_date_epoch\":$source_date_epoch}" \
   > "$stable_candidate"
 chmod 0600 "$stable_candidate"
 
 stable_rejection_sign_calls_before=$(grep -c '^sign-manifest$' "$workspace/fake-releasectl.calls")
 expect_stable_freeze_rejection release-sequence \
-  'OwnTransit 0.1.0 requires release sequence 8' 7 4 8 1
+  'OwnTransit 0.1.0 requires release sequence 9' 8 5 9 1
 expect_stable_freeze_rejection policy-sequence \
-  'OwnTransit 0.1.0 requires policy sequence 4' 8 5 8 1
+  'OwnTransit 0.1.0 requires policy sequence 5' 9 4 9 1
 expect_stable_freeze_rejection release-floor \
-  'OwnTransit 0.1.0 requires release floor 8' 8 4 7 1
+  'OwnTransit 0.1.0 requires release floor 9' 9 5 8 1
 expect_stable_freeze_rejection lifecycle-floor \
-  'OwnTransit 0.1.0 requires lifecycle floor 1' 8 4 8 2
+  'OwnTransit 0.1.0 requires lifecycle floor 1' 9 5 9 2
+
+expect_stable_anchor_rejection() {
+  rejection_name=$1
+  expected_error=$2
+  selected_anchor_policy_sequence=$3
+  selected_anchor_release_floor=$4
+  selected_anchor_lifecycle_floor=$5
+  rewrite_bundle_contract 0.1.0 9 1
+  rejection_path="$workspace/output-parent/rejected-stable-$rejection_name"
+  if rejection_text=$(invoke_signer "$workspace/keys/policy-public.pem" "$rejection_path" "$workspace/keys/allowed_signers" \
+    5 9 1 "$selected_anchor_policy_sequence" "$selected_anchor_release_floor" "$selected_anchor_lifecycle_floor" \
+    "$stable_candidate" sha256/policy none 2>&1); then
+    fail "0.1.0 stable signing accepted the wrong $rejection_name"
+  fi
+  printf '%s\n' "$rejection_text" | grep -Fq "$expected_error" ||
+    fail "0.1.0 stable $rejection_name was rejected for the wrong reason: $rejection_text"
+  test ! -e "$rejection_path" || fail "rejected 0.1.0 stable $rejection_name created output"
+}
+
+expect_stable_anchor_rejection anchor-policy-sequence \
+  'OwnTransit 0.1.0 requires RC7 anchor policy sequence 3' 4 5 1
+expect_stable_anchor_rejection anchor-release-floor \
+  'OwnTransit 0.1.0 requires RC7 anchor release floor 5' 3 6 1
+expect_stable_anchor_rejection anchor-lifecycle-floor \
+  'candidate policy weakens the persisted lifecycle floor' 3 5 2
 test "$(grep -c '^sign-manifest$' "$workspace/fake-releasectl.calls")" = "$stable_rejection_sign_calls_before" ||
   fail "a rejected 0.1.0 stable tuple reached a signing operation"
 
-rewrite_bundle_contract 0.1.0 8 1
+rewrite_bundle_contract 0.1.0 9 1
 stable_output="$workspace/output-parent/stable-candidate"
 invoke_signer "$workspace/keys/policy-public.pem" "$stable_output" "$workspace/keys/allowed_signers" \
-  4 8 1 3 5 1 "$stable_candidate" sha256/policy none > "$workspace/sign-candidate-stable.out"
+  5 9 1 3 5 1 "$stable_candidate" sha256/policy none > "$workspace/sign-candidate-stable.out"
 grep -Fq "created signed candidate handoff: $stable_output" "$workspace/sign-candidate-stable.out" ||
   fail "exact 0.1.0 stable signing tuple did not produce its atomic handoff"
 test "$(cat "$stable_output/assets/RELEASE-POLICY.json")" = \
-  '{"schema":"fixture-policy","sequence":4,"minimum_release_sequence":8,"minimum_lifecycle":1}' ||
+  '{"schema":"fixture-policy","sequence":5,"minimum_release_sequence":9,"minimum_lifecycle":1}' ||
   fail "0.1.0 stable handoff did not preserve the frozen signed policy tuple"
 
 printf '%s\n' 'sign-candidate full-conductor and fail-closed tests passed'

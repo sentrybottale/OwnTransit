@@ -53,9 +53,11 @@ or publish artifacts automatically.
   detach and all deterministic public-entry stages with one persistent,
   root-only advisory lock. Interrupted stages are recoverable only through
   their exact bounded metadata profiles.
-- Froze the `0.1.0` signing ceremony to release/policy/floor/lifecycle tuple
-  `8/4/8/1`, preventing rollback to RC5-RC7 package boundaries after the
-  launcher and Linux provisioner migrations.
+- Froze the corrected `0.1.0` signing ceremony to
+  release/policy/floor/lifecycle tuple `9/5/9/1`, preventing rollback to
+  RC5-RC7 package boundaries after the launcher and Linux provisioner
+  migrations. The earlier private `8/4/8/1` issuance was abandoned before
+  distribution and its sequence numbers remain permanently consumed.
 - Kept the macOS provisioner release tree non-user-traversable as
   `root:wheel` mode `0750` and published a distinct `root:wheel` mode-`0755`
   public provisioner copy with the authenticated digest and a different inode.
@@ -72,6 +74,9 @@ or publish artifacts automatically.
 
 ### Fixed
 
+- Made signed source archives independent of ambient Git `tar.umask`, and
+  fail-closed unless archive metadata preserves exact mode-`0644` regular
+  files, mode-`0755` executables and mode-`0755` directories.
 - Bound Darwin launcher activation to the signed launcher's receipt digest and
   made post-selection client install invoke recovery through the newly selected
   lifecycle binary. Even an idempotent complete recovery now authenticates the

@@ -152,12 +152,23 @@ policy-anchor JSON does not contain that key identity. Derive that identity
 from the already trusted prior key with `releasectl public-key-id`, never from
 the candidate's copy. This helper does not support policy-key rotation.
 
-The `0.1.0` stable handoff is deliberately frozen to release sequence `8`,
-policy sequence `4`, minimum release sequence `8`, and minimum lifecycle `1`.
-The signing conductor rejects every other tuple before any signature operation.
-This floor is mandatory: RC5-RC7 predate the hardened macOS launcher/package
+The `0.1.0` stable handoff is deliberately frozen to release sequence `9`,
+policy sequence `5`, minimum release sequence `9`, and minimum lifecycle `1`.
+The signing conductor rejects every other candidate tuple and requires the
+still-official RC7 policy anchor `3/5/1` before any signature operation. This
+floor is mandatory: RC5-RC7 predate the hardened macOS launcher/package
 mutation boundary, and the Linux provisioner migration cannot safely hand
 control back to their mode-`0750` lifecycle implementation.
+
+An earlier private `0.1.0` candidate from public commit `9fc7d206` was signed
+with tuple `8/4/8/1` and then abandoned before tagging, upload or distribution
+when its source-archive packaging required correction. Creating a signature
+consumes its release and policy sequence even if the handoff remains private;
+neither sequence may be reclaimed. The corrected ceremony therefore skips the
+consumed policy sequence `4` and verifies policy sequence `5` as a strict
+advance from the still-official RC7 anchor rather than treating the abandoned
+policy as persisted trust. Its ledger, signatures and evidence are not inputs
+to the corrected handoff.
 
 Fresh endpoints can bootstrap the currently trusted policy against their empty
 local anchor. An upgraded endpoint independently requires the new policy
@@ -166,7 +177,7 @@ disappear, and the pinned policy signer not to change. During a canary, retainin
 the previous release floor preserves authenticated rollback only when the two
 package layouts are explicitly qualified as rollback-compatible. Raising the
 floor to the candidate sequence deliberately burns that rollback. For `0.1.0`,
-floor `8` is a fixed safety requirement rather than an optional canary choice.
+floor `9` is a fixed safety requirement rather than an optional canary choice.
 
 The independently authenticated OpenSSH key authorized as
 `owntransit-release` in `allowed_signers` is the privileged package-bootstrap
