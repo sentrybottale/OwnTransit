@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/sentrybottale/owntransit/internal/securefs"
+	"golang.org/x/sys/unix"
 )
 
 const darwinClientLauncherPath = "/Library/OwnTransit/bin/owntransit"
@@ -135,14 +136,27 @@ func runInstalledClientReadyProbe(ctx context.Context, identity installedSetupCl
 	if ctx == nil || identity.clientUID == 0 || identity.primaryGID == 0 || identity.primaryGID == identity.readerGID {
 		return errors.New("installed macOS client READY identity is invalid")
 	}
-	info, err := os.Stat(darwinClientLauncherPath)
+	info, err := os.Lstat(darwinClientLauncherPath)
 	if err != nil {
 		return err
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || !info.Mode().IsRegular() || info.Mode().Perm() != 0o751 || info.Mode()&os.ModeSetgid == 0 ||
-		stat.Uid != 0 || stat.Gid != identity.readerGID || stat.Nlink != 1 {
+	if !ok || !info.Mode().IsRegular() || uint32(stat.Mode)&0o7777 != 0o2751 ||
+		stat.Uid != 0 || stat.Gid != identity.readerGID || stat.Nlink < 1 {
 		return errors.New("installed macOS client launcher boundary is invalid")
+	}
+	fd, err := unix.Open(darwinClientLauncherPath, unix.O_RDONLY|unix.O_NONBLOCK|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return errors.New("installed macOS client launcher cannot be opened without following links")
+	}
+	defer unix.Close(fd)
+	var opened unix.Stat_t
+	if err := unix.Fstat(fd, &opened); err != nil || opened.Dev != stat.Dev || opened.Ino != stat.Ino ||
+		opened.Mode != stat.Mode || opened.Uid != stat.Uid || opened.Gid != stat.Gid || opened.Nlink != stat.Nlink {
+		return errors.New("installed macOS client launcher changed during validation")
+	}
+	if err := securefs.VerifyNoExtendedACLFD(fd, false); err != nil {
+		return errors.New("installed macOS client launcher has an extended ACL")
 	}
 	process := exec.CommandContext(ctx, darwinClientLauncherPath, "--doctor")
 	process.Env = []string{"LANG=C", "LC_ALL=C", "PATH=/usr/bin:/bin:/usr/sbin:/sbin"}

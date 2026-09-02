@@ -1055,7 +1055,26 @@ func ensurePrivateDirectory(parent int, name string, ownerUID, ownerGID uint32, 
 }
 
 func ensurePackageDirectory(parent int, name string, manager *Manager) (int, error) {
-	return ensureDirectory(parent, name, manager.ownerUID, manager.readerGID, 0o750, manager.rootDevice, manager.checkACL)
+	gid, mode := packageDirectoryProfile(manager)
+	return ensureDirectory(parent, name, manager.ownerUID, gid, mode, manager.rootDevice, manager.checkACL)
+}
+
+func requirePackageDirectory(fd int, manager *Manager) error {
+	gid, mode := packageDirectoryProfile(manager)
+	return requireDirectory(fd, manager.ownerUID, gid, mode, manager.checkACL)
+}
+
+// Linux reaches the ordinary provisioner through a public symlink and relies
+// on its qualified protected-hardlink policy, so that package namespace is
+// root-owned and traversable. Darwin instead publishes a distinct ordinary
+// frontend copy: its authenticated provisioner package tree remains
+// non-traversable so an unprivileged hard link cannot poison package identity.
+// Every runtime-bearing role stays restricted to its dedicated reader group.
+func packageDirectoryProfile(manager *Manager) (uint32, uint32) {
+	if manager.role == "provisioner" && manager.platformOS == "linux" {
+		return manager.ownerGID, 0o755
+	}
+	return manager.readerGID, 0o750
 }
 
 func ensureDirectory(parent int, name string, ownerUID, ownerGID, mode uint32, expectedDevice uint64, aclCheck func(int, bool) error) (int, error) {

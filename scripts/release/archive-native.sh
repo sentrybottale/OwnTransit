@@ -82,9 +82,18 @@ sha256_file() {
   fi
 }
 
+darwin_mode() {
+  darwin_mode_raw=$(stat -f %p -- "$1") || return 1
+  case "$darwin_mode_raw" in ''|*[!0-7]*) return 1 ;; esac
+  printf '%o\n' "$((0$darwin_mode_raw & 07777))"
+}
+
 file_metadata() {
   if test "$(uname -s)" = Darwin; then
-    stat -f '%HT|%l|%Lp' -- "$1"
+    file_kind=$(stat -f %HT -- "$1") || return 1
+    file_links=$(stat -f %l -- "$1") || return 1
+    file_permissions=$(darwin_mode "$1") || return 1
+    printf '%s|%s|%s\n' "$file_kind" "$file_links" "$file_permissions"
   else
     stat -c '%F|%h|%a' -- "$1"
   fi
@@ -92,7 +101,7 @@ file_metadata() {
 
 directory_mode() {
   if test "$(uname -s)" = Darwin; then
-    stat -f '%Lp' -- "$1"
+    darwin_mode "$1"
   else
     stat -c '%a' -- "$1"
   fi
@@ -105,25 +114,35 @@ LICENSE
 RELEASE-MANIFEST.json
 SOURCE-MANIFEST.txt
 artifacts/owntransit-connector-linux-amd64
+artifacts/owntransit-connector-linux-arm64
 artifacts/owntransit-darwin-arm64
 artifacts/owntransit-launcher-darwin-arm64
 artifacts/owntransit-linux-amd64
+artifacts/owntransit-linux-arm64
 artifacts/owntransit-provision-darwin-arm64
 artifacts/owntransit-provision-linux-amd64
+artifacts/owntransit-provision-linux-arm64
 artifacts/owntransit-relay-linux-amd64.oci.tar
+artifacts/owntransit-relay-linux-arm64.oci.tar
 artifacts/owntransitctl-darwin-arm64
 artifacts/owntransitctl-linux-amd64
+artifacts/owntransitctl-linux-arm64
 evidence/PROVENANCE.json
 evidence/THIRD_PARTY_LICENSES.txt
 evidence/owntransit-connector-linux-amd64.spdx.json
+evidence/owntransit-connector-linux-arm64.spdx.json
 evidence/owntransit-darwin-arm64.spdx.json
 evidence/owntransit-launcher-darwin-arm64.spdx.json
 evidence/owntransit-linux-amd64.spdx.json
+evidence/owntransit-linux-arm64.spdx.json
 evidence/owntransit-provision-darwin-arm64.spdx.json
 evidence/owntransit-provision-linux-amd64.spdx.json
+evidence/owntransit-provision-linux-arm64.spdx.json
 evidence/owntransit-relay-linux-amd64.oci.tar.spdx.json
+evidence/owntransit-relay-linux-arm64.oci.tar.spdx.json
 evidence/owntransitctl-darwin-arm64.spdx.json
 evidence/owntransitctl-linux-amd64.spdx.json
+evidence/owntransitctl-linux-arm64.spdx.json
 packaging/launchd/README.md
 packaging/scripts/install.sh
 packaging/scripts/install-linux.sh
@@ -151,7 +170,7 @@ EOF
 
 expected_mode() {
   case "$1" in
-    artifacts/owntransit-relay-linux-amd64.oci.tar) printf '%s\n' 644 ;;
+    artifacts/owntransit-relay-linux-amd64.oci.tar|artifacts/owntransit-relay-linux-arm64.oci.tar) printf '%s\n' 644 ;;
     artifacts/*|packaging/scripts/*) printf '%s\n' 755 ;;
     *) printf '%s\n' 644 ;;
   esac
@@ -367,12 +386,42 @@ archive_once() {
       "$archive_root_name"
     gzip -n -9 < "$uncompressed" > "$archive_output"
     rm -f -- "$uncompressed"
-  else
-    command -v docker >/dev/null 2>&1 || fail "GNU tar or Docker is required for deterministic native archiving"
+  elif command -v container >/dev/null 2>&1; then
+    container_output="$temporary/container-output-$archive_number"
+    mkdir "$container_output"
+    chmod 0755 "$container_output"
+    case "$snapshot_parent" in *,*) fail "Apple Container fallback cannot mount an input parent containing a comma" ;; esac
+    case "$container_output" in *,*) fail "Apple Container fallback cannot mount an output parent containing a comma" ;; esac
+    host_uid=$(id -u)
+    host_gid=$(id -g)
+    container run --rm \
+      --network none \
+      --uid "$host_uid" \
+      --gid "$host_gid" \
+      --cap-drop ALL \
+      --read-only \
+      --tmpfs /tmp \
+      --mount "type=bind,source=$snapshot_parent,target=/input,readonly" \
+      --mount "type=bind,source=$container_output,target=/output" \
+      "$builder_image" \
+      /bin/sh -c '
+        set -eu
+        root_name=$1
+        epoch=$2
+        output_name=$3
+        temporary=/output/archive-container-$$.tar
+        trap '\''rm -f -- "$temporary"'\'' EXIT HUP INT TERM
+        tar --version | grep -Fq "GNU tar"
+        tar --sort=name --format=ustar --mtime="@$epoch" --owner=0 --group=0 --numeric-owner \
+          -cf "$temporary" -C /input "$root_name"
+        gzip -n -9 < "$temporary" > "/output/$output_name"
+      ' owntransit-archive "$archive_root_name" "$source_date_epoch" "$(basename "$archive_output")"
+    mv -- "$container_output/$(basename "$archive_output")" "$archive_output"
+  elif command -v docker >/dev/null 2>&1; then
     docker_output="$temporary/docker-output-$archive_number"
     mkdir "$docker_output"
     chmod 0755 "$docker_output"
-    case "$snapshot_parent" in *,*) fail "Docker fallback cannot mount an output parent containing a comma" ;; esac
+    case "$snapshot_parent" in *,*) fail "Docker fallback cannot mount an input parent containing a comma" ;; esac
     case "$docker_output" in *,*) fail "Docker fallback cannot mount an output parent containing a comma" ;; esac
     host_uid=$(id -u)
     host_gid=$(id -g)
@@ -399,6 +448,8 @@ archive_once() {
         gzip -n -9 < "$temporary" > "/output/$output_name"
       ' owntransit-archive "$archive_root_name" "$source_date_epoch" "$(basename "$archive_output")"
     mv -- "$docker_output/$(basename "$archive_output")" "$archive_output"
+  else
+    fail "GNU tar, Apple Container, or Docker is required for deterministic native archiving"
   fi
   test -s "$archive_output" || fail "archive pass $archive_number produced no output"
   chmod 0644 "$archive_output"

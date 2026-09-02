@@ -32,12 +32,13 @@ usage: linux-relay-exchange.sh \
   --exchange-endpoint wss://PUBLIC_DNS_NAME/connects/enrollment \
   --non-loopback-ip EXACT_HOST_IPV4
 
-Destructive qualification for a fresh, disposable Linux amd64 host on which
-the exact relay role from the supplied signed bundle is already installed but
-not enabled or running. The script requires the protected disposable-host
-marker containing OWNTRANSIT_RELAY_EXCHANGE_DISPOSABLE=1 and consumes that
-marker before its first package mutation. It replays the exact signed manifest
-and policy through the installed manager-bound lifecycle, starts only its
+Destructive qualification for a fresh, disposable supported Linux host
+(amd64 or arm64) on which the exact native relay role from the supplied signed
+bundle is already installed but not enabled or running. The script infers the
+canonical architecture from the machine and requires the protected
+disposable-host marker containing OWNTRANSIT_RELAY_EXCHANGE_DISPOSABLE=1. It
+consumes that marker before its first package mutation, replays the exact signed
+manifest and policy through the installed manager-bound lifecycle, starts only its
 generated exchange instance, performs a real public-WSS mailbox allocation and
 opaque response write, stops that exact instance, then runs the authenticated
 relay uninstaller. It preserves the installed release, image and package
@@ -210,8 +211,27 @@ stage_executable() {
   test "$(sha256_file "$executable_target")" = "$executable_digest" || fail "staged executable differs from its signed member"
 }
 
+verify_native_build_identity() {
+  native_executable=$1
+  native_role=$2
+  native_version_json=$("$native_executable" version) || fail "$native_role version inspection failed on this machine"
+  printf '%s\n' "$native_version_json" | grep -Fq '"schema":"owntransit.build.v1"' || fail "$native_role version schema mismatch"
+  printf '%s\n' "$native_version_json" | grep -Fq "\"role\":\"$native_role\"" || fail "$native_role version role mismatch"
+  printf '%s\n' "$native_version_json" | grep -Fq '"goos":"linux"' || fail "$native_role version OS mismatch"
+  printf '%s\n' "$native_version_json" | grep -Fq "\"goarch\":\"$qualification_arch\"" || fail "$native_role version architecture mismatch"
+  printf '%s\n' "$native_version_json" | grep -Fq "\"release_id\":\"$release_id\"" || fail "$native_role version release ID mismatch"
+}
+
 test "$(uname -s)" = Linux || fail "qualification requires Linux"
-case "$(uname -m)" in x86_64|amd64) ;; *) fail "qualification requires amd64" ;; esac
+case "$(uname -m)" in
+  x86_64|amd64) qualification_arch=amd64 ;;
+  aarch64|arm64) qualification_arch=arm64 ;;
+  *) fail "qualification requires a supported amd64 or arm64 Linux machine" ;;
+esac
+client_artifact=artifacts/owntransit-linux-$qualification_arch
+provisioner_artifact=artifacts/owntransit-provision-linux-$qualification_arch
+relay_artifact=artifacts/owntransit-relay-linux-$qualification_arch.oci.tar
+lifecycle_artifact=artifacts/owntransitctl-linux-$qualification_arch
 test "$(id -u)" -eq 0 || fail "qualification requires root"
 test "$(ps -p 1 -o comm= | tr -d '[:space:]')" = systemd || fail "PID 1 is not systemd"
 test -d /run/systemd/system || fail "systemd system manager is not operational"
@@ -273,10 +293,10 @@ test "$(sha256_file "$bundle/SHA256SUMS")" = "$checksums_sha256" || fail "native
 for selected_member in \
   BUILD-INPUTS \
   RELEASE-MANIFEST.json \
-  artifacts/owntransit-linux-amd64 \
-  artifacts/owntransit-provision-linux-amd64 \
-  artifacts/owntransit-relay-linux-amd64.oci.tar \
-  artifacts/owntransitctl-linux-amd64 \
+  "$client_artifact" \
+  "$provisioner_artifact" \
+  "$relay_artifact" \
+  "$lifecycle_artifact" \
   packaging/scripts/uninstall-linux.sh \
   packaging/systemd/owntransit-relay.service \
   packaging/systemd/owntransit-relay-exchange-template.service; do
@@ -288,10 +308,10 @@ valid_release_id "$release_id" || fail "BUILD-INPUTS has an invalid release ID"
 release_sequence=$(build_input release_sequence)
 case "$release_sequence" in ''|*[!0-9]*) fail "BUILD-INPUTS has an invalid release sequence" ;; esac
 test "$release_sequence" -gt 0 || fail "BUILD-INPUTS release sequence must be positive"
-relay_artifact_digest=$(listed_digest artifacts/owntransit-relay-linux-amd64.oci.tar)
-client_artifact_digest=$(listed_digest artifacts/owntransit-linux-amd64)
-provisioner_artifact_digest=$(listed_digest artifacts/owntransit-provision-linux-amd64)
-lifecycle_artifact_digest=$(listed_digest artifacts/owntransitctl-linux-amd64)
+relay_artifact_digest=$(listed_digest "$relay_artifact")
+client_artifact_digest=$(listed_digest "$client_artifact")
+provisioner_artifact_digest=$(listed_digest "$provisioner_artifact")
+lifecycle_artifact_digest=$(listed_digest "$lifecycle_artifact")
 uninstaller_digest=$(listed_digest packaging/scripts/uninstall-linux.sh)
 exchange_unit_digest=$(listed_digest packaging/systemd/owntransit-relay-exchange-template.service)
 relay_unit_digest=$(listed_digest packaging/systemd/owntransit-relay.service)
@@ -361,6 +381,8 @@ test "$(grep -c '^OWNTRANSIT_RELAY_IMAGE=' "$relay_environment")" -eq 1 || fail 
 test "$(grep -c '^OWNTRANSIT_RELAY_UID=' "$relay_environment")" -eq 1 || fail "relay UID environment field is ambiguous"
 test "$(grep -c '^OWNTRANSIT_RELAY_READER_GID=' "$relay_environment")" -eq 1 || fail "relay GID environment field is ambiguous"
 podman image exists "$relay_image" || fail "installed relay image is absent"
+installed_image_arch=$(podman image inspect --format '{{.Architecture}}' "$relay_image") || fail "cannot inspect the installed relay image architecture"
+test "$installed_image_arch" = "$qualification_arch" || fail "installed relay image architecture does not match the qualification machine"
 systemd-analyze verify "$installed_unit" >/dev/null 2>&1 || fail "installed exchange template failed systemd verification"
 systemd-analyze verify "$installed_relay_unit" >/dev/null 2>&1 || fail "installed enrolled relay unit failed systemd verification"
 
@@ -417,9 +439,11 @@ install -d -o root -g root -m 0700 "$staged_executables"
 client=$staged_executables/owntransit
 provisioner=$staged_executables/owntransit-provision
 uninstaller=$staged_executables/uninstall-linux.sh
-stage_executable "$bundle/artifacts/owntransit-linux-amd64" "$client" "$client_artifact_digest"
-stage_executable "$bundle/artifacts/owntransit-provision-linux-amd64" "$provisioner" "$provisioner_artifact_digest"
+stage_executable "$bundle/$client_artifact" "$client" "$client_artifact_digest"
+stage_executable "$bundle/$provisioner_artifact" "$provisioner" "$provisioner_artifact_digest"
 stage_executable "$bundle/packaging/scripts/uninstall-linux.sh" "$uninstaller" "$uninstaller_digest"
+verify_native_build_identity "$client" client
+verify_native_build_identity "$provisioner" provisioner
 
 rm -f -- "$marker"
 test ! -e "$marker" && test ! -L "$marker" || fail "one-time disposable marker was not consumed"
@@ -516,7 +540,7 @@ chmod 0600 "$recipient_record"
   --release-sequence "$release_sequence" \
   --artifact-sha256 "$relay_artifact_digest" \
   --os linux \
-  --arch amd64 \
+  --arch "$qualification_arch" \
   --exchange-endpoint "$exchange_endpoint" \
   --recipient-record "$recipient_record" \
   --out "$invitation_root" > "$workspace/invitation-summary.json"
@@ -575,8 +599,8 @@ test -z "$active_exchange_units" || fail "an exchange instance remained active a
 
 verified_unix=$(date +%s)
 evidence_stage=$workspace/evidence.json
-printf '{"schema":"owntransit.qualify.linux-relay-exchange.v1","result":"pass","platform":"linux","architecture":"amd64","release_id":"%s","native_checksums_sha256":"%s","manifest_sha256":"%s","policy_sha256":"%s","package_receipt_sha256":"%s","package_selector_sha256":"%s","package_anchor_sha256":"%s","relay_artifact_sha256":"%s","client_artifact_sha256":"%s","exchange_unit_sha256":"%s","verified_unix":%s,"manager_bound_signed_release":true,"idempotent_package_apply":true,"one_time_marker_consumed":true,"pristine_relay_state":true,"rootful_podman":true,"explicit_bridge":true,"zero_container_mounts":true,"podman_port":"127.0.0.1:9087","enrolled_relay_conflict":true,"host_non_loopback_refused":true,"public_wss_mailbox_created":true,"opaque_response_written":true,"idempotent_response_retry":true,"conflicting_response_rejected":true,"target_response_read_qualified":false,"target_response_read_limitation":"no public courier read-response command","template_removed":true,"exchange_container_absent":true,"authenticated_selector_preserved":true,"package_anchor_preserved":true,"relay_image_preserved":true,"qualification_credentials":"throwaway-local","endpoint_recorded":false,"network_required":true}\n' \
-  "$release_id" "$checksums_sha256" "$manifest_sha256" "$policy_sha256" "$receipt_sha256" "$selector_sha256" "$anchor_sha256" "$relay_artifact_digest" "$client_artifact_digest" "$exchange_unit_digest" "$verified_unix" > "$evidence_stage"
+printf '{"schema":"owntransit.qualify.linux-%s-relay-exchange.v1","result":"pass","platform":"linux","architecture":"%s","release_id":"%s","native_checksums_sha256":"%s","manifest_sha256":"%s","policy_sha256":"%s","package_receipt_sha256":"%s","package_selector_sha256":"%s","package_anchor_sha256":"%s","relay_artifact_sha256":"%s","client_artifact_sha256":"%s","exchange_unit_sha256":"%s","verified_unix":%s,"manager_bound_signed_release":true,"idempotent_package_apply":true,"one_time_marker_consumed":true,"pristine_relay_state":true,"rootful_podman":true,"oci_architecture_verified":true,"explicit_bridge":true,"zero_container_mounts":true,"podman_port":"127.0.0.1:9087","enrolled_relay_conflict":true,"host_non_loopback_refused":true,"public_wss_mailbox_created":true,"opaque_response_written":true,"idempotent_response_retry":true,"conflicting_response_rejected":true,"target_response_read_qualified":false,"target_response_read_limitation":"no public courier read-response command","template_removed":true,"exchange_container_absent":true,"authenticated_selector_preserved":true,"package_anchor_preserved":true,"relay_image_preserved":true,"qualification_credentials":"throwaway-local","endpoint_recorded":false,"network_required":true}\n' \
+  "$qualification_arch" "$qualification_arch" "$release_id" "$checksums_sha256" "$manifest_sha256" "$policy_sha256" "$receipt_sha256" "$selector_sha256" "$anchor_sha256" "$relay_artifact_digest" "$client_artifact_digest" "$exchange_unit_digest" "$verified_unix" > "$evidence_stage"
 chmod 0644 "$evidence_stage"
 install -o root -g root -m 0644 "$evidence_stage" "$evidence_path"
 cat "$evidence_path"

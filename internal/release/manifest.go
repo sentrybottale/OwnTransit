@@ -62,6 +62,11 @@ var initialArtifactMatrix = map[string]artifactProfile{
 	"provisioner-darwin-arm64": {File: "artifacts/owntransit-provision-darwin-arm64", OS: "darwin", Arch: "arm64", Role: "provisioner", Format: ArtifactFormatExecutable},
 	"provisioner-linux-amd64":  {File: "artifacts/owntransit-provision-linux-amd64", OS: "linux", Arch: "amd64", Role: "provisioner", Format: ArtifactFormatExecutable},
 	"launcher-darwin-arm64":    {File: "artifacts/owntransit-launcher-darwin-arm64", OS: "darwin", Arch: "arm64", Role: "launcher", Format: ArtifactFormatExecutable},
+	"client-linux-arm64":       {File: "artifacts/owntransit-linux-arm64", OS: "linux", Arch: "arm64", Role: "client", Format: ArtifactFormatExecutable},
+	"connector-linux-arm64":    {File: "artifacts/owntransit-connector-linux-arm64", OS: "linux", Arch: "arm64", Role: "connector", Format: ArtifactFormatExecutable, SSHTarget: productionConnectorTarget},
+	"relay-linux-arm64":        {File: "artifacts/owntransit-relay-linux-arm64.oci.tar", OS: "linux", Arch: "arm64", Role: "relay", Format: ArtifactFormatOCI},
+	"lifecycle-linux-arm64":    {File: "artifacts/owntransitctl-linux-arm64", OS: "linux", Arch: "arm64", Role: "lifecycle", Format: ArtifactFormatExecutable},
+	"provisioner-linux-arm64":  {File: "artifacts/owntransit-provision-linux-arm64", OS: "linux", Arch: "arm64", Role: "provisioner", Format: ArtifactFormatExecutable},
 }
 
 // initialArtifactOrder is part of the canonical v1 manifest representation.
@@ -77,6 +82,11 @@ var initialArtifactOrder = []string{
 	"provisioner-darwin-arm64",
 	"provisioner-linux-amd64",
 	"launcher-darwin-arm64",
+	"client-linux-arm64",
+	"connector-linux-arm64",
+	"relay-linux-arm64",
+	"lifecycle-linux-arm64",
+	"provisioner-linux-arm64",
 }
 
 // ArtifactMatrix returns a fresh copy of the exact v1 artifact metadata. The

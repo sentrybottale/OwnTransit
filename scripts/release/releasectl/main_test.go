@@ -13,16 +13,26 @@ import (
 
 	"github.com/sentrybottale/owntransit/internal/protocol"
 	"github.com/sentrybottale/owntransit/internal/signing"
+	"golang.org/x/sys/unix"
 )
 
 const candidateTestTimestamp = int64(1700000000)
+
+func mustCanonicalTempDir(t *testing.T) string {
+	t.Helper()
+	directory, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve temporary directory: %v", err)
+	}
+	return directory
+}
 
 func TestPublicKeyIDPrintsCanonicalParsedKeyIdentity(t *testing.T) {
 	keys, err := signing.Generate()
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(t.TempDir(), "release-public.pem")
+	path := filepath.Join(mustCanonicalTempDir(t), "release-public.pem")
 	if err := os.WriteFile(path, keys.PublicPEM, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +79,7 @@ func TestManifestAuthenticatesTheRelayBootstrapExchangeUnit(t *testing.T) {
 
 func TestCandidateInitCreatesStrictQualificationLedgerFromGit(t *testing.T) {
 	repository := newCandidateTestRepository(t)
-	output := filepath.Join(t.TempDir(), "candidate.json")
+	output := filepath.Join(mustCanonicalTempDir(t), "candidate.json")
 	var commandOutput bytes.Buffer
 	arguments := validCandidateArguments(output)
 	if err := candidateInitAt(arguments, &commandOutput, repository); err != nil {
@@ -125,7 +135,7 @@ func TestCandidateInitCreatesStrictQualificationLedgerFromGit(t *testing.T) {
 
 func TestCandidateInitAcceptsStableVersion(t *testing.T) {
 	repository := newCandidateTestRepository(t)
-	output := filepath.Join(t.TempDir(), "candidate.json")
+	output := filepath.Join(mustCanonicalTempDir(t), "candidate.json")
 	arguments := replaceCandidateOption(validCandidateArguments(output), "--version", "1.0.0")
 	if err := candidateInitAt(arguments, io.Discard, repository); err != nil {
 		t.Fatalf("candidateInitAt stable version: %v", err)
@@ -146,7 +156,7 @@ func TestCandidateInitAcceptsStableVersion(t *testing.T) {
 
 func TestCandidateInitNeverOverwritesLedger(t *testing.T) {
 	repository := newCandidateTestRepository(t)
-	output := filepath.Join(t.TempDir(), "candidate.json")
+	output := filepath.Join(mustCanonicalTempDir(t), "candidate.json")
 	if err := candidateInitAt(validCandidateArguments(output), io.Discard, repository); err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +204,7 @@ func TestCandidateInitRejectsInvalidInputs(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			output := filepath.Join(t.TempDir(), "candidate.json")
+			output := filepath.Join(mustCanonicalTempDir(t), "candidate.json")
 			arguments := replaceCandidateOption(validCandidateArguments(output), test.option, test.value)
 			if err := candidateInitAt(arguments, io.Discard, repository); err == nil {
 				t.Fatal("invalid candidate inputs were accepted")
@@ -215,7 +225,7 @@ func TestCandidateInitRequiresCleanGitCommit(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repository, "untracked"), []byte("dirty\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	output := filepath.Join(t.TempDir(), "candidate.json")
+	output := filepath.Join(mustCanonicalTempDir(t), "candidate.json")
 	if err := candidateInitAt(validCandidateArguments(output), io.Discard, repository); err == nil || !strings.Contains(err.Error(), "completely clean") {
 		t.Fatalf("dirty source error = %v", err)
 	}
@@ -429,7 +439,7 @@ func newCandidateVerifyFixture(t *testing.T) candidateVerifyFixture {
 
 func newCandidateVerifyFixtureWithVersion(t *testing.T, version string) candidateVerifyFixture {
 	t.Helper()
-	root := t.TempDir()
+	root := mustCanonicalTempDir(t)
 	source := newCandidateTestRepository(t)
 	bundle := filepath.Join(root, "bundle")
 	if err := os.Mkdir(bundle, 0o755); err != nil {
@@ -515,7 +525,7 @@ func replaceCandidateOption(arguments []string, option, value string) []string {
 
 func newCandidateTestRepository(t *testing.T) string {
 	t.Helper()
-	repository := t.TempDir()
+	repository := mustCanonicalTempDir(t)
 	candidateTestGit(t, repository, "init", "-q")
 	candidateTestGit(t, repository, "config", "user.name", "OwnTransit Test")
 	candidateTestGit(t, repository, "config", "user.email", "owntransit-test@example.invalid")
@@ -550,7 +560,7 @@ func candidateTestGitOutput(t *testing.T, repository string, arguments ...string
 }
 
 func TestReadBoundedUsesOnePrivateDescriptor(t *testing.T) {
-	root := t.TempDir()
+	root := mustCanonicalTempDir(t)
 	key := filepath.Join(root, "release-key.pem")
 	if err := os.WriteFile(key, []byte("private material\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -569,10 +579,17 @@ func TestReadBoundedUsesOnePrivateDescriptor(t *testing.T) {
 	if _, err := readBounded(key, 64, false); err != nil {
 		t.Fatalf("public bounded input was rejected: %v", err)
 	}
+
+	if err := unix.Chmod(key, 0o1600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readBounded(key, 64, true); err == nil {
+		t.Fatal("sticky private input was accepted")
+	}
 }
 
 func TestReadBoundedRejectsLinksSpecialFilesAndBounds(t *testing.T) {
-	root := t.TempDir()
+	root := mustCanonicalTempDir(t)
 	source := filepath.Join(root, "source")
 	if err := os.WriteFile(source, []byte("bounded\n"), 0o600); err != nil {
 		t.Fatal(err)

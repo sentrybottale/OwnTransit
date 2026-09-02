@@ -109,7 +109,7 @@ func (reader *countingReader) Read(buffer []byte) (int, error) {
 	return count, err
 }
 
-func expectedRelayImageID(archivePath, releaseID string) (string, error) {
+func expectedRelayImageID(archivePath, releaseID, expectedArch string) (string, error) {
 	archive, err := os.Open(archivePath)
 	if err != nil {
 		return "", fmt.Errorf("package supervisor: open authenticated relay OCI: %w", err)
@@ -122,11 +122,11 @@ func expectedRelayImageID(archivePath, releaseID string) (string, error) {
 	if stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Uid != 0 || stat.Gid != 0 || uint32(stat.Mode)&0o7777 != 0o600 || stat.Nlink != 1 || stat.Size <= 0 || stat.Size > maxRelayOCIArchive {
 		return "", errors.New("package supervisor: authenticated relay OCI metadata is invalid")
 	}
-	return parseRelayOCIArchive(archive, stat.Size, releaseID)
+	return parseRelayOCIArchive(archive, stat.Size, releaseID, expectedArch)
 }
 
-func parseRelayOCIArchive(input io.Reader, archiveSize int64, releaseID string) (string, error) {
-	if input == nil || archiveSize <= 0 || archiveSize > maxRelayOCIArchive || !validRelayReleaseID(releaseID) {
+func parseRelayOCIArchive(input io.Reader, archiveSize int64, releaseID, expectedArch string) (string, error) {
+	if input == nil || archiveSize <= 0 || archiveSize > maxRelayOCIArchive || !validRelayReleaseID(releaseID) || !validRelayArchitecture(expectedArch) {
 		return "", errors.New("package supervisor: relay OCI input is invalid")
 	}
 	counted := &countingReader{reader: io.LimitReader(input, archiveSize+1)}
@@ -201,7 +201,7 @@ func parseRelayOCIArchive(input io.Reader, archiveSize int64, releaseID string) 
 		return "", errors.New("package supervisor: relay OCI index is invalid or noncanonical")
 	}
 	indexDescriptor := index.Manifests[0]
-	if indexDescriptor.MediaType != relayOCIManifestMediaType || indexDescriptor.Platform != (relayOCIPlatform{Architecture: "amd64", OS: "linux"}) ||
+	if indexDescriptor.MediaType != relayOCIManifestMediaType || indexDescriptor.Platform != (relayOCIPlatform{Architecture: expectedArch, OS: "linux"}) ||
 		indexDescriptor.Annotations.ReferenceName != "owntransit-relay:"+releaseID {
 		return "", errors.New("package supervisor: relay OCI index selects another image")
 	}
@@ -228,7 +228,7 @@ func parseRelayOCIArchive(input io.Reader, archiveSize int64, releaseID string) 
 		return "", errors.New("package supervisor: relay OCI descriptor graph is not exact")
 	}
 	var imageConfig relayOCIImageConfig
-	if err := decodeCanonicalRelayOCI(configBlob.contents, &imageConfig); err != nil || !validRelayOCIImageConfig(imageConfig, releaseID, "sha256:"+layerDigest) {
+	if err := decodeCanonicalRelayOCI(configBlob.contents, &imageConfig); err != nil || !validRelayOCIImageConfig(imageConfig, releaseID, expectedArch, "sha256:"+layerDigest) {
 		return "", errors.New("package supervisor: relay OCI image configuration is invalid or noncanonical")
 	}
 	return "sha256:" + configDigest, nil
@@ -297,13 +297,17 @@ func decodeCanonicalRelayOCI(encoded []byte, value any) error {
 	return nil
 }
 
-func validRelayOCIImageConfig(value relayOCIImageConfig, releaseID, layerDigest string) bool {
-	return value.Architecture == "amd64" && value.OS == "linux" &&
+func validRelayOCIImageConfig(value relayOCIImageConfig, releaseID, expectedArch, layerDigest string) bool {
+	return validRelayArchitecture(expectedArch) && value.Architecture == expectedArch && value.OS == "linux" &&
 		len(value.Config.Command) == 4 && value.Config.Command[0] == "run" && value.Config.Command[1] == "--runtime-root=/runtime" && value.Config.Command[2] == "--anchor-view-root=/anchor" && value.Config.Command[3] == "--reader-gid=65532" &&
 		len(value.Config.Entrypoint) == 1 && value.Config.Entrypoint[0] == "/owntransit-relay" && value.Config.User == "65532:65532" && value.Config.WorkingDir == "/" &&
 		value.Config.Labels.Licenses == "Apache-2.0" && value.Config.Labels.Title == "OwnTransit Relay" && value.Config.Labels.Vendor == "OwnTransit" &&
 		value.Config.Labels.ReleaseID == releaseID && validRelayRevision(value.Config.Labels.Revision) && validRelayVersion(value.Config.Labels.Version) &&
 		value.RootFS.Type == "layers" && len(value.RootFS.DiffIDs) == 1 && value.RootFS.DiffIDs[0] == layerDigest
+}
+
+func validRelayArchitecture(value string) bool {
+	return value == "amd64" || value == "arm64"
 }
 
 func validRelayDigest(value string) bool {
@@ -372,12 +376,27 @@ func inspectBoundRelayImage(tag, expectedImageID string, run packageCommandRunne
 	if err != nil {
 		return "", fmt.Errorf("package supervisor: inspect relay image: %w", err)
 	}
-	if imageID != expectedImageID {
+	normalizedImageID, err := normalizeRelayImageID(imageID)
+	if err != nil {
+		return "", err
+	}
+	if normalizedImageID != expectedImageID {
 		return "", errors.New("package supervisor: relay image tag is not bound to the authenticated OCI config digest")
 	}
-	digest := strings.TrimPrefix(imageID, "sha256:")
+	return strings.TrimPrefix(normalizedImageID, "sha256:"), nil
+}
+
+// Podman 4.x reports the local image configuration ID as bare lowercase hex,
+// while later releases may prefix the same digest with "sha256:". Accept only
+// those two exact encodings and compare one normalized value to the digest
+// authenticated inside the OCI archive.
+func normalizeRelayImageID(imageID string) (string, error) {
+	digest := imageID
+	if strings.HasPrefix(imageID, "sha256:") {
+		digest = strings.TrimPrefix(imageID, "sha256:")
+	}
 	if !validRelayDigest(digest) {
 		return "", errors.New("package supervisor: Podman returned a noncanonical image ID")
 	}
-	return digest, nil
+	return "sha256:" + digest, nil
 }

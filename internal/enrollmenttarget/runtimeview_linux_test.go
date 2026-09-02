@@ -27,6 +27,50 @@ import (
 
 const runtimeViewHelperEnvironment = "OWNTRANSIT_RUNTIME_VIEW_HELPER"
 
+func copyTestExecutableForRuntimeReader(t *testing.T) string {
+	t.Helper()
+	sourcePath, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+
+	directory, err := os.MkdirTemp("/tmp", "owntransit-runtime-helper-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(directory, 0o700)
+		_ = os.RemoveAll(directory)
+	})
+	destinationPath := filepath.Join(directory, "enrollmenttarget.test")
+	destination, err := os.OpenFile(destinationPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o700)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer destination.Close()
+	if _, err := io.Copy(destination, source); err != nil {
+		t.Fatal(err)
+	}
+	if err := destination.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	if err := destination.Chmod(0o555); err != nil {
+		t.Fatal(err)
+	}
+	if err := destination.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return destinationPath
+}
+
 func TestRuntimeViewReaderHelper(t *testing.T) {
 	runtimeRoot := os.Getenv(runtimeViewHelperEnvironment)
 	if runtimeRoot == "" {
@@ -423,7 +467,7 @@ func newRootRuntimeViewFixture(t *testing.T) routeTargetFixture {
 
 func runtimeHelperCommand(t *testing.T, binding RuntimeViewBinding, role enrollment.Role, expectFailure, expectLocked, hold bool) (*exec.Cmd, io.WriteCloser, *bufio.Reader, *bytes.Buffer) {
 	t.Helper()
-	command := exec.Command("/proc/self/exe", "-test.run=^TestRuntimeViewReaderHelper$")
+	command := exec.Command(copyTestExecutableForRuntimeReader(t), "-test.run=^TestRuntimeViewReaderHelper$")
 	command.Env = append(os.Environ(),
 		runtimeViewHelperEnvironment+"="+binding.RuntimeRoot,
 		"OWNTRANSIT_RUNTIME_ANCHOR_HELPER="+binding.AnchorViewRoot,

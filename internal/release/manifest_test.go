@@ -128,12 +128,15 @@ func TestExampleManifestMatchesStrictSchema(t *testing.T) {
 }
 
 func TestManifestRequiresExactInitialArtifactMatrix(t *testing.T) {
+	if got := len(ArtifactMatrix()); got != 14 {
+		t.Fatalf("artifact matrix length = %d, want 14", got)
+	}
 	tests := map[string]func(*Manifest){
 		"missing artifact": func(manifest *Manifest) {
 			manifest.Artifacts = manifest.Artifacts[:len(manifest.Artifacts)-1]
 		},
 		"unknown replacement": func(manifest *Manifest) {
-			manifest.Artifacts[0].Name = "client-linux-arm64"
+			manifest.Artifacts[0].Name = "client-linux-s390x"
 		},
 		"wrong platform": func(manifest *Manifest) {
 			manifest.Artifacts[0].Arch = "amd64"

@@ -152,7 +152,9 @@ path_owner() {
 
 path_mode() {
   if test "$(uname -s)" = Darwin; then
-    stat -f %Lp -- "$1"
+    path_mode_raw=$(stat -f %p -- "$1") || return 1
+    case "$path_mode_raw" in ''|*[!0-7]*) return 1 ;; esac
+    printf '%o\n' "$((0$path_mode_raw & 07777))"
   else
     stat -c %a -- "$1"
   fi
@@ -457,6 +459,7 @@ checksums_sha256=$(sha256_file "$native_checksums")
 case "$(uname -s)/$(uname -m)" in
   Darwin/arm64)
     platform=darwin
+    platform_arch=arm64
     case "$role" in
       client) artifact_path=artifacts/owntransit-darwin-arm64 ;;
       provisioner) artifact_path=artifacts/owntransit-provision-darwin-arm64 ;;
@@ -466,6 +469,7 @@ case "$(uname -s)/$(uname -m)" in
     ;;
   Linux/x86_64|Linux/amd64)
     platform=linux
+    platform_arch=amd64
     case "$role" in
       client) artifact_path=artifacts/owntransit-linux-amd64 ;;
       connector) artifact_path=artifacts/owntransit-connector-linux-amd64 ;;
@@ -474,7 +478,18 @@ case "$(uname -s)/$(uname -m)" in
     esac
     platform_installer="$bundle/packaging/scripts/install-linux.sh"
     ;;
-  *) fail "this installer supports macOS arm64 and Linux amd64 only" ;;
+  Linux/aarch64|Linux/arm64)
+    platform=linux
+    platform_arch=arm64
+    case "$role" in
+      client) artifact_path=artifacts/owntransit-linux-arm64 ;;
+      connector) artifact_path=artifacts/owntransit-connector-linux-arm64 ;;
+      relay) artifact_path=artifacts/owntransit-relay-linux-arm64.oci.tar ;;
+      provisioner) artifact_path=artifacts/owntransit-provision-linux-arm64 ;;
+    esac
+    platform_installer="$bundle/packaging/scripts/install-linux.sh"
+    ;;
+  *) fail "this installer supports macOS arm64 plus Linux amd64 and arm64 only" ;;
 esac
 
 platform_installer_relative=${platform_installer#"$bundle/"}
@@ -483,8 +498,7 @@ require_listed_file "$bundle" "$native_checksums" "$artifact_path" "native bundl
 artifact_sha256=$(listed_digest "$native_checksums" "$artifact_path") || fail "cannot derive the selected artifact digest"
 case "$role" in
   client|connector|relay|provisioner)
-    lifecycle_path="artifacts/owntransitctl-$platform-amd64"
-    test "$platform" != darwin || lifecycle_path=artifacts/owntransitctl-darwin-arm64
+    lifecycle_path="artifacts/owntransitctl-$platform-$platform_arch"
     require_listed_file "$bundle" "$native_checksums" "$lifecycle_path" "native bundle"
     lifecycle_sha256=$(listed_digest "$native_checksums" "$lifecycle_path") || fail "cannot derive the lifecycle artifact digest"
     for signed_input in \

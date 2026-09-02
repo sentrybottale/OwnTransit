@@ -2,7 +2,7 @@
 
 This directory is intentionally offline and split into three boundaries:
 
-- `build-artifacts.sh` produces the exact nine unsigned v1 artifacts twice,
+- `build-artifacts.sh` produces the exact fourteen unsigned v1 artifacts twice,
   compares them, builds the relay OCI archive without a mutable base image, and
   emits a path-sorted `SHA256SUMS` staging tree with canonical SPDX, license,
   provenance and unsigned manifest evidence.
@@ -62,9 +62,12 @@ publication gates.
 `BUILD-INPUTS`, file modes and path-sorted checksums, snapshots it into new
 inodes, and creates two byte-identical normalized archives before atomically
 publishing `owntransit-VERSION-native.tar.gz`. The archive deliberately
-contains no signatures, policy or trust files.
+contains no signatures, policy or trust files. It uses local GNU tar when
+available, otherwise the digest-pinned build image through Apple Container or
+Docker; every fallback mounts the immutable snapshot read-only and exposes
+only a separate output directory.
 
-`sign-candidate.sh` is the offline first-policy conductor. It accepts the exact
+`sign-candidate.sh` is the offline candidate-signing conductor. It accepts the exact
 candidate ledger, explicit and separate release and policy PKCS#8 Ed25519
 keypairs, one explicit OpenSSH Ed25519 distribution/source keypair, an
 independently prepared `allowed_signers` trust file, a clean source checkout
@@ -132,9 +135,38 @@ Do not accept a digest, key, contact address or verification instruction found
 only beside the release assets. After that comparison, `install.sh`
 independently verifies the statement signature, requires the exact two v1
 `allowed_signers` principals to use `distribution-public.key`, and recomputes
-every statement binding. This conductor verifies an initial policy against an
-empty anchor and therefore requires policy sequence `1`; later policy advances
-require the persisted external-anchor ceremony rather than this helper.
+every statement binding. By default this conductor verifies an initial policy
+against an empty anchor and therefore requires policy sequence `1`. For a
+later policy whose persisted tombstone list is empty, supply the three exact
+numeric `--anchor-*` values, the exact `--anchor-policy-key-id`, and
+`--anchor-tombstones none` from the independently persisted previous anchor.
+The conductor then verifies the signed candidate policy as a strict advance,
+requires the same pinned policy key, and rejects sequence replay or weaker
+release or lifecycle floors. A nonempty tombstone list requires a future
+canonical anchor-file ceremony and is deliberately rejected by this scalar
+helper. Anchor claims must come from the separate custody record, not from the
+new candidate, download site, or relay. The three counters and empty-tombstone
+claim come from the prior policy anchor; the policy-key ID comes from the prior
+independently persisted policy public key/package anchor because the scalar
+policy-anchor JSON does not contain that key identity. Derive that identity
+from the already trusted prior key with `releasectl public-key-id`, never from
+the candidate's copy. This helper does not support policy-key rotation.
+
+The `0.1.0` stable handoff is deliberately frozen to release sequence `8`,
+policy sequence `4`, minimum release sequence `8`, and minimum lifecycle `1`.
+The signing conductor rejects every other tuple before any signature operation.
+This floor is mandatory: RC5-RC7 predate the hardened macOS launcher/package
+mutation boundary, and the Linux provisioner migration cannot safely hand
+control back to their mode-`0750` lifecycle implementation.
+
+Fresh endpoints can bootstrap the currently trusted policy against their empty
+local anchor. An upgraded endpoint independently requires the new policy
+sequence to advance, both floors not to weaken, cumulative tombstones not to
+disappear, and the pinned policy signer not to change. During a canary, retaining
+the previous release floor preserves authenticated rollback only when the two
+package layouts are explicitly qualified as rollback-compatible. Raising the
+floor to the candidate sequence deliberately burns that rollback. For `0.1.0`,
+floor `8` is a fixed safety requirement rather than an optional canary choice.
 
 The independently authenticated OpenSSH key authorized as
 `owntransit-release` in `allowed_signers` is the privileged package-bootstrap
@@ -191,7 +223,7 @@ hardware-backed signing, two-location recovery, and release/policy key-rotation
 ceremonies are operator security procedures, not defaults hidden in a script.
 
 The staging tree is not a release merely because it has checksums. Before public
-use it needs all nine separately named SBOM records, generated third-party
+use it needs all fourteen separately named SBOM records, generated third-party
 license evidence, the exact Apache-2.0 project LICENSE digest, provenance, an
 exact signed software-release manifest, and clean-host qualification. The
 implemented free Homebrew/source lane is the macOS v1 distribution direction;
@@ -200,13 +232,24 @@ below. Developer ID package output is disabled until OwnTransit also
 authenticates the final post-signing bytes and version. A checksum supplied by
 the same unauthenticated download is not authentication.
 
+The exact-nine public `0.1.0-rc.*` qualification packages and exact-fourteen
+stable line are separate authenticated matrix editions inside the v1 release
+envelope. An installed RC lifecycle accepts only its exact-nine edition and
+must fail closed on the fourteen-artifact manifest. There is no supported
+RC-to-stable in-place upgrade. Ordinary uninstall is deliberately non-purging
+and therefore does not prepare that host for stable installation; use a
+genuinely fresh host. A destructive RC trust-reset and complete re-enrollment
+ceremony is not implemented, and invoking the candidate lifecycle around the
+selected installed manager is forbidden.
+
 Every native installer copies the checksummed Apache license and generated full
 third-party license evidence into the selected immutable release directory next
 to its executable payload. Homebrew installs the Apache license and consolidated
-dependency/BIP notices under the formula's `pkgshare`. An ordinary native
-uninstall removes its exact program-release copy together with the program; the
-independently authenticated staging bundle remains the accompanying evidence,
-and a preserved relay OCI image carries the same obligations under `/licenses`.
+dependency/BIP notices under the formula's `pkgshare`. Ordinary native uninstall
+detaches only the role's enumerated public or service integration and preserves
+the authenticated release directory, its license notices, selectors and
+recovery state. A preserved relay OCI image carries the same obligations under
+`/licenses`.
 
 The root installer must run from the exact absolute path inside a protected
 package staging tree. The staging directory, every ancestor back to `/`, every
@@ -221,14 +264,21 @@ chowning user-originated files does not revoke an already-open write descriptor.
 Do not run the installer with `sudo` directly from a user-owned checkout or
 download.
 
-## Linux installation boundary
+## Linux installation boundary (amd64/x86_64 and arm64/aarch64)
 
 The client and provisioner are on-demand executables. Both use their own
 manager-bound signed release/policy transaction, external rollback anchor,
 immutable release directory and authenticated `current` selector. Provisioner
 package lifecycle installs an authenticated role-local `owntransitctl`, but
-creates no runtime reader, service, target state or credential. Client
-installation requires one exact existing non-root `--client-user`, creates a
+creates no runtime reader, service, target state or credential. Its root-owned
+mode-`0755` package namespace remains reachable through the ordinary public
+selector only on hosts where `fs.protected_hardlinks=1`; the installer checks
+that policy before any provisioner package mutation, and the lifecycle binary
+checks it again for every provisioner package operation. Only the Linux
+installer contains the authenticated, resumable legacy provisioner-directory
+migration from mode `0750` to `0755`.
+
+Client installation requires one exact existing non-root `--client-user`, creates a
 fresh dedicated `owntransit-client` group containing only that user, and
 installs the client `root:owntransit-client` mode `2750`. The setgid executable
 gives the client the exact effective primary reader GID required by
@@ -245,6 +295,15 @@ loopback-published unit. No service is enabled or started by an installer.
 Every installer-time Podman invocation runs locally under a minimal empty
 environment with fixed root `HOME` and `PATH`; caller-controlled connection,
 storage, XDG, and container configuration variables are not inherited.
+
+Linux install and non-purging uninstall hold the permanent empty root-only
+`/var/lib/owntransit/package-supervisor/platform.v1.lock` for their complete
+integration mutation window. The opened descriptor and canonical name must
+remain the same exact inode. Connector and relay uninstall then holds the
+existing service-role supervisor lock through stop, disable, removal and
+postcondition checks. An interrupted detach may be rerun: exact remaining
+entries are removed and already absent entries stay absent; any foreign residue
+fails closed. Neither lock is removed by uninstall.
 
 For client, connector, and relay, installation creates only the protected
 root-owned role parent. All four child roots must be absent. Root-only
@@ -282,28 +341,78 @@ disabled until enrollment is applied and verified.
 
 ## macOS installation boundary
 
-The authenticated arm64 client and lifecycle binaries are copied into new
-root-owned inodes beneath `/Library/OwnTransit`, with fixed root-owned launchers
-in `/Library/OwnTransit/bin`. Never run a user-writable Homebrew Cellar or source
-build directly with `sudo`; privileged lifecycle execution is allowed only from
-the authenticated `/Library/OwnTransit` copy. It has no launchd job, and package
-code never descends into a home directory.
+The authenticated Apple-silicon (`arm64`) client and lifecycle binaries are
+copied into new root-owned inodes beneath `/Library/OwnTransit`; Intel macOS is
+outside the 0.1.0 matrix. Never run a user-writable Homebrew Cellar or source
+build directly with `sudo`; privileged lifecycle
+execution is allowed only from the authenticated `/Library/OwnTransit` copy. It
+has no launchd job, and package code never descends into a home directory.
 
 Lifecycle activation also publishes `/Library/OwnTransit/bin/owntransit-cli`
 as a root:wheel mode-`0755`, non-setgid copy of the exact authenticated client
 artifact. It exposes setup, version, SSH-stanza generation and courier
 administration, but rejects proxy/doctor/runtime-view commands. The protected
-mode-`2751` `/Library/OwnTransit/bin/owntransit` launcher remains the only
-macOS ProxyCommand entry point.
+ProxyCommand launcher in the selected release is `root:_owntransit` mode
+`2751`, while `owntransit-real` is `root:_owntransit` mode `0750`; their
+containing release namespace is `root:_owntransit` mode `0750` and is not
+traversable by the selected user.
+
+`/Library/OwnTransit/bin/owntransit` is the only macOS ProxyCommand entry point.
+It is a distinct single-link `root:_owntransit` mode-`2751` regular inode with
+the exact signed release-launcher digest. It is neither a selector symlink nor a
+hard link into the protected release tree. The package finalizer creates it in
+the fixed `root:wheel` mode-`0700` `/Library/OwnTransit/launcher-stage`
+directory, using a fresh root-only inode, ownership-before-setgid ordering,
+fsync and atomic rename. A permanent empty single-link `root:wheel` mode-`0600`
+`package-mutation.v1.lock` serializes client and provisioner package apply,
+rollback, recovery, detach and public-frontend publication; it is the only
+steady-state entry in that directory. Only the exact historical client symlink
+is accepted as a migration input; unsafe public metadata/types or noncanonical
+transaction stages fail closed.
 
 The macOS client uses a different exact-user boundary. Its `_owntransit` reader
 group has zero members. A root-owned mode-`2751` fixed launcher authenticates
 the selected real UID and live GeneratedUID against a root-owned binding before
 it gives only the checksummed `owntransit-real` process the reader EGID. The
 ordinary selected user therefore cannot read runtime or anchor bytes directly.
+Before exec it also validates the real client as an exact single-link
+root:reader mode-`0750` file with the bound digest, and descriptor-relatively
+confirms that the root-owned `current` selector still names the bound release.
+Before any protected read it requires the raw executable path to be exactly the
+fixed public launcher and authenticates that entry by descriptor. An ordinary
+user's retained hard-link alias therefore cannot acquire the reader GID;
+canonical execution and upgrade remain available while an alias exists.
+It enumerates `/dev/fd` rather than trusting the current resource limit, so a
+high inherited descriptor cannot survive merely because the limit was lowered.
 See `packaging/macos/CLIENT_READER_BOUNDARY.md`. The descriptor-based Darwin ACL
 verifier and launcher are implemented; every exact handoff must carry its
 clean-Mac setgid and Directory Services qualification result.
+
+After package selection, the installer invokes `package-recover` through the
+newly selected authenticated lifecycle executable. Recovery re-authenticates
+that running lifecycle even when the transaction journal is already complete,
+closing the upgrade window between selector publication and public-entry
+finalization.
+
+The macOS provisioner package tree stays protected as `root:wheel` mode `0750`.
+Finalization publishes `/Library/OwnTransit/bin/owntransit-provision` as a
+distinct `root:wheel` mode-`0755` regular file with the authenticated source
+digest but a different inode. Its deterministic root-only stage shares the
+same mutation lock. The exact historical provisioner selector symlink is the
+only accepted migration input. The macOS installer never changes provisioner
+package directories to mode `0755`; the legacy `0750` to `0755` directory
+migration belongs only to Linux, where protected-hardlink enforcement is
+mandatory.
+
+Ordinary macOS uninstall invokes the authenticated selected lifecycle's
+`package-detach` operation under that same lock. For the client it verifies and
+opens the exact public launcher, removes setgid from that inode so every
+retained hard-link alias is deactivated, syncs it, and durably detaches the
+canonical launcher and non-setgid frontend. A retry accepts the authenticated
+mode-`0751` interruption residue and already-absent exact names. Provisioner
+detach similarly removes only its authenticated public copy. Package releases,
+selectors, receipts, floors, identities, credentials and recovery state remain
+installed.
 
 The provisioner is a separate offline-host role and is never included in a
 client, connector or relay runtime package. Its macOS package transaction lives
@@ -323,6 +432,8 @@ connector-client-ssh-boundary|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
 hostile-relay-resource-exhaustion|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
 linux-amd64-clean-host-lifecycle|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
 linux-amd64-relay-exchange|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
+linux-arm64-clean-host-lifecycle|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
+linux-arm64-relay-exchange|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
 macos-arm64-clean-host-lifecycle|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
 public-history-clean-export|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
 public-tree-source-gates|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
@@ -359,14 +470,22 @@ verify the SSHSIG against authenticated `allowed_signers`, and independently
 confirm every referenced evidence digest. The signature authenticates what the
 release operator recorded; it cannot prove that a test was performed honestly.
 
-- Each exact Linux handoff must qualify setgid client execution, exact
-  primary-GID selection, directory/file modes, lifecycle/runtime lock
-  exclusion, and service inability to mutate the views on a clean host.
+- Each exact Linux architecture handoff must independently qualify setgid
+  client execution, exact primary-GID selection, directory/file modes,
+  lifecycle/runtime lock exclusion, required `fs.protected_hardlinks=1`
+  enforcement for the traversable provisioner namespace, and service inability
+  to mutate the views on a clean host.
   `nosuid` or policy suppression of setgid execution is a stop for that host.
 - Each exact macOS handoff must qualify the zero-member setgid launcher, exact
-  GeneratedUID binding, descriptor-based ACL verifier, direct runtime/anchor
-  read denial, group-drift rejection, debugger/task-port isolation, and reboot
-  behavior on a clean Apple-silicon Mac.
+  GeneratedUID binding, descriptor-based ACL verifier, equal signed launcher
+  digests on distinct protected/public inodes, the role-appropriate distinct
+  public-copy boundaries, the exact persistent root-only global mutation lock with no
+  transaction-stage residue, canonical invocation and
+  retained-hard-link-alias denial, direct protected-launcher/runtime/anchor
+  denial, exact current-selector validation, high inherited-descriptor closure,
+  group-drift rejection,
+  debugger/task-port isolation, interruption-safe authenticated detach, and
+  reboot behavior on a clean Apple-silicon Mac.
 - The two local builds are a deterministic same-builder regression check, not
   independent reproducible-build attestation. Record an independent clean
   builder result when available, or disclose that it was not performed; it is

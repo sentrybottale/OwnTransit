@@ -132,7 +132,7 @@ implemented; release execution is required per artifact set**
 - Preserve binding of artifact bytes, digests, sizes, roles, platforms,
   protocol, source/build inputs, per-artifact SPDX evidence, licenses and
   monotonic release/deployment sequences.
-- Preserve the exact nine-artifact, twice-built deterministic unsigned staging
+- Preserve the exact fourteen-artifact, twice-built deterministic unsigned staging
   path and digest-addressed relay OCI construction.
 - Provide no network updater, mutable `latest` identifier, or relay-delivered
   instruction channel.
@@ -149,10 +149,12 @@ evidence required per supported release**
 
 - Signature-verified Homebrew/source-installed macOS arm64 client. Developer ID
   packaging remains disabled and outside the v1 requirement.
-- Signed Linux amd64 client package with unprivileged per-user enrollment.
-- Signed Linux amd64 connector package with a dedicated locked service identity
-  and root-owned PID-1 system unit.
-- Digest-addressed relay image with immutable credential-set mounts.
+- Signed Linux amd64/x86_64 and Linux arm64/aarch64 packages with unprivileged
+  per-user enrollment.
+- Signed Linux amd64/x86_64 and Linux arm64/aarch64 connector packages with a
+  dedicated locked service identity and root-owned PID-1 system unit.
+- Architecture-specific digest-addressed Linux amd64 and Linux arm64 relay
+  images with immutable credential-set mounts.
 - Preserve target-local apply, verify, authenticated rollback, interruption
   recovery and non-purging uninstall over durable locks, generation
   compare-and-swap, journals, fsync ordering, and atomic
@@ -172,21 +174,30 @@ evidence required per supported release**
   only durable inputs against the exact released packages.
 - Fixed root-owned no-shell ProxyCommand launcher and shell-injection tests. The
   installer never writes OpenSSH configuration.
+- Preserve the macOS arm64 provisioner's protected `root:wheel` mode-`0750`
+  package tree and distinct public mode-`0755` copy; do not replace that
+  boundary with a traversable package tree or public hard link.
+- Preserve one root-only macOS `package-mutation.v1.lock` across client and
+  provisioner apply, rollback, recovery, public-entry publication and durable
+  lifecycle-owned detach.
+- Require Linux `fs.protected_hardlinks=1` before every provisioner package
+  operation; only Linux may migrate its legacy provisioner package directories
+  from mode `0750` to `0755`.
 
 ## Phase 5 — release qualification and additional assurance
 
 State: **per-release platform evidence required; external assurance ongoing**
 
-- Qualify native macOS and Linux packages with disposable or operator-supplied
-  OpenSSH fixtures; qualification does not transfer SSH ownership to
-  OwnTransit.
+- Qualify native macOS arm64, Linux amd64, and Linux arm64 packages with
+  disposable or operator-supplied OpenSSH fixtures; qualification does not
+  transfer SSH ownership to OwnTransit.
 - Exercise cold boot, reconnect, upgrade, interrupted apply, concurrency,
   exact rollback, uninstall, and clean OwnTransit credential/state recovery.
 - Test wrong role/platform/signature/key/config, replay, downgrade, symlink,
   hardlink, archive, path-race, disk-full, signal, and power-loss failures.
 - Test relay cross-wiring, duplicate join, state exhaustion, metadata exposure,
   and fully compromised relay behavior.
-- Complete free macOS install/integrity, Linux
+- Complete free macOS install/integrity, per-architecture Linux
   ownership/systemd/service-identity, reproducibility, and publication checks.
 - Prove one authenticated macOS install path performs the required privileged
   launcher handoff, and publish one exact authenticated Linux client install

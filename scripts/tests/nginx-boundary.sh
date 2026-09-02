@@ -34,23 +34,34 @@ require_line() {
 }
 
 for line in \
-  'limit_conn_zone $binary_remote_addr zone=owntransit_conn_per_ip:1m;' \
+  'limit_conn_zone $realip_remote_addr zone=owntransit_conn_per_peer:1m;' \
   'limit_conn_zone $server_name zone=owntransit_conn_global:1m;' \
-  'limit_req_zone $binary_remote_addr zone=owntransit_upgrade_per_ip:1m rate=1r/s;' \
+  'limit_req_zone $realip_remote_addr zone=owntransit_upgrade_per_peer:1m rate=1r/s;' \
   'limit_req_zone $server_name zone=owntransit_upgrade_global:1m rate=4r/s;' \
-  'limit_conn_zone $binary_remote_addr zone=owntransit_enrollment_conn_per_ip:1m;' \
+  'limit_conn_zone $realip_remote_addr zone=owntransit_enrollment_conn_per_peer:1m;' \
   'limit_conn_zone $server_name zone=owntransit_enrollment_conn_global:1m;' \
-  'limit_req_zone $binary_remote_addr zone=owntransit_enrollment_upgrade_per_ip:1m rate=2r/s;' \
+  'limit_req_zone $realip_remote_addr zone=owntransit_enrollment_upgrade_per_peer:1m rate=2r/s;' \
   'limit_req_zone $server_name zone=owntransit_enrollment_upgrade_global:1m rate=8r/s;'
 do
   require_line "$limits_file" "$line"
 done
 
+test "$(grep -c 'zone=owntransit_.*_per_peer:' "$limits_file")" -eq 4 ||
+  fail "exactly four original-peer quota zones are required"
+if grep -Eq '^limit_(conn|req)_zone[[:space:]]+\$(binary_remote_addr|remote_addr|http_[[:alnum:]_]+)([^[:alnum:]_]|$)' "$limits_file"; then
+  fail "a request-rewritten or request-header value became a quota key"
+fi
+if grep -Eq '^limit_(conn|req)_zone .*zone=owntransit_.*_per_ip:' "$limits_file" ||
+  grep -Eq '^  limit_(conn|req) .*owntransit_.*_per_ip' "$location_file"
+then
+  fail "legacy shared-memory zone names cannot be reused with a new key"
+fi
+
 for line in \
   '  access_log off;' \
-  '  limit_conn owntransit_conn_per_ip 8;' \
+  '  limit_conn owntransit_conn_per_peer 8;' \
   '  limit_conn owntransit_conn_global 96;' \
-  '  limit_req zone=owntransit_upgrade_per_ip burst=4 nodelay;' \
+  '  limit_req zone=owntransit_upgrade_per_peer burst=4 nodelay;' \
   '  limit_req zone=owntransit_upgrade_global burst=8 nodelay;' \
   '  proxy_pass http://127.0.0.1:9087/connects;' \
   '  proxy_send_timeout 1d;' \
@@ -61,9 +72,9 @@ done
 
 for line in \
   '  access_log off;' \
-  '  limit_conn owntransit_enrollment_conn_per_ip 4;' \
+  '  limit_conn owntransit_enrollment_conn_per_peer 4;' \
   '  limit_conn owntransit_enrollment_conn_global 16;' \
-  '  limit_req zone=owntransit_enrollment_upgrade_per_ip burst=4 nodelay;' \
+  '  limit_req zone=owntransit_enrollment_upgrade_per_peer burst=4 nodelay;' \
   '  limit_req zone=owntransit_enrollment_upgrade_global burst=16 nodelay;' \
   '  limit_conn_status 429;' \
   '  limit_req_status 429;' \

@@ -7,13 +7,19 @@ symlinks, hard links, checksum tampering, an output inside the bundle and a
 noncanonical archive name all fail without publishing output. It is a tooling
 test, not clean-host lifecycle evidence.
 
-## Linux amd64 clean-host and reboot gate
+## Linux clean-host and reboot gates (amd64 and arm64)
 
-`linux-amd64-vm.sh` is intended only for a fresh, disposable, reboot-capable
-amd64 VM with systemd as PID 1. It refuses containers, non-amd64 systems,
-non-root execution, an existing OwnTransit installation, reused service
-accounts, an occupied qualification port, and hosts without this protected
-marker:
+`linux-vm.sh` selects exactly one native entry point from the kernel-reported
+machine: `linux-amd64-vm.sh` for 64-bit x86 (`amd64`/`x86_64`) or
+`linux-arm64-vm.sh` for 64-bit ARM (`arm64`/`aarch64`). Each architecture entry
+point rejects the other machine type, and every selected artifact, embedded
+build identity, bootstrap platform and evidence record is bound to that same
+canonical architecture. The harness is intended only for a fresh, disposable,
+reboot-capable VM with systemd as PID 1. It refuses containers, unsupported or
+mismatched architectures, non-root execution, an existing OwnTransit
+installation, reused service accounts, an occupied qualification port,
+`fs.protected_hardlinks` values other than exact `1`, and hosts without this
+protected marker:
 
 ```text
 /etc/owntransit-qualification-disposable
@@ -36,7 +42,7 @@ root; none may come from the candidate staging tree. First run the read-only
 gate:
 
 ```text
-scripts/qualify/linux-amd64-vm.sh preflight \
+scripts/qualify/linux-vm.sh preflight \
   --bundle /opt/owntransit-release \
   --checksums-sha256 AUTHENTICATED_64_HEX \
   --checksums-signature /opt/release-assets/NATIVE-SHA256SUMS.sig \
@@ -70,7 +76,7 @@ The harness enables the connector but deliberately never invokes `reboot`.
 Reboot through the VM console, then run:
 
 ```text
-scripts/qualify/linux-amd64-vm.sh verify-after-reboot
+scripts/qualify/linux-vm.sh verify-after-reboot
 ```
 
 The resume phase requires a changed kernel boot ID. It revalidates artifact and
@@ -79,19 +85,32 @@ current-boot activation, zero unexpected restarts, and that the connector owns
 no TCP listener. JSON evidence is written beneath
 `/var/lib/owntransit-qualification/` and also emitted on stdout. Hostnames,
 machine IDs, generated identities, certificate material and logs are excluded.
+The amd64 and arm64 runs are distinct hard qualification lanes; evidence from
+one architecture cannot satisfy the other.
 
 This qualifies native installer/systemd/reboot mechanics with throwaway local
 state. It does not prove a real relay path, SSH login, recovery, upgrade,
 rollback, power-loss behavior or external security review.
 
+The resulting reboot JSON is therefore sub-evidence, not by itself a PASS for
+the broader `linux-{amd64,arm64}-clean-host-lifecycle` result. That result must
+reference a reviewed composite dossier covering every required lifecycle
+dimension. For initial stable `0.1.0`, upgrade is recorded as not applicable:
+there is no supported predecessor, and public `0.1.0-rc.*` state is explicitly
+not an in-place upgrade source.
+
 ## Linux relay exchange gate
 
 Static unit inspection and native-archive tests do not qualify the temporary
-relay exchange. Release evidence is incomplete until a disposable Linux amd64
-host with systemd and rootful Podman has exercised the signed relay OCI image
-through the installed `owntransit-relay-exchange@.service` template. That gate
-must authenticate the portable archive member, prove the installer reproduced
-it exactly as `/etc/systemd/system/owntransit-relay-exchange@.service`, and run
+relay exchange. Release evidence is incomplete until disposable native Linux
+amd64 and Linux arm64 hosts with systemd and rootful Podman have each exercised
+their architecture's signed relay OCI image through the installed
+`owntransit-relay-exchange@.service` template. The harness derives the canonical
+architecture from `uname -m`, selects only the matching signed artifact set,
+and requires Podman's imported image architecture to match before activation.
+That gate must authenticate the portable archive member, prove the installer
+reproduced it exactly as
+`/etc/systemd/system/owntransit-relay-exchange@.service`, and run
 `systemd-analyze verify` on the installed template before activation.
 
 The runtime portion must use a throwaway allocation capability and the real

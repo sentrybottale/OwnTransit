@@ -8,27 +8,34 @@ fail() {
 
 usage() {
   cat <<'EOF'
-usage: make-relay-oci.sh BINARY OUTPUT RELEASE_ID VERSION COMMIT SOURCE_DATE_EPOCH PROJECT_LICENSE THIRD_PARTY_NOTICES
+usage: make-relay-oci.sh BINARY OUTPUT ARCH RELEASE_ID VERSION COMMIT SOURCE_DATE_EPOCH PROJECT_LICENSE THIRD_PARTY_NOTICES
 
 Build one deterministic, uncompressed OCI archive around an already-built
-linux/amd64 owntransit-relay executable and its required license material.
+Linux owntransit-relay executable and its required license material. ARCH must
+be exactly amd64 or arm64 and is authenticated into both OCI platform records.
 OUTPUT must not exist.
 EOF
 }
 
-test "$#" -eq 8 || {
+test "$#" -eq 9 || {
   usage >&2
   exit 2
 }
 
 binary=$1
 output=$2
-release_id=$3
-version=$4
-commit=$5
-source_date_epoch=$6
-project_license=$7
-third_party_notices=$8
+architecture=$3
+release_id=$4
+version=$5
+commit=$6
+source_date_epoch=$7
+project_license=$8
+third_party_notices=$9
+
+case "$architecture" in
+  amd64|arm64) ;;
+  *) fail "architecture must be amd64 or arm64" ;;
+esac
 
 case "$release_id" in *[!a-z2-7]*|'') fail "release ID must be lowercase unpadded RFC 4648 base32" ;; esac
 test "${#release_id}" -eq 52 || fail "release ID must contain 52 base32 characters"
@@ -154,7 +161,7 @@ install -m 0644 "$layer" "$layout/blobs/sha256/$layer_digest"
 
 config="$temporary/config.json"
 printf '%s\n' \
-  "{\"architecture\":\"amd64\",\"config\":{\"Cmd\":[\"run\",\"--runtime-root=/runtime\",\"--anchor-view-root=/anchor\",\"--reader-gid=65532\"],\"Entrypoint\":[\"/owntransit-relay\"],\"Labels\":{\"org.opencontainers.image.licenses\":\"Apache-2.0\",\"org.opencontainers.image.revision\":\"$commit\",\"org.opencontainers.image.title\":\"OwnTransit Relay\",\"org.opencontainers.image.version\":\"$version\",\"org.opencontainers.image.vendor\":\"OwnTransit\",\"org.opencontainers.image.release.id\":\"$release_id\"},\"User\":\"65532:65532\",\"WorkingDir\":\"/\"},\"os\":\"linux\",\"rootfs\":{\"diff_ids\":[\"sha256:$layer_digest\"],\"type\":\"layers\"}}" \
+  "{\"architecture\":\"$architecture\",\"config\":{\"Cmd\":[\"run\",\"--runtime-root=/runtime\",\"--anchor-view-root=/anchor\",\"--reader-gid=65532\"],\"Entrypoint\":[\"/owntransit-relay\"],\"Labels\":{\"org.opencontainers.image.licenses\":\"Apache-2.0\",\"org.opencontainers.image.revision\":\"$commit\",\"org.opencontainers.image.title\":\"OwnTransit Relay\",\"org.opencontainers.image.version\":\"$version\",\"org.opencontainers.image.vendor\":\"OwnTransit\",\"org.opencontainers.image.release.id\":\"$release_id\"},\"User\":\"65532:65532\",\"WorkingDir\":\"/\"},\"os\":\"linux\",\"rootfs\":{\"diff_ids\":[\"sha256:$layer_digest\"],\"type\":\"layers\"}}" \
   > "$config"
 config_digest=$(sha256_file "$config")
 config_size=$(file_size "$config")
@@ -169,7 +176,7 @@ manifest_size=$(file_size "$manifest")
 install -m 0644 "$manifest" "$layout/blobs/sha256/$manifest_digest"
 
 printf '%s\n' \
-  "{\"schemaVersion\":2,\"manifests\":[{\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"digest\":\"sha256:$manifest_digest\",\"size\":$manifest_size,\"platform\":{\"architecture\":\"amd64\",\"os\":\"linux\"},\"annotations\":{\"org.opencontainers.image.ref.name\":\"owntransit-relay:$release_id\"}}]}" \
+  "{\"schemaVersion\":2,\"manifests\":[{\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"digest\":\"sha256:$manifest_digest\",\"size\":$manifest_size,\"platform\":{\"architecture\":\"$architecture\",\"os\":\"linux\"},\"annotations\":{\"org.opencontainers.image.ref.name\":\"owntransit-relay:$release_id\"}}]}" \
   > "$layout/index.json"
 printf '%s\n' '{"imageLayoutVersion":"1.0.0"}' > "$layout/oci-layout"
 chmod 0644 "$layout/index.json" "$layout/oci-layout" "$layout/blobs/sha256/"*

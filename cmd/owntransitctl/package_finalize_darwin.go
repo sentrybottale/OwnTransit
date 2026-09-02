@@ -21,7 +21,7 @@ func finalizeNativePackageMutation(role string, result packagetxn.Result) error 
 		if result.Role != role || result.Current == "" || result.Runtime.ReleaseID != result.Current || result.Runtime.Role != role {
 			return errors.New("Darwin package finalization requires the authenticated current provisioner result")
 		}
-		return nil
+		return publishDarwinProvisionerFrontend(result.Runtime)
 	}
 	if role != "client" || result.Role != role || result.Current == "" || result.Runtime.ReleaseID != result.Current {
 		return errors.New("Darwin package finalization requires the authenticated current client result")
@@ -51,6 +51,9 @@ func finalizeNativePackageMutation(role string, result packagetxn.Result) error 
 		return err
 	}
 	if err := writer.Close(); err != nil {
+		return err
+	}
+	if err := publishDarwinClientLauncher(receipt, result.Runtime); err != nil {
 		return err
 	}
 	return publishDarwinClientFrontend(receipt, result.Runtime)

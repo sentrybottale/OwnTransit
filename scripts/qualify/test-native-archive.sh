@@ -29,7 +29,9 @@ sha256_file() {
 
 file_mode() {
   if test "$(uname -s)" = Darwin; then
-    stat -f '%Lp' -- "$1"
+    file_mode_raw=$(stat -f %p -- "$1") || return 1
+    case "$file_mode_raw" in ''|*[!0-7]*) return 1 ;; esac
+    printf '%o\n' "$((0$file_mode_raw & 07777))"
   else
     stat -c '%a' -- "$1"
   fi
@@ -50,25 +52,35 @@ LICENSE
 RELEASE-MANIFEST.json
 SOURCE-MANIFEST.txt
 artifacts/owntransit-connector-linux-amd64
+artifacts/owntransit-connector-linux-arm64
 artifacts/owntransit-darwin-arm64
 artifacts/owntransit-launcher-darwin-arm64
 artifacts/owntransit-linux-amd64
+artifacts/owntransit-linux-arm64
 artifacts/owntransit-provision-darwin-arm64
 artifacts/owntransit-provision-linux-amd64
+artifacts/owntransit-provision-linux-arm64
 artifacts/owntransit-relay-linux-amd64.oci.tar
+artifacts/owntransit-relay-linux-arm64.oci.tar
 artifacts/owntransitctl-darwin-arm64
 artifacts/owntransitctl-linux-amd64
+artifacts/owntransitctl-linux-arm64
 evidence/PROVENANCE.json
 evidence/THIRD_PARTY_LICENSES.txt
 evidence/owntransit-connector-linux-amd64.spdx.json
+evidence/owntransit-connector-linux-arm64.spdx.json
 evidence/owntransit-darwin-arm64.spdx.json
 evidence/owntransit-launcher-darwin-arm64.spdx.json
 evidence/owntransit-linux-amd64.spdx.json
+evidence/owntransit-linux-arm64.spdx.json
 evidence/owntransit-provision-darwin-arm64.spdx.json
 evidence/owntransit-provision-linux-amd64.spdx.json
+evidence/owntransit-provision-linux-arm64.spdx.json
 evidence/owntransit-relay-linux-amd64.oci.tar.spdx.json
+evidence/owntransit-relay-linux-arm64.oci.tar.spdx.json
 evidence/owntransitctl-darwin-arm64.spdx.json
 evidence/owntransitctl-linux-amd64.spdx.json
+evidence/owntransitctl-linux-arm64.spdx.json
 packaging/launchd/README.md
 packaging/scripts/install.sh
 packaging/scripts/install-linux.sh
@@ -84,7 +96,7 @@ EOF
 
 fixture_mode() {
   case "$1" in
-    artifacts/owntransit-relay-linux-amd64.oci.tar) printf '%s\n' 0644 ;;
+    artifacts/owntransit-relay-linux-amd64.oci.tar|artifacts/owntransit-relay-linux-arm64.oci.tar) printf '%s\n' 0644 ;;
     artifacts/*|packaging/scripts/*) printf '%s\n' 0755 ;;
     *) printf '%s\n' 0644 ;;
   esac
@@ -257,6 +269,12 @@ hardlink_output_dir="$workspace/hardlink-output"
 mkdir "$hardlink_output_dir"
 expect_failure 'bundle file has multiple hard links' "$hardlink_output_dir/$archive_name"
 rm -f "$bundle/unexpected-hardlink"
+
+chmod 1644 "$bundle/LICENSE"
+special_mode_output_dir="$workspace/special-mode-output"
+mkdir "$special_mode_output_dir"
+expect_failure 'bundle member mode is not 644: LICENSE' "$special_mode_output_dir/$archive_name"
+chmod 0644 "$bundle/LICENSE"
 
 cp "$bundle/LICENSE" "$workspace/LICENSE.saved"
 printf '%s\n' tampered >> "$bundle/LICENSE"

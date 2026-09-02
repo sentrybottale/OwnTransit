@@ -33,25 +33,35 @@ LICENSE
 RELEASE-MANIFEST.json
 SOURCE-MANIFEST.txt
 artifacts/owntransit-connector-linux-amd64
+artifacts/owntransit-connector-linux-arm64
 artifacts/owntransit-darwin-arm64
 artifacts/owntransit-launcher-darwin-arm64
 artifacts/owntransit-linux-amd64
+artifacts/owntransit-linux-arm64
 artifacts/owntransit-provision-darwin-arm64
 artifacts/owntransit-provision-linux-amd64
+artifacts/owntransit-provision-linux-arm64
 artifacts/owntransit-relay-linux-amd64.oci.tar
+artifacts/owntransit-relay-linux-arm64.oci.tar
 artifacts/owntransitctl-darwin-arm64
 artifacts/owntransitctl-linux-amd64
+artifacts/owntransitctl-linux-arm64
 evidence/PROVENANCE.json
 evidence/THIRD_PARTY_LICENSES.txt
 evidence/owntransit-connector-linux-amd64.spdx.json
+evidence/owntransit-connector-linux-arm64.spdx.json
 evidence/owntransit-darwin-arm64.spdx.json
 evidence/owntransit-launcher-darwin-arm64.spdx.json
 evidence/owntransit-linux-amd64.spdx.json
+evidence/owntransit-linux-arm64.spdx.json
 evidence/owntransit-provision-darwin-arm64.spdx.json
 evidence/owntransit-provision-linux-amd64.spdx.json
+evidence/owntransit-provision-linux-arm64.spdx.json
 evidence/owntransit-relay-linux-amd64.oci.tar.spdx.json
+evidence/owntransit-relay-linux-arm64.oci.tar.spdx.json
 evidence/owntransitctl-darwin-arm64.spdx.json
 evidence/owntransitctl-linux-amd64.spdx.json
+evidence/owntransitctl-linux-arm64.spdx.json
 packaging/launchd/README.md
 packaging/scripts/install.sh
 packaging/scripts/install-linux.sh
@@ -67,7 +77,7 @@ EOF
 
 native_mode() {
   case "$1" in
-    artifacts/owntransit-relay-linux-amd64.oci.tar) printf '%s\n' 0644 ;;
+    artifacts/owntransit-relay-linux-amd64.oci.tar|artifacts/owntransit-relay-linux-arm64.oci.tar) printf '%s\n' 0644 ;;
     artifacts/*|packaging/scripts/*) printf '%s\n' 0755 ;;
     *) printf '%s\n' 0644 ;;
   esac
@@ -75,7 +85,9 @@ native_mode() {
 
 file_mode() {
   if test "$(uname -s)" = Darwin; then
-    stat -f '%Lp' -- "$1"
+    file_mode_raw=$(stat -f %p -- "$1") || return 1
+    case "$file_mode_raw" in ''|*[!0-7]*) return 1 ;; esac
+    printf '%o\n' "$((0$file_mode_raw & 07777))"
   else
     stat -c '%a' -- "$1"
   fi
@@ -137,6 +149,7 @@ printf '%s\n' 'package main' 'func main() {}' > "$workspace/source/cmd/example/m
 printf '%s\n' 'package example' > "$workspace/source/internal/example/example.go"
 printf '%s\n' 'Apache License Version 2.0' > "$workspace/source/LICENSE"
 printf '%s\n' 'No third-party notices.' > "$workspace/source/THIRD_PARTY_NOTICES.md"
+printf '%s\n' '# Changelog' '' '## [0.1.0-rc.1]' '' '## [0.1.0]' > "$workspace/source/CHANGELOG.md"
 source_date_epoch=1700000000
 git -C "$workspace/source" init -q
 git -C "$workspace/source" config user.email test@example.invalid
@@ -190,6 +203,12 @@ printf '%s\n' \
   > "$candidate"
 chmod 0600 "$candidate"
 
+advanced_candidate="$workspace/candidate-policy-2.json"
+printf '%s\n' \
+  "{\"schema\":\"owntransit.release-candidate-ledger.v1\",\"status\":\"qualification-only\",\"version\":\"$version\",\"release_id\":\"$release_id\",\"release_sequence\":1,\"policy_sequence\":2,\"minimum_release_sequence\":1,\"minimum_lifecycle\":2,\"source_commit\":\"$source_commit\",\"source_date_epoch\":$source_date_epoch}" \
+  > "$advanced_candidate"
+chmod 0600 "$advanced_candidate"
+
 fake_releasectl="$workspace/fake-releasectl"
 cat > "$fake_releasectl" <<'EOF'
 #!/bin/sh
@@ -223,6 +242,9 @@ case "$command_name" in
     policy_sequence=$(argument --policy-sequence "$@")
     release_floor=$(argument --release-floor "$@")
     lifecycle_floor=$(argument --lifecycle-floor "$@")
+    expected_candidate=$(printf '{"schema":"owntransit.release-candidate-ledger.v1","status":"qualification-only","version":"%s","release_id":"%s","release_sequence":%s,"policy_sequence":%s,"minimum_release_sequence":%s,"minimum_lifecycle":%s,"source_commit":"%s","source_date_epoch":%s}' \
+      "$version" "$release_id" "$sequence" "$policy_sequence" "$release_floor" "$lifecycle_floor" "$source_commit" "$source_date_epoch")
+    test "$(cat "$selected_candidate")" = "$expected_candidate"
     printf 'verified qualification-only candidate version=%s release_id=%s release_sequence=%s policy_sequence=%s minimum_release_sequence=%s minimum_lifecycle=%s source_commit=%s source_date_epoch=%s\n' \
       "$version" "$release_id" "$sequence" "$policy_sequence" "$release_floor" "$lifecycle_floor" "$source_commit" "$source_date_epoch"
     ;;
@@ -256,12 +278,23 @@ case "$command_name" in
     ;;
   verify-policy)
     selected_policy=$(argument --policy "$@")
+    anchor_policy_sequence=$(argument --anchor-policy-sequence "$@" 2>/dev/null || printf '%s\n' 0)
+    anchor_release_floor=$(argument --anchor-release-floor "$@" 2>/dev/null || printf '%s\n' 0)
+    anchor_lifecycle_floor=$(argument --anchor-lifecycle-floor "$@" 2>/dev/null || printf '%s\n' 0)
     policy_values=$(sed -n 's/^{"schema":"fixture-policy","sequence":\([0-9][0-9]*\),"minimum_release_sequence":\([0-9][0-9]*\),"minimum_lifecycle":\([0-9][0-9]*\)}$/\1 \2 \3/p' "$selected_policy")
     test -n "$policy_values"
     set -- $policy_values
     test "$#" -eq 3
+    policy_sequence=$1
+    release_floor=$2
+    lifecycle_floor=$3
+    test "$policy_sequence" -gt "$anchor_policy_sequence"
+    test "$release_floor" -ge "$anchor_release_floor"
+    test "$lifecycle_floor" -ge "$anchor_lifecycle_floor"
+    printf 'policy=%s anchor=%s/%s/%s\n' "$policy_sequence" "$anchor_policy_sequence" "$anchor_release_floor" "$anchor_lifecycle_floor" \
+      >> "$(dirname "$0")/fake-releasectl.policy-anchors"
     printf '{"schema":"owntransit.release-policy-anchor.v1","highest_policy_sequence":%s,"minimum_release_sequence":%s,"minimum_lifecycle":%s,"tombstoned_release_ids":null}\n' \
-      "$1" "$2" "$3"
+      "$policy_sequence" "$release_floor" "$lifecycle_floor"
     ;;
   *) exit 64 ;;
 esac
@@ -273,9 +306,20 @@ invoke_signer() {
   selected_policy_public=$1
   selected_output=$2
   selected_allowed_signers=${3:-$workspace/keys/allowed_signers}
-  "$signer" \
+  selected_policy_sequence=${4:-1}
+  selected_release_floor=${5:-1}
+  selected_lifecycle_floor=${6:-2}
+  selected_anchor_policy_sequence=${7:-0}
+  selected_anchor_release_floor=${8:-0}
+  selected_anchor_lifecycle_floor=${9:-0}
+  selected_candidate=${10:-$candidate}
+  selected_anchor_policy_key_id=${11:-}
+  selected_anchor_tombstones=${12:-}
+  selected_source_root=${13:-$workspace/source}
+  selected_source_commit=${14:-$source_commit}
+  set -- "$signer" \
     --bundle "$bundle" \
-    --candidate "$candidate" \
+    --candidate "$selected_candidate" \
     --releasectl "$fake_releasectl" \
     --release-private-key "$workspace/keys/release-private.pem" \
     --release-public-key "$workspace/keys/release-public.pem" \
@@ -284,16 +328,45 @@ invoke_signer() {
     --distribution-key "$distribution_key" \
     --distribution-public-key "$distribution_public_key" \
     --allowed-signers "$selected_allowed_signers" \
-    --source-root "$workspace/source" \
+    --source-root "$selected_source_root" \
     --version "$version" \
-    --source-commit "$source_commit" \
-    --policy-sequence 1 \
-    --release-floor 1 \
-    --lifecycle-floor 2 \
+    --source-commit "$selected_source_commit" \
+    --policy-sequence "$selected_policy_sequence" \
+    --release-floor "$selected_release_floor" \
+    --lifecycle-floor "$selected_lifecycle_floor" \
+    --anchor-policy-sequence "$selected_anchor_policy_sequence" \
+    --anchor-release-floor "$selected_anchor_release_floor" \
+    --anchor-lifecycle-floor "$selected_anchor_lifecycle_floor" \
     --output "$selected_output"
+  if test -n "$selected_anchor_policy_key_id"; then
+    set -- "$@" --anchor-policy-key-id "$selected_anchor_policy_key_id"
+  fi
+  if test -n "$selected_anchor_tombstones"; then
+    set -- "$@" --anchor-tombstones "$selected_anchor_tombstones"
+  fi
+  "$@"
 }
 
 output="$workspace/output-parent/candidate"
+missing_changelog_source="$workspace/source-missing-changelog"
+cp -R "$workspace/source" "$missing_changelog_source"
+printf '%s\n' '# Changelog' '' '## [0.1.0]' > "$missing_changelog_source/CHANGELOG.md"
+git -C "$missing_changelog_source" add CHANGELOG.md
+GIT_AUTHOR_DATE="@$source_date_epoch +0000" GIT_COMMITTER_DATE="@$source_date_epoch +0000" \
+  git -C "$missing_changelog_source" commit -q -m missing-release-heading
+missing_changelog_commit=$(git -C "$missing_changelog_source" rev-parse HEAD)
+# Leave a misleading valid working-tree heading in place: the signer must read
+# the selected commit, not these uncommitted bytes.
+cp "$workspace/source/CHANGELOG.md" "$missing_changelog_source/CHANGELOG.md"
+if changelog_rejection=$(invoke_signer "$workspace/keys/policy-public.pem" \
+  "$workspace/output-parent/rejected-changelog" "$workspace/keys/allowed_signers" \
+  1 1 2 0 0 0 "$candidate" '' '' "$missing_changelog_source" "$missing_changelog_commit" 2>&1); then
+  fail "candidate signing accepted a commit without its exact changelog release heading"
+fi
+printf '%s\n' "$changelog_rejection" | grep -Fq "committed CHANGELOG.md has no exact release heading for $version" ||
+  fail "missing changelog release heading was rejected for the wrong reason: $changelog_rejection"
+test ! -e "$workspace/output-parent/rejected-changelog" || fail "missing changelog release heading created output"
+
 invoke_signer "$workspace/keys/policy-public.pem" "$output" > "$workspace/sign-candidate.out"
 grep -Fq "created signed candidate handoff: $output" "$workspace/sign-candidate.out" || fail "positive conductor did not report its atomic output"
 grep -Fq "release_id=$release_id" "$workspace/sign-candidate.out" || fail "positive conductor reported the wrong release ID"
@@ -313,6 +386,115 @@ printf '%s\n' \
   verify-policy \
   verify-bundle > "$expected_releasectl_calls"
 cmp -s "$expected_releasectl_calls" "$workspace/fake-releasectl.calls" || fail "positive conductor did not invoke the exact release/policy component sequence"
+printf '%s\n' 'policy=1 anchor=0/0/0' 'policy=1 anchor=0/0/0' > "$workspace/expected-policy-anchors"
+cmp -s "$workspace/expected-policy-anchors" "$workspace/fake-releasectl.policy-anchors" ||
+  fail "initial conductor did not verify policy twice against the exact empty anchor"
+
+chmod 1644 "$bundle/LICENSE"
+special_mode_output="$workspace/output-parent/rejected-special-mode"
+if special_mode_rejection=$(invoke_signer "$workspace/keys/policy-public.pem" "$special_mode_output" 2>&1); then
+  fail "signing conductor accepted a native member with special mode bits"
+fi
+printf '%s\n' "$special_mode_rejection" | grep -Fq 'input-bundle member has special or invalid mode bits: LICENSE' ||
+  fail "special native member was rejected for the wrong reason: $special_mode_rejection"
+test ! -e "$special_mode_output" || fail "special-mode rejection created output"
+chmod 0644 "$bundle/LICENSE"
+
+advanced_output="$workspace/output-parent/advanced-candidate"
+invoke_signer "$workspace/keys/policy-public.pem" "$advanced_output" "$workspace/keys/allowed_signers" \
+  2 1 2 1 1 2 "$advanced_candidate" sha256/policy none > "$workspace/sign-candidate-advanced.out"
+grep -Fq "created signed candidate handoff: $advanced_output" "$workspace/sign-candidate-advanced.out" ||
+  fail "policy-advance conductor did not report its atomic output"
+grep -Fq '"sequence":2' "$advanced_output/assets/RELEASE-POLICY.json" || fail "advanced handoff carries another policy sequence"
+printf '%s\n' \
+  'policy=1 anchor=0/0/0' \
+  'policy=1 anchor=0/0/0' \
+  'policy=2 anchor=1/1/2' \
+  'policy=2 anchor=1/1/2' > "$workspace/expected-policy-anchors"
+cmp -s "$workspace/expected-policy-anchors" "$workspace/fake-releasectl.policy-anchors" ||
+  fail "policy-advance conductor did not verify policy twice against the exact persisted anchor"
+
+rejected_empty_advance="$workspace/output-parent/rejected-empty-anchor-advance"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_empty_advance" "$workspace/keys/allowed_signers" 2 1 2 0 0 0 >/dev/null 2>&1; then
+  fail "empty-anchor path accepted a policy sequence other than one"
+fi
+test ! -e "$rejected_empty_advance" || fail "rejected empty-anchor advance created output"
+
+rejected_partial_anchor="$workspace/output-parent/rejected-partial-anchor"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_partial_anchor" "$workspace/keys/allowed_signers" 2 1 2 1 0 2 >/dev/null 2>&1; then
+  fail "policy advance accepted a partial persisted anchor"
+fi
+test ! -e "$rejected_partial_anchor" || fail "rejected partial anchor created output"
+
+rejected_policy_replay="$workspace/output-parent/rejected-policy-replay"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_policy_replay" "$workspace/keys/allowed_signers" \
+  1 1 2 1 1 2 "$candidate" sha256/policy none >/dev/null 2>&1; then
+  fail "policy advance accepted a replayed policy sequence"
+fi
+test ! -e "$rejected_policy_replay" || fail "rejected policy replay created output"
+
+rejected_release_floor="$workspace/output-parent/rejected-weaker-release-floor"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_release_floor" "$workspace/keys/allowed_signers" \
+  2 1 2 1 2 2 "$advanced_candidate" sha256/policy none >/dev/null 2>&1; then
+  fail "policy advance weakened the persisted release floor"
+fi
+test ! -e "$rejected_release_floor" || fail "weaker-release-floor rejection created output"
+
+rejected_lifecycle_floor="$workspace/output-parent/rejected-weaker-lifecycle-floor"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_lifecycle_floor" "$workspace/keys/allowed_signers" \
+  2 1 1 1 1 2 "$advanced_candidate" sha256/policy none >/dev/null 2>&1; then
+  fail "policy advance weakened the persisted lifecycle floor"
+fi
+test ! -e "$rejected_lifecycle_floor" || fail "weaker-lifecycle-floor rejection created output"
+
+rejected_policy_key="$workspace/output-parent/rejected-policy-key-change"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_policy_key" "$workspace/keys/allowed_signers" \
+  2 1 2 1 1 2 "$advanced_candidate" sha256/not-the-pinned-key none >/dev/null 2>&1; then
+  fail "policy advance changed the pinned policy key"
+fi
+test ! -e "$rejected_policy_key" || fail "policy-key rejection created output"
+
+rejected_missing_policy_key="$workspace/output-parent/rejected-missing-policy-key"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_missing_policy_key" "$workspace/keys/allowed_signers" \
+  2 1 2 1 1 2 "$advanced_candidate" '' none >/dev/null 2>&1; then
+  fail "policy advance omitted the pinned policy-key ID"
+fi
+test ! -e "$rejected_missing_policy_key" || fail "missing-policy-key rejection created output"
+
+rejected_implicit_tombstones="$workspace/output-parent/rejected-implicit-tombstones"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_implicit_tombstones" "$workspace/keys/allowed_signers" \
+  2 1 2 1 1 2 "$advanced_candidate" sha256/policy >/dev/null 2>&1; then
+  fail "policy advance inferred an empty persisted tombstone set"
+fi
+test ! -e "$rejected_implicit_tombstones" || fail "implicit-tombstone rejection created output"
+
+rejected_nonempty_tombstones="$workspace/output-parent/rejected-nonempty-tombstones"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_nonempty_tombstones" "$workspace/keys/allowed_signers" \
+  2 1 2 1 1 2 "$advanced_candidate" sha256/policy present >/dev/null 2>&1; then
+  fail "scalar policy advance accepted a nonempty persisted tombstone set"
+fi
+test ! -e "$rejected_nonempty_tombstones" || fail "nonempty-tombstone rejection created output"
+
+rejected_empty_anchor_key="$workspace/output-parent/rejected-empty-anchor-key"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_empty_anchor_key" "$workspace/keys/allowed_signers" \
+  1 1 2 0 0 0 "$candidate" sha256/policy >/dev/null 2>&1; then
+  fail "empty-anchor path accepted a persisted policy-key claim"
+fi
+test ! -e "$rejected_empty_anchor_key" || fail "empty-anchor key rejection created output"
+
+rejected_empty_anchor_tombstones="$workspace/output-parent/rejected-empty-anchor-tombstones"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_empty_anchor_tombstones" "$workspace/keys/allowed_signers" \
+  1 1 2 0 0 0 "$candidate" '' none >/dev/null 2>&1; then
+  fail "empty-anchor path accepted a persisted tombstone claim"
+fi
+test ! -e "$rejected_empty_anchor_tombstones" || fail "empty-anchor tombstone rejection created output"
+
+rejected_malformed_anchor="$workspace/output-parent/rejected-malformed-anchor"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_malformed_anchor" "$workspace/keys/allowed_signers" \
+  2 1 2 01 1 2 "$advanced_candidate" sha256/policy none >/dev/null 2>&1; then
+  fail "policy advance accepted a noncanonical anchor sequence"
+fi
+test ! -e "$rejected_malformed_anchor" || fail "malformed-anchor rejection created output"
 
 extra_allowed_signers="$workspace/keys/allowed_signers-extra"
 {
@@ -524,5 +706,77 @@ if "$project_root/scripts/release/sign-candidate.sh" \
   --output "$preexisting_output" >/dev/null 2>&1; then
   fail "pre-existing output was accepted"
 fi
+
+rewrite_bundle_contract() {
+  contract_version=$1
+  contract_release_sequence=$2
+  contract_lifecycle=$3
+  printf '%s\n' \
+    "version=$contract_version" \
+    "release_id=$release_id" \
+    "release_sequence=$contract_release_sequence" \
+    "source_commit=$source_commit" \
+    "source_date_epoch=$source_date_epoch" \
+    "source_manifest_sha256=$source_manifest_sha256" > "$bundle/BUILD-INPUTS"
+  printf '%s\n' \
+    "{\"schema\":\"owntransit.software-release.v1\",\"product\":\"owntransit\",\"version\":\"$contract_version\",\"release_id\":\"$release_id\",\"sequence\":$contract_release_sequence,\"created_unix\":$source_date_epoch,\"minimum_lifecycle\":$contract_lifecycle,\"source\":{\"repository\":\"https://github.com/sentrybottale/owntransit\",\"commit\":\"$source_commit\",\"dirty\":false,\"source_manifest_sha256\":\"$source_manifest_sha256\"},\"toolchain\":{\"go_version\":\"go1.26.7\",\"builder_image\":\"fixture\"}}" > "$bundle/RELEASE-MANIFEST.json"
+  rebuilt_checksums="$workspace/rebuilt-native-SHA256SUMS"
+  (
+    cd "$bundle"
+    while IFS= read -r relative; do
+      printf '%s  %s\n' "$(sha256_file "$relative")" "$relative"
+    done < "$native_paths"
+  ) > "$rebuilt_checksums"
+  mv "$rebuilt_checksums" "$bundle/SHA256SUMS"
+  chmod 0644 "$bundle/SHA256SUMS"
+}
+
+expect_stable_freeze_rejection() {
+  rejection_name=$1
+  expected_error=$2
+  selected_release_sequence=$3
+  selected_policy_sequence=$4
+  selected_release_floor=$5
+  selected_lifecycle_floor=$6
+  rewrite_bundle_contract 0.1.0 "$selected_release_sequence" "$selected_lifecycle_floor"
+  rejection_path="$workspace/output-parent/rejected-stable-$rejection_name"
+  if rejection_text=$(invoke_signer "$workspace/keys/policy-public.pem" "$rejection_path" "$workspace/keys/allowed_signers" \
+    "$selected_policy_sequence" "$selected_release_floor" "$selected_lifecycle_floor" \
+    3 5 1 "$stable_candidate" sha256/policy none 2>&1); then
+    fail "0.1.0 stable signing accepted the wrong $rejection_name"
+  fi
+  printf '%s\n' "$rejection_text" | grep -Fq "$expected_error" ||
+    fail "0.1.0 stable $rejection_name was rejected for the wrong reason: $rejection_text"
+  test ! -e "$rejection_path" || fail "rejected 0.1.0 stable $rejection_name created output"
+}
+
+version=0.1.0
+stable_candidate="$workspace/candidate-stable.json"
+printf '%s\n' \
+  "{\"schema\":\"owntransit.release-candidate-ledger.v1\",\"status\":\"qualification-only\",\"version\":\"$version\",\"release_id\":\"$release_id\",\"release_sequence\":8,\"policy_sequence\":4,\"minimum_release_sequence\":8,\"minimum_lifecycle\":1,\"source_commit\":\"$source_commit\",\"source_date_epoch\":$source_date_epoch}" \
+  > "$stable_candidate"
+chmod 0600 "$stable_candidate"
+
+stable_rejection_sign_calls_before=$(grep -c '^sign-manifest$' "$workspace/fake-releasectl.calls")
+expect_stable_freeze_rejection release-sequence \
+  'OwnTransit 0.1.0 requires release sequence 8' 7 4 8 1
+expect_stable_freeze_rejection policy-sequence \
+  'OwnTransit 0.1.0 requires policy sequence 4' 8 5 8 1
+expect_stable_freeze_rejection release-floor \
+  'OwnTransit 0.1.0 requires release floor 8' 8 4 7 1
+expect_stable_freeze_rejection lifecycle-floor \
+  'OwnTransit 0.1.0 requires lifecycle floor 1' 8 4 8 2
+test "$(grep -c '^sign-manifest$' "$workspace/fake-releasectl.calls")" = "$stable_rejection_sign_calls_before" ||
+  fail "a rejected 0.1.0 stable tuple reached a signing operation"
+
+rewrite_bundle_contract 0.1.0 8 1
+stable_output="$workspace/output-parent/stable-candidate"
+invoke_signer "$workspace/keys/policy-public.pem" "$stable_output" "$workspace/keys/allowed_signers" \
+  4 8 1 3 5 1 "$stable_candidate" sha256/policy none > "$workspace/sign-candidate-stable.out"
+grep -Fq "created signed candidate handoff: $stable_output" "$workspace/sign-candidate-stable.out" ||
+  fail "exact 0.1.0 stable signing tuple did not produce its atomic handoff"
+test "$(cat "$stable_output/assets/RELEASE-POLICY.json")" = \
+  '{"schema":"fixture-policy","sequence":4,"minimum_release_sequence":8,"minimum_lifecycle":1}' ||
+  fail "0.1.0 stable handoff did not preserve the frozen signed policy tuple"
 
 printf '%s\n' 'sign-candidate full-conductor and fail-closed tests passed'

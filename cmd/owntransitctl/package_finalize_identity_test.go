@@ -20,7 +20,8 @@ func TestRenderDarwinLauncherBindingFromAuthenticatedRuntime(t *testing.T) {
 	digest := strings.Repeat("c", 64)
 	encoded, gid, err := renderDarwinLauncherBinding(receipt, packagetxn.RuntimeIdentity{
 		ReleaseID: releaseID, ReleaseSequence: 7, ArtifactSHA256: digest,
-		OS: "darwin", Arch: "arm64", Role: "client",
+		LauncherSHA256: strings.Repeat("d", 64),
+		OS:             "darwin", Arch: "arm64", Role: "client",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +46,8 @@ func TestRenderDarwinLauncherBindingRejectsUntrustedInputs(t *testing.T) {
 		"reader_group=_owntransit\nreader_gid=5001\nreader_group_uuid=FEDCBA98-7654-3210-FEDC-BA9876543210\n"
 	validRuntime := packagetxn.RuntimeIdentity{
 		ReleaseID: strings.Repeat("b", 51) + "a", ReleaseSequence: 1,
-		ArtifactSHA256: strings.Repeat("c", 64), OS: "darwin", Arch: "arm64", Role: "client",
+		ArtifactSHA256: strings.Repeat("c", 64), LauncherSHA256: strings.Repeat("d", 64),
+		OS: "darwin", Arch: "arm64", Role: "client",
 	}
 	for name, mutate := range map[string]func() ([]byte, packagetxn.RuntimeIdentity){
 		"unknown receipt field": func() ([]byte, packagetxn.RuntimeIdentity) {
@@ -65,6 +67,11 @@ func TestRenderDarwinLauncherBindingRejectsUntrustedInputs(t *testing.T) {
 		"noncanonical digest": func() ([]byte, packagetxn.RuntimeIdentity) {
 			value := validRuntime
 			value.ArtifactSHA256 = strings.Repeat("C", 64)
+			return []byte(validReceipt), value
+		},
+		"missing launcher digest": func() ([]byte, packagetxn.RuntimeIdentity) {
+			value := validRuntime
+			value.LauncherSHA256 = ""
 			return []byte(validReceipt), value
 		},
 	} {

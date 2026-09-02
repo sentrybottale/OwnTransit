@@ -147,7 +147,13 @@ sha256_file() {
 }
 
 file_mode() {
-  if test "$(uname -s)" = Darwin; then stat -f %Lp -- "$1"; else stat -c %a -- "$1"; fi
+  if test "$(uname -s)" = Darwin; then
+    file_mode_raw=$(stat -f %p -- "$1") || return 1
+    case "$file_mode_raw" in ''|*[!0-7]*) return 1 ;; esac
+    printf '%o\n' "$((0$file_mode_raw & 07777))"
+  else
+    stat -c %a -- "$1"
+  fi
 }
 file_owner() {
   if test "$(uname -s)" = Darwin; then stat -f %u -- "$1"; else stat -c %u -- "$1"; fi
@@ -166,6 +172,9 @@ protected_ancestor=$(dirname "$distribution_key")
 while :; do
   test -d "$protected_ancestor" && test ! -L "$protected_ancestor" || fail "distribution key ancestor is not a regular directory: $protected_ancestor"
   ancestor_mode=$(file_mode "$protected_ancestor")
+  if test "$(uname -s)" = Darwin; then
+    case "$ancestor_mode" in [0-7][0-7][0-7]) ;; *) fail "distribution key ancestor has special or invalid mode bits: $protected_ancestor" ;; esac
+  fi
   ancestor_permissions=$((0$ancestor_mode))
   test $((ancestor_permissions & 022)) -eq 0 || fail "distribution key ancestor is group- or world-writable: $protected_ancestor"
   ancestor_owner=$(file_owner "$protected_ancestor")
@@ -210,6 +219,8 @@ for expected_test in \
   hostile-relay-resource-exhaustion \
   linux-amd64-clean-host-lifecycle \
   linux-amd64-relay-exchange \
+  linux-arm64-clean-host-lifecycle \
+  linux-arm64-relay-exchange \
   macos-arm64-clean-host-lifecycle \
   public-history-clean-export \
   public-tree-source-gates \

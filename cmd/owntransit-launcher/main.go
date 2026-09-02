@@ -24,11 +24,15 @@ const (
 	launcherBindingFile = "client.v1"
 	clientRuntimeRoot   = "/Library/OwnTransit/client/runtime"
 	clientAnchorRoot    = "/Library/OwnTransit/client/anchor-view"
+	clientRoleRoot      = "/Library/OwnTransit/roles/client"
 	clientReleaseRoot   = "/Library/OwnTransit/roles/client/releases/"
+	clientCurrentName   = "current"
 	clientRealName      = "owntransit-real"
+	launcherExecutable  = "/Library/OwnTransit/bin/owntransit"
 	qualifyArgument     = "--qualify-reader-gid"
 	doctorArgument      = "--doctor"
 	maxBindingBytes     = 4096
+	maxLauncherBytes    = 16 << 20
 	maxClientBytes      = 64 << 20
 )
 
@@ -44,6 +48,8 @@ type launchPlan struct {
 	target       string
 	arguments    []string
 	environment  []string
+	releaseID    string
+	readerGID    uint32
 	clientSHA256 [32]byte
 }
 
@@ -53,9 +59,11 @@ type launcherCommands struct {
 	gid             func() int
 	egid            func() int
 	groups          func() ([]int, error)
+	validateSelf    func() error
 	loadBinding     func(int) ([]byte, error)
 	liveUUID        func(uint32) ([16]byte, error)
-	validateTarget  func(string, [32]byte) error
+	validateCurrent func(string, uint32) error
+	validateTarget  func(string, [32]byte, uint32) error
 	closeExtraFDs   func() error
 	chdir           func(string) error
 	exec            func(string, []string, []string) error
@@ -77,8 +85,10 @@ func productionLauncherCommands() launcherCommands {
 		gid:             syscall.Getgid,
 		egid:            syscall.Getegid,
 		groups:          syscall.Getgroups,
+		validateSelf:    validateInstalledLauncherSelf,
 		loadBinding:     readInstalledBinding,
 		liveUUID:        liveUserUUID,
+		validateCurrent: validateInstalledCurrentRelease,
 		validateTarget:  validateInstalledClient,
 		closeExtraFDs:   markExtraFileDescriptorsCloseOnExec,
 		chdir:           os.Chdir,
@@ -88,13 +98,24 @@ func productionLauncherCommands() launcherCommands {
 }
 
 func executeLauncher(arguments []string, diagnostics io.Writer, commands launcherCommands) int {
+	if err := commands.validateSelf(); err != nil {
+		fmt.Fprintf(diagnostics, "owntransit-launcher: validate launcher invocation: %v\n", err)
+		return 1
+	}
 	plan, err := prepareLaunch(arguments, commands)
 	if err != nil {
 		fmt.Fprintf(diagnostics, "owntransit-launcher: %v\n", err)
 		return 1
 	}
-	if err := commands.validateTarget(plan.target, plan.clientSHA256); err != nil {
+	if err := commands.validateTarget(plan.target, plan.clientSHA256, plan.readerGID); err != nil {
 		fmt.Fprintf(diagnostics, "owntransit-launcher: validate installed client: %v\n", err)
+		return 1
+	}
+	// Make the authenticated current selector the launch linearization point.
+	// A package mutation that selected another release after the binding was
+	// read must fail closed before this process resolves the real client path.
+	if err := commands.validateCurrent(plan.releaseID, plan.readerGID); err != nil {
+		fmt.Fprintf(diagnostics, "owntransit-launcher: validate current release: %v\n", err)
 		return 1
 	}
 	if err := commands.chdir("/"); err != nil {
@@ -110,6 +131,68 @@ func executeLauncher(arguments []string, diagnostics io.Writer, commands launche
 		return 1
 	}
 	return 0
+}
+
+// validateInstalledLauncherSelf rejects retained hard-link aliases before the
+// setgid process reads any protected state. The normal client frontend invokes
+// this launcher only through the fixed public path; an alias has no authority
+// even when another local user managed to retain the root-owned inode.
+func validateInstalledLauncherSelf() error {
+	executable, err := os.Executable()
+	if err := validateLauncherExecutablePath(executable, err); err != nil {
+		return err
+	}
+	selected, err := os.Lstat(launcherExecutable)
+	if err != nil || !selected.Mode().IsRegular() {
+		return errors.New("fixed public launcher is absent or not regular")
+	}
+	fd, err := unix.Open(launcherExecutable, unix.O_RDONLY|unix.O_NONBLOCK|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return fmt.Errorf("open fixed public launcher: %w", err)
+	}
+	file := os.NewFile(uintptr(fd), launcherExecutable)
+	if file == nil {
+		_ = unix.Close(fd)
+		return errors.New("retain fixed public launcher descriptor")
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !os.SameFile(selected, opened) {
+		return errors.New("fixed public launcher changed during selection")
+	}
+	var before unix.Stat_t
+	if err := unix.Fstat(fd, &before); err != nil {
+		return fmt.Errorf("inspect fixed public launcher: %w", err)
+	}
+	readerGID := uint32(unix.Getegid())
+	if !validLauncherSelfStat(before, readerGID) {
+		return errors.New("fixed public launcher metadata is invalid")
+	}
+	if err := securefs.VerifyNoExtendedACLFD(fd, false); err != nil {
+		return fmt.Errorf("fixed public launcher ACL: %w", err)
+	}
+	var after unix.Stat_t
+	if err := unix.Fstat(fd, &after); err != nil || before.Dev != after.Dev || before.Ino != after.Ino ||
+		before.Mode != after.Mode || before.Uid != after.Uid || before.Gid != after.Gid ||
+		before.Nlink != after.Nlink || before.Size != after.Size {
+		return errors.New("fixed public launcher changed during authentication")
+	}
+	return nil
+}
+
+func validateLauncherExecutablePath(executable string, executableErr error) error {
+	if executableErr != nil {
+		return fmt.Errorf("resolve launcher invocation path: %w", executableErr)
+	}
+	if executable != launcherExecutable {
+		return errors.New("launcher was not invoked through its fixed public path")
+	}
+	return nil
+}
+
+func validLauncherSelfStat(stat unix.Stat_t, readerGID uint32) bool {
+	return stat.Mode&unix.S_IFMT == unix.S_IFREG && stat.Uid == 0 && readerGID != 0 && stat.Gid == readerGID &&
+		uint32(stat.Mode)&0o7777 == 0o2751 && stat.Nlink >= 1 && stat.Size > 0 && stat.Size <= maxLauncherBytes
 }
 
 func prepareLaunch(arguments []string, commands launcherCommands) (launchPlan, error) {
@@ -176,7 +259,8 @@ func prepareLaunch(arguments []string, commands launcherCommands) (launchPlan, e
 	}
 	return launchPlan{
 		target: target, arguments: clientArguments,
-		environment:  []string{"LC_ALL=C", "PATH=/usr/bin:/bin:/usr/sbin:/sbin"},
+		environment: []string{"LC_ALL=C", "PATH=/usr/bin:/bin:/usr/sbin:/sbin"},
+		releaseID:   binding.releaseID, readerGID: binding.readerGID,
 		clientSHA256: binding.clientSHA256,
 	}, nil
 }
@@ -281,7 +365,27 @@ func readInstalledBinding(readerGID int) ([]byte, error) {
 	return encoded, nil
 }
 
-func validateInstalledClient(path string, expected [32]byte) error {
+func validateInstalledCurrentRelease(expectedRelease string, readerGID uint32) error {
+	if !validReleaseID(expectedRelease) || readerGID == 0 || uint32(unix.Getegid()) != readerGID {
+		return errors.New("current release validation has an invalid binding")
+	}
+	roleRoot, err := securefs.OpenReadOnlyRoot(clientRoleRoot, int(readerGID))
+	if err != nil {
+		return err
+	}
+	defer roleRoot.Close()
+	want := "releases/" + expectedRelease
+	target, err := roleRoot.ReadRootSymlink(clientCurrentName, len(want))
+	if err != nil || target != want {
+		return errors.New("protected binding does not match the authenticated current client selector")
+	}
+	return roleRoot.Recheck()
+}
+
+func validateInstalledClient(path string, expected [32]byte, readerGID uint32) error {
+	if uint32(unix.Getegid()) != readerGID {
+		return errors.New("installed client validation has the wrong effective reader GID")
+	}
 	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC|unix.O_NONBLOCK, 0)
 	if err != nil {
 		return err
@@ -296,8 +400,11 @@ func validateInstalledClient(path string, expected [32]byte) error {
 	if err := unix.Fstat(fd, &before); err != nil {
 		return err
 	}
-	if before.Mode&unix.S_IFMT != unix.S_IFREG || before.Uid != 0 || before.Gid != 0 || before.Mode&0o7777 != 0o755 || before.Nlink != 1 || before.Size <= 0 || before.Size > maxClientBytes {
-		return errors.New("installed client is not a single-link root:wheel 0755 bounded regular file")
+	if before.Mode&unix.S_IFMT != unix.S_IFREG || before.Uid != 0 || before.Gid != readerGID || before.Mode&0o7777 != 0o750 || before.Nlink != 1 || before.Size <= 0 || before.Size > maxClientBytes {
+		return errors.New("installed client is not a single-link root:reader 0750 bounded regular file")
+	}
+	if err := securefs.VerifyNoExtendedACLFD(fd, false); err != nil {
+		return fmt.Errorf("installed client ACL: %w", err)
 	}
 	hash := sha256.New()
 	written, err := io.Copy(hash, io.LimitReader(file, maxClientBytes+1))
@@ -319,14 +426,27 @@ func validateInstalledClient(path string, expected [32]byte) error {
 }
 
 func markExtraFileDescriptorsCloseOnExec() error {
-	var limit unix.Rlimit
-	if err := unix.Getrlimit(unix.RLIMIT_NOFILE, &limit); err != nil {
-		return err
+	directory, err := os.Open("/dev/fd")
+	if err != nil {
+		return fmt.Errorf("enumerate open descriptors: %w", err)
 	}
-	if limit.Cur > 1<<20 {
-		return errors.New("open-file limit is too large to close inherited authority safely")
+	names, readErr := directory.Readdirnames(-1)
+	closeErr := directory.Close()
+	if readErr != nil {
+		return fmt.Errorf("enumerate open descriptor names: %w", readErr)
 	}
-	for fd := 3; uint64(fd) < limit.Cur; fd++ {
+	if closeErr != nil {
+		return fmt.Errorf("close open-descriptor directory: %w", closeErr)
+	}
+	for _, name := range names {
+		fd64, parseErr := strconv.ParseUint(name, 10, 31)
+		if parseErr != nil || strconv.FormatUint(fd64, 10) != name {
+			return errors.New("open-descriptor enumeration returned a non-canonical entry")
+		}
+		fd := int(fd64)
+		if fd < 3 {
+			continue
+		}
 		if _, err := unix.FcntlInt(uintptr(fd), unix.F_SETFD, unix.FD_CLOEXEC); err != nil && !errors.Is(err, unix.EBADF) {
 			return fmt.Errorf("mark descriptor %d close-on-exec: %w", fd, err)
 		}

@@ -373,10 +373,25 @@ func TestProvisionerPackageArtifactNamesArePlatformBound(t *testing.T) {
 	for _, test := range []struct{ goos, goarch, want string }{
 		{"darwin", "arm64", "provisioner-darwin-arm64"},
 		{"linux", "amd64", "provisioner-linux-amd64"},
+		{"linux", "arm64", "provisioner-linux-arm64"},
 	} {
 		got, err := artifactNameForRole("provisioner", test.goos, test.goarch)
 		if err != nil || got != test.want {
 			t.Fatalf("artifactNameForRole(provisioner, %s, %s) = %q, %v", test.goos, test.goarch, got, err)
+		}
+	}
+}
+
+func TestLinuxArm64PackageArtifactNamesAreRoleBound(t *testing.T) {
+	for role, want := range map[string]string{
+		"client":      "client-linux-arm64",
+		"connector":   "connector-linux-arm64",
+		"relay":       "relay-linux-arm64",
+		"provisioner": "provisioner-linux-arm64",
+	} {
+		got, err := artifactNameForRole(role, "linux", "arm64")
+		if err != nil || got != want {
+			t.Fatalf("artifactNameForRole(%s, linux, arm64) = %q, %v", role, got, err)
 		}
 	}
 }

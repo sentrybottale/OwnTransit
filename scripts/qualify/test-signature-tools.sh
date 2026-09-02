@@ -91,6 +91,13 @@ expect_checksum_key_failure \
   "$workspace/permissive-key" \
   "$workspace/evidence/permissive-key.sig"
 
+cp "$workspace/signing-key" "$workspace/special-mode-key"
+chmod 1600 "$workspace/special-mode-key"
+expect_checksum_key_failure \
+  'signing key mode must be 0400 or 0600' \
+  "$workspace/special-mode-key" \
+  "$workspace/evidence/special-mode-key.sig"
+
 cp "$workspace/signing-key" "$workspace/staging/embedded-key"
 chmod 0600 "$workspace/staging/embedded-key"
 expect_checksum_key_failure \
@@ -114,6 +121,15 @@ if test "$(uname -s)" = Darwin; then
     'protected key ancestor is group- or world-writable' \
     "$workspace/writable-ancestor/key-vault/signing-key" \
     "$workspace/evidence/writable-ancestor.sig"
+
+  mkdir -p "$workspace/special-mode-ancestor/key-vault"
+  cp "$workspace/signing-key" "$workspace/special-mode-ancestor/key-vault/signing-key"
+  chmod 0600 "$workspace/special-mode-ancestor/key-vault/signing-key"
+  chmod 1700 "$workspace/special-mode-ancestor"
+  expect_checksum_key_failure \
+    'protected key ancestor has special or invalid mode bits' \
+    "$workspace/special-mode-ancestor/key-vault/signing-key" \
+    "$workspace/evidence/special-mode-ancestor.sig"
 
   mkdir -p "$workspace/acl-ancestor/key-vault"
   cp "$workspace/signing-key" "$workspace/acl-ancestor/key-vault/signing-key"
@@ -229,6 +245,10 @@ expect_source_key_failure \
   'signing key must have exactly one hard link' \
   "$workspace/hardlinked-key" \
   "$archive_output/hardlinked-key.tar.gz"
+expect_source_key_failure \
+  'signing key mode must be 0400 or 0600' \
+  "$workspace/special-mode-key" \
+  "$archive_output/special-mode-key.tar.gz"
 
 cp "$workspace/signing-key" "$archive_source/embedded-key"
 chmod 0600 "$archive_source/embedded-key"

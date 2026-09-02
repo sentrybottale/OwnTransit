@@ -1,3 +1,5 @@
+# Legacy amd64-only POC wrapper; it is not a release packaging path. Official
+# amd64 and arm64 relay OCI archives come from scripts/release/build-artifacts.sh.
 FROM scratch
 COPY owntransit-relay-linux-amd64 /owntransit-relay
 USER 65532:65532

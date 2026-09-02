@@ -139,11 +139,17 @@ for artifact_name in \
   owntransitctl-darwin-arm64 \
   owntransitctl-linux-amd64 \
   owntransit-provision-darwin-arm64 \
-  owntransit-provision-linux-amd64; do
+  owntransit-provision-linux-amd64 \
+  owntransit-linux-arm64 \
+  owntransit-connector-linux-arm64 \
+  owntransit-relay-linux-arm64.oci.tar \
+  owntransitctl-linux-arm64 \
+  owntransit-provision-linux-arm64; do
   printf 'fixture artifact %s\n' "$artifact_name" > "$bundle/artifacts/$artifact_name"
   chmod 0755 "$bundle/artifacts/$artifact_name"
 done
 chmod 0644 "$bundle/artifacts/owntransit-relay-linux-amd64.oci.tar"
+chmod 0644 "$bundle/artifacts/owntransit-relay-linux-arm64.oci.tar"
 
 (
   cd "$bundle"
@@ -225,7 +231,16 @@ case "$(uname -s)/$(uname -m)" in
     "$entrypoint" $common_arguments --role connector > "$runtime_output"
     expect_line MOCK_PLATFORM_INSTALLER "$runtime_output"
     ;;
-  *) fail "focused entrypoint test requires macOS arm64 or Linux amd64" ;;
+  Linux/aarch64|Linux/arm64)
+    runtime_role=connector
+    runtime_artifact=artifacts/owntransit-connector-linux-arm64
+    lifecycle_artifact=artifacts/owntransitctl-linux-arm64
+    runtime_output="$workspace/connector.out"
+    # shellcheck disable=SC2086
+    "$entrypoint" $common_arguments --role connector > "$runtime_output"
+    expect_line MOCK_PLATFORM_INSTALLER "$runtime_output"
+    ;;
+  *) fail "focused entrypoint test requires macOS arm64, Linux amd64, or Linux arm64" ;;
 esac
 
 expect_line --release-id "$runtime_output"
@@ -285,6 +300,11 @@ rm -f -- "$assets/unexpected-hardlink"
 
 chmod 0666 "$trust/policy-public.pem"
 expect_rejection 'protected handoff path is group/world writable' \
+  "$entrypoint" --bundle "$bundle" --assets "$assets" --trust "$trust" --role provisioner
+chmod 0644 "$trust/policy-public.pem"
+
+chmod 1644 "$trust/policy-public.pem"
+expect_rejection 'protected handoff path has special or non-canonical mode bits' \
   "$entrypoint" --bundle "$bundle" --assets "$assets" --trust "$trust" --role provisioner
 chmod 0644 "$trust/policy-public.pem"
 

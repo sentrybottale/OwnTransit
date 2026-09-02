@@ -2,8 +2,10 @@
 
 ## Release and assurance status
 
-OwnTransit 0.1.0 is the candidate release line for Apple-silicon macOS and Linux
-amd64 within the documented SSH-only boundary. The tunnel, route-capability
+OwnTransit 0.1.0 is the candidate release line for Apple-silicon macOS
+(`arm64`), 64-bit x86 Linux (`amd64`/`x86_64`), and 64-bit ARM Linux
+(`arm64`/`aarch64`) within the documented SSH-only boundary. Intel macOS is
+not a supported 0.1.0 target. The tunnel, route-capability
 profile, guided target-generated enrollment, signed verifier-first lifecycle
 policy, route-rotation issuance, revocation overlays, external rollback anchor,
 exact-record rollback, signed release/policy verification and manager-bound
@@ -18,6 +20,12 @@ independent external security assessment, penetration-test certification or
 universal suitability is claimed here. SSH and host recovery remain operator
 responsibilities; keep them independently available throughout qualification
 and deployment canarying.
+
+Retained `0.1.0-rc.*` package state is not a supported stable-install source.
+Those lifecycle binaries recognize the older exact-nine artifact profile and
+must fail closed on the exact-fourteen stable manifest. Ordinary uninstall is
+intentionally non-purging, and a destructive RC trust-reset is not implemented;
+use a genuinely fresh host for stable qualification.
 
 ## Reporting a vulnerability
 
@@ -52,6 +60,15 @@ the separate SSH boundary.
 Both endpoint roles originate every OwnTransit connection. Neither exposes an
 OwnTransit listener or requires a public address; only the relay is publicly
 reachable.
+
+Reverse-proxy connection and request limits are availability hygiene, never an
+authentication boundary. The supplied Nginx policy keys its per-peer buckets
+on the original TCP peer address retained before RealIP header processing and
+keeps independent virtual-server-wide ceilings. This prevents a request header
+from selecting a quota identity even under unsafe ambient RealIP trust, while
+deliberately grouping clients behind the same immediate CDN or proxy. A fully
+compromised reverse proxy may still ignore every limit or deny service without
+weakening the inner endpoint-authentication and confidentiality boundary.
 
 The client, connector, offline issuers and software/deployment signers are
 explicit OwnTransit trust anchors. OpenSSH host/user keys and policy form a
@@ -135,9 +152,21 @@ Client, connector, relay and offline provisioner software use the same
 manager-bound signed release/policy transaction, external rollback anchor,
 immutable release directories and authenticated current selector. The
 provisioner handoff invokes its authenticated role-local `owntransitctl` only
-for package apply, rollback and recovery. Installing or updating that role
-creates no runtime reader, service, target state, endpoint credential or SSH
-material.
+for package apply, rollback, recovery and (on macOS) detach. Installing or
+updating that role creates no runtime reader, service, target state, endpoint
+credential or SSH material.
+
+On macOS, a single persistent root-only `package-mutation.v1.lock` covers both
+client and provisioner transitions, public-entry publication and lifecycle-owned
+detach. The provisioner release tree remains non-user-traversable at
+`root:wheel` mode `0750`; only a distinct digest-matched mode-`0755` copy is
+publicly executable. On Linux, one persistent empty root-only
+`/var/lib/owntransit/package-supervisor/platform.v1.lock` serializes complete
+installer and non-purging uninstaller integration windows. Connector and relay
+detach additionally holds the existing role supervisor lock so a concurrent
+lifecycle action cannot restart a service while its unit is removed. The
+provisioner tree is mode `0755` and package operations fail closed unless
+`fs.protected_hardlinks=1`; the legacy directory mode migration is Linux-only.
 
 The packaged relay mailbox accepts only the Podman private-bridge peer as
 deployment plumbing. The exact signed units' `--network=bridge` and

@@ -90,9 +90,9 @@ require_text .dockerignore '!THIRD_PARTY_NOTICES.md'
 require_text Containerfile 'COPY LICENSE THIRD_PARTY_NOTICES.md RELEASE_MANIFEST.example.json ./'
 require_text Containerfile 'COPY --from=build /src/LICENSE /licenses/Apache-2.0.txt'
 require_text Containerfile 'COPY --from=build /src/THIRD_PARTY_NOTICES.md /licenses/THIRD_PARTY_NOTICES.md'
-require_text Containerfile 'FROM build AS dependency-licenses'
+require_text Containerfile 'FROM linux-verify AS dependency-licenses'
 require_text Containerfile 'RUN /bin/sh ./scripts/tests/dependency-licenses.sh --full'
-require_text scripts/security-check.sh '--target dependency-licenses --tag owntransit-dependency-licenses:security'
+require_text scripts/security-check.sh '--target dependency-licenses --tag "owntransit-dependency-licenses:security-$linux_arch"'
 require_text scripts/release/make-relay-oci.sh 'install -m 0644 "$project_license" "$rootfs/licenses/Apache-2.0.txt"'
 require_text scripts/release/make-relay-oci.sh 'install -m 0644 "$third_party_notices" "$rootfs/licenses/THIRD_PARTY_NOTICES.md"'
 require_text scripts/release/make-relay-oci.sh 'cmp -s "$project_license" "$license_roundtrip"'
@@ -123,11 +123,17 @@ fi
 if ! env CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off \
   go list -mod=readonly -buildvcs=false -deps -f "$module_template" \
     ./cmd/owntransit ./cmd/owntransit-connector ./cmd/owntransit-relay \
-    ./cmd/owntransitctl ./cmd/owntransit-provision >"$temporary/linux-modules"; then
-  fail 'could not enumerate the Linux production dependency graph'
+    ./cmd/owntransitctl ./cmd/owntransit-provision >"$temporary/linux-amd64-modules"; then
+  fail 'could not enumerate the Linux amd64 production dependency graph'
+fi
+if ! env CGO_ENABLED=0 GOOS=linux GOARCH=arm64 GOWORK=off \
+  go list -mod=readonly -buildvcs=false -deps -f "$module_template" \
+    ./cmd/owntransit ./cmd/owntransit-connector ./cmd/owntransit-relay \
+    ./cmd/owntransitctl ./cmd/owntransit-provision >"$temporary/linux-arm64-modules"; then
+  fail 'could not enumerate the Linux arm64 production dependency graph'
 fi
 
-sed '/^$/d' "$temporary/darwin-modules" "$temporary/linux-modules" |
+sed '/^$/d' "$temporary/darwin-modules" "$temporary/linux-amd64-modules" "$temporary/linux-arm64-modules" |
   LC_ALL=C sort -u >"$temporary/actual-modules"
 printf '%s\n' "$expected_modules" | LC_ALL=C sort -u >"$temporary/expected-modules"
 

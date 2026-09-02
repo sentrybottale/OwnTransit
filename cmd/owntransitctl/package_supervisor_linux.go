@@ -365,7 +365,7 @@ func activateRelayImage(result packagetxn.Result) error {
 	}
 	archive := filepath.Join(packageRoot, "relay", "current", "owntransit-relay.oci.tar")
 	tag := "owntransit-relay:" + result.Current
-	expectedImageID, err := expectedRelayImageID(archive, result.Current)
+	expectedImageID, err := expectedRelayImageID(archive, result.Current, result.Runtime.Arch)
 	if err != nil {
 		return err
 	}

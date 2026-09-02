@@ -107,6 +107,70 @@ func TestPackageSupervisorFailureStaysStoppedAndRecoveryRestarts(t *testing.T) {
 	}
 }
 
+func TestPackageSupervisorActivationFailureRetriesExactIdempotentResult(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("exact supervisor ownership test requires the pinned root build environment")
+	}
+	root := newSupervisorRoot(t)
+	service := &fakePackageService{active: true}
+	activationFailure := errors.New("relay image activation failed")
+	operationAttempts := 0
+	activationAttempts := 0
+	supervisor := packageSupervisor{
+		role: "relay", intentRoot: root, service: service,
+		activate: func(result packagetxn.Result) error {
+			activationAttempts++
+			if service.active {
+				t.Fatal("relay activation ran while the service was active")
+			}
+			if result.Role != "relay" || result.Current != "release-b" {
+				t.Fatalf("activation received another package result: %+v", result)
+			}
+			if activationAttempts == 1 {
+				if result.Idempotent {
+					t.Fatal("initial package mutation unexpectedly reported an idempotent result")
+				}
+				return activationFailure
+			}
+			if !result.Idempotent {
+				t.Fatal("activation retry did not receive the exact idempotent package result")
+			}
+			return nil
+		},
+	}
+	operation := func() (packagetxn.Result, error) {
+		operationAttempts++
+		if service.active {
+			t.Fatal("package retry ran while the relay was active")
+		}
+		return packagetxn.Result{
+			Role: "relay", Current: "release-b", Idempotent: operationAttempts > 1,
+		}, nil
+	}
+
+	if _, err := supervisor.run(func() error { return nil }, operation); !errors.Is(err, activationFailure) {
+		t.Fatalf("activation failure = %v", err)
+	}
+	if service.active {
+		t.Fatal("failed relay activation restarted the service")
+	}
+	intent, exists, err := readPackageSupervisorIntent(root, "relay")
+	if err != nil || !exists || !intent.RestartActive {
+		t.Fatalf("activation failure intent = %+v, exists=%v, err=%v", intent, exists, err)
+	}
+
+	retried, err := supervisor.run(func() error { return nil }, operation)
+	if err != nil || !retried.Idempotent || !service.active {
+		t.Fatalf("idempotent activation retry = %+v, %v active=%v", retried, err, service.active)
+	}
+	if operationAttempts != 2 || activationAttempts != 2 {
+		t.Fatalf("retry attempts: operation=%d activation=%d", operationAttempts, activationAttempts)
+	}
+	if _, err := os.Stat(filepath.Join(root, "relay.intent")); !os.IsNotExist(err) {
+		t.Fatalf("completed activation retry intent remains: %v", err)
+	}
+}
+
 func TestPackageSupervisorLeavesPreviouslyInactiveServiceInactive(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("exact supervisor ownership test requires the pinned root build environment")

@@ -3,8 +3,10 @@
 **Your SSH. Your keys. Untrusted transit.**
 
 > [!IMPORTANT]
-> OwnTransit 0.1.0 is the candidate release line for Apple-silicon macOS and
-> Linux amd64 within the SSH-only boundary described here. The repository can
+> OwnTransit 0.1.0 is the candidate release line for Apple-silicon macOS
+> (`arm64`), 64-bit x86 Linux (`amd64`, also called `x86_64`), and 64-bit ARM
+> Linux (`arm64`, also called `aarch64`) within the SSH-only boundary described
+> here. Intel macOS is outside the 0.1.0 support matrix. The repository can
 > build a signed, installable candidate handoff, but that handoff is not an
 > official stable release until its exact assets and policy are authenticated,
 > its signed qualification record reports every hard release gate as passed,
@@ -12,6 +14,11 @@
 > those platform gates passed or that an independent external security
 > certification exists. Keep an operator-owned alternative access and recovery
 > path throughout qualification and deployment canarying.
+
+The public `0.1.0-rc.*` packages were qualification artifacts, not supported
+in-place predecessors of stable `0.1.0`. Their non-purging uninstall preserves
+the old lifecycle and trust state; stable qualification therefore requires a
+genuinely fresh host. No destructive RC trust-reset is currently implemented.
 
 ## Installed operator experience
 
@@ -169,12 +176,18 @@ plane.
 
 ## OwnTransit 0.1.0 artifact contract
 
-- `owntransit` for macOS arm64 and Linux amd64;
-- `owntransit-connector` for Linux amd64, compiled only for the fixed SSH
-  target;
-- `owntransit-relay` as a digest-addressed Linux amd64 image;
-- `owntransitctl` for target-local lifecycle transactions; and
-- `owntransit-provision` for offline approval and signing.
+- `owntransit` for macOS arm64, Linux amd64/x86_64, and Linux arm64/aarch64;
+- `owntransit-launcher` for the authenticated macOS arm64 client boundary;
+- `owntransit-connector` for Linux amd64/x86_64 and Linux arm64/aarch64,
+  compiled only for the fixed SSH target;
+- `owntransit-relay` as separate digest-addressed Linux amd64 and arm64 images;
+- `owntransitctl` for target-local lifecycle transactions on all three
+  supported platform/architecture targets; and
+- `owntransit-provision` for offline approval and signing on all three
+  supported platform/architecture targets.
+
+Those builds form fourteen separately authenticated artifact records: four for
+macOS arm64 and five for each supported Linux architecture.
 
 The installed client flow is: authenticate the release and native handoff, run
 `owntransit setup INVITATION.otinvite`, compare the two three-word groups with

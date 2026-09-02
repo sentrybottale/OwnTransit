@@ -81,21 +81,25 @@ func (binding RuntimeBinding) Validate(expectedRole Role) error {
 	}
 	switch expectedRole {
 	case RoleClient:
-		if !((binding.OS == "darwin" && binding.Arch == "arm64") || (binding.OS == "linux" && binding.Arch == "amd64")) || binding.ConnectorTarget != "" {
+		if !((binding.OS == "darwin" && binding.Arch == "arm64") || (binding.OS == "linux" && supportedLinuxArch(binding.Arch))) || binding.ConnectorTarget != "" {
 			return errors.New("enrollment: client runtime platform or target is invalid")
 		}
 	case RoleConnector:
-		if binding.OS != "linux" || binding.Arch != "amd64" || binding.ConnectorTarget != "tcp4/"+config.ConnectorSSHTarget {
-			return errors.New("enrollment: connector runtime does not match the compiled linux/amd64 target profile")
+		if binding.OS != "linux" || !supportedLinuxArch(binding.Arch) || binding.ConnectorTarget != "tcp4/"+config.ConnectorSSHTarget {
+			return errors.New("enrollment: connector runtime does not match a compiled Linux target profile")
 		}
 	case RoleRelay:
-		if binding.OS != "linux" || binding.Arch != "amd64" || binding.ConnectorTarget != "" {
+		if binding.OS != "linux" || !supportedLinuxArch(binding.Arch) || binding.ConnectorTarget != "" {
 			return errors.New("enrollment: relay runtime platform or target is invalid")
 		}
 	default:
 		return errors.New("enrollment: runtime role is invalid")
 	}
 	return nil
+}
+
+func supportedLinuxArch(arch string) bool {
+	return arch == "amd64" || arch == "arm64"
 }
 
 // IssuerPins are bootstrap trust chosen on the target before it exports an

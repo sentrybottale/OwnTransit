@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"os/exec"
 	"sort"
 	"strings"
 	"testing"
@@ -16,53 +17,138 @@ import (
 
 func TestBindRelayImageRejectsHostilePreexistingTag(t *testing.T) {
 	expected := "sha256:" + strings.Repeat("a", 64)
-	hostile := "sha256:" + strings.Repeat("b", 64)
+	for _, hostile := range []string{strings.Repeat("b", 64), "sha256:" + strings.Repeat("b", 64)} {
+		t.Run(hostile[:6], func(t *testing.T) {
+			var calls []string
+			runner := func(_ string, arguments ...string) (string, error) {
+				calls = append(calls, strings.Join(arguments, " "))
+				if len(arguments) >= 3 && arguments[2] == "exists" {
+					return "", nil
+				}
+				if len(arguments) >= 3 && arguments[2] == "inspect" {
+					return hostile, nil
+				}
+				return "", errors.New("unexpected command")
+			}
+			if _, err := bindRelayImage("/authenticated/relay.oci.tar", "owntransit-relay:release", expected, runner); err == nil || !strings.Contains(err.Error(), "not bound") {
+				t.Fatalf("hostile preexisting tag error = %v", err)
+			}
+			for _, call := range calls {
+				if strings.Contains(call, " load ") {
+					t.Fatalf("collision caused an archive load: calls=%v", calls)
+				}
+			}
+		})
+	}
+}
+
+func TestBindRelayImageAcceptsBarePodmanIDAfterAuthenticatedLoad(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	expected := "sha256:" + digest
+	existsError := exec.Command("/bin/sh", "-c", "exit 1").Run()
 	var calls []string
 	runner := func(_ string, arguments ...string) (string, error) {
 		calls = append(calls, strings.Join(arguments, " "))
 		if len(arguments) >= 3 && arguments[2] == "exists" {
-			return "", nil
+			return "", existsError
+		}
+		if len(arguments) >= 2 && arguments[1] == "load" {
+			return "Loaded image", nil
 		}
 		if len(arguments) >= 3 && arguments[2] == "inspect" {
-			return hostile, nil
+			return digest, nil
 		}
 		return "", errors.New("unexpected command")
 	}
-	if _, err := bindRelayImage("/authenticated/relay.oci.tar", "owntransit-relay:release", expected, runner); err == nil || !strings.Contains(err.Error(), "not bound") {
-		t.Fatalf("hostile preexisting tag error = %v", err)
+	actual, err := bindRelayImage("/authenticated/relay.oci.tar", "owntransit-relay:release", expected, runner)
+	if err != nil || actual != digest {
+		t.Fatalf("bind relay image = %q, %v; want %q", actual, err, digest)
 	}
-	for _, call := range calls {
-		if strings.Contains(call, " load ") {
-			t.Fatalf("collision caused an archive load: calls=%v", calls)
+	want := []string{
+		"--remote=false image exists owntransit-relay:release",
+		"--remote=false load --input /authenticated/relay.oci.tar",
+		"--remote=false image inspect --format {{.Id}} owntransit-relay:release",
+	}
+	if strings.Join(calls, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("commands = %v; want %v", calls, want)
+	}
+}
+
+func TestInspectBoundRelayImageAcceptsCanonicalPodmanIDRepresentations(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	expected := "sha256:" + digest
+	for _, reported := range []string{digest, expected} {
+		t.Run(reported[:6], func(t *testing.T) {
+			runner := func(path string, arguments ...string) (string, error) {
+				if path != "/usr/bin/podman" || strings.Join(arguments, " ") != "--remote=false image inspect --format {{.Id}} owntransit-relay:release" {
+					t.Fatalf("unexpected command: %s %v", path, arguments)
+				}
+				return reported, nil
+			}
+			actual, err := inspectBoundRelayImage("owntransit-relay:release", expected, runner)
+			if err != nil || actual != digest {
+				t.Fatalf("inspect relay image = %q, %v; want %q", actual, err, digest)
+			}
+		})
+	}
+}
+
+func TestInspectBoundRelayImageRejectsNoncanonicalPodmanIDs(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	expected := "sha256:" + digest
+	invalid := []string{
+		strings.ToUpper(digest),
+		"sha256:" + strings.ToUpper(digest),
+		"sha512:" + digest,
+		"sha256:sha256:" + digest,
+		" " + digest,
+		digest + "\n",
+		digest[:63],
+	}
+	for _, reported := range invalid {
+		runner := func(_ string, _ ...string) (string, error) { return reported, nil }
+		if _, err := inspectBoundRelayImage("owntransit-relay:release", expected, runner); err == nil || !strings.Contains(err.Error(), "noncanonical image ID") {
+			t.Fatalf("reported ID %q error = %v", reported, err)
 		}
 	}
 }
 
 func TestParseRelayOCIArchiveReturnsAuthenticatedConfigDigest(t *testing.T) {
 	releaseID := strings.Repeat("b", 51) + "a"
-	archive, expectedID := relayOCIFixture(t, releaseID)
-	actual, err := parseRelayOCIArchive(bytes.NewReader(archive), int64(len(archive)), releaseID)
-	if err != nil || actual != expectedID {
-		t.Fatalf("parse relay OCI = %q, %v; want %q", actual, err, expectedID)
-	}
+	for _, arch := range []string{"amd64", "arm64"} {
+		t.Run(arch, func(t *testing.T) {
+			archive, expectedID := relayOCIFixture(t, releaseID, arch)
+			actual, err := parseRelayOCIArchive(bytes.NewReader(archive), int64(len(archive)), releaseID, arch)
+			if err != nil || actual != expectedID {
+				t.Fatalf("parse relay OCI = %q, %v; want %q", actual, err, expectedID)
+			}
+			wrongArch := "arm64"
+			if arch == wrongArch {
+				wrongArch = "amd64"
+			}
+			if _, err := parseRelayOCIArchive(bytes.NewReader(archive), int64(len(archive)), releaseID, wrongArch); err == nil || !strings.Contains(err.Error(), "selects another image") {
+				t.Fatalf("wrong-architecture relay OCI error = %v", err)
+			}
 
-	mutated := append([]byte(nil), archive...)
-	position := bytes.Index(mutated, []byte("OwnTransit Relay"))
-	if position < 0 {
-		t.Fatal("fixture title absent")
-	}
-	mutated[position] = 'X'
-	if _, err := parseRelayOCIArchive(bytes.NewReader(mutated), int64(len(mutated)), releaseID); err == nil || !strings.Contains(err.Error(), "blob digest") {
-		t.Fatalf("mutated authenticated blob error = %v", err)
+			mutated := append([]byte(nil), archive...)
+			position := bytes.Index(mutated, []byte("OwnTransit Relay"))
+			if position < 0 {
+				t.Fatal("fixture title absent")
+			}
+			mutated[position] = 'X'
+			if _, err := parseRelayOCIArchive(bytes.NewReader(mutated), int64(len(mutated)), releaseID, arch); err == nil || !strings.Contains(err.Error(), "blob digest") {
+				t.Fatalf("mutated authenticated blob error = %v", err)
+			}
+		})
 	}
 }
 
-func relayOCIFixture(t *testing.T, releaseID string) ([]byte, string) {
+func relayOCIFixture(t *testing.T, releaseID, arch string) ([]byte, string) {
 	t.Helper()
 	layer := []byte("deterministic-layer-tar-placeholder")
 	layerDigest := sha256Hex(layer)
 	configuration := relayOCIImageConfig{
-		Architecture: "amd64",
+		Architecture: arch,
 		Config: relayOCIContainerConfig{
 			Command:    []string{"run", "--runtime-root=/runtime", "--anchor-view-root=/anchor", "--reader-gid=65532"},
 			Entrypoint: []string{"/owntransit-relay"},
@@ -87,7 +173,7 @@ func relayOCIFixture(t *testing.T, releaseID string) ([]byte, string) {
 		SchemaVersion: 2,
 		Manifests: []relayOCIIndexDescriptor{{
 			MediaType: relayOCIManifestMediaType, Digest: "sha256:" + manifestDigest, Size: int64(len(manifestBytes)),
-			Platform:    relayOCIPlatform{Architecture: "amd64", OS: "linux"},
+			Platform:    relayOCIPlatform{Architecture: arch, OS: "linux"},
 			Annotations: relayOCIAnnotations{ReferenceName: "owntransit-relay:" + releaseID},
 		}},
 	}

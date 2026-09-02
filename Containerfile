@@ -35,31 +35,48 @@ RUN set -eu; \
 FROM scratch AS release-files
 COPY --from=build /out/ /
 
-FROM build AS test
+# Verification uses a second source stage on the requested target platform.
+# This prevents a workstation from silently testing its own architecture while
+# merely cross-compiling either supported Linux release target.
+FROM --platform=$TARGETPLATFORM docker.io/library/golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514 AS linux-verify
+ARG TARGETOS
+ARG TARGETARCH
+WORKDIR /src
+RUN set -eu; \
+    case "$TARGETOS/$TARGETARCH" in linux/amd64|linux/arm64) ;; *) exit 1 ;; esac; \
+    test "$(go env GOOS)/$(go env GOARCH)" = "$TARGETOS/$TARGETARCH"
+COPY go.mod go.sum ./
+RUN go mod download && go mod verify
+COPY LICENSE THIRD_PARTY_NOTICES.md RELEASE_MANIFEST.example.json ./
+COPY cmd ./cmd
+COPY internal ./internal
+COPY scripts/release/releasectl ./scripts/release/releasectl
+
+FROM linux-verify AS test
 RUN go test -mod=readonly -race ./...
 
-FROM build AS test-poc
+FROM linux-verify AS test-poc
 RUN go test -mod=readonly -race -tags=owntransit_poc_ssh ./...
 
 # Transitional stage alias for older local automation. The ordinary test stage
 # is now the production port-22 profile.
 FROM test AS test-native
 
-FROM build AS vet
+FROM linux-verify AS vet
 RUN set -eu; \
     files=$(gofmt -l cmd internal scripts/release/releasectl); \
     test -z "$files" || { printf '%s\n' "$files" >&2; exit 1; }; \
     go vet -mod=readonly ./...; \
     go vet -mod=readonly -tags=owntransit_poc_ssh ./...
 
-FROM build AS vulncheck
+FROM linux-verify AS vulncheck
 ARG GOVULNCHECK_VERSION=v1.1.4
 RUN set -eu; \
     GOBIN=/tmp/govulncheck-bin go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"; \
     /tmp/govulncheck-bin/govulncheck ./...; \
     /tmp/govulncheck-bin/govulncheck -tags=owntransit_poc_ssh ./...
 
-FROM build AS dependency-licenses
+FROM linux-verify AS dependency-licenses
 COPY .dockerignore Containerfile ./
 COPY scripts/security-check.sh ./scripts/security-check.sh
 COPY scripts/tests/dependency-licenses.sh ./scripts/tests/dependency-licenses.sh

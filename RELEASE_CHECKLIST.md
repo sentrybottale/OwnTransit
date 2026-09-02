@@ -45,7 +45,7 @@ independent scan.
 | Prospective public tree, both race/vet profiles, pinned vulnerability analysis, release/qualification static checks and signature-helper tests | Hard publish gate | **PASS** for the exact frozen candidate in both required read-only CI jobs |
 | Complete one-root public history and clean-export boundary | Hard publish gate | **PASS**; the private development history is not a candidate |
 | Actual release-manifest and release-policy signatures used by installers | Hard publish gate | **PASS** under independently obtained verifier trust for the exact artifacts |
-| macOS/Linux clean-host lifecycle, interruption, rollback, uninstall and recovery matrices | Hard publish gate | **PASS** for every supported platform and the exact released bytes |
+| macOS arm64, Linux amd64, and Linux arm64 clean-host lifecycle, interruption, rollback, uninstall and recovery matrices | Hard publish gate | **PASS** independently for all three supported targets and the exact released bytes; installer/reboot JSON alone is only sub-evidence |
 | Signed qualification record binding the candidate commit, release identity, outer asset inventory and exact platform results | Hard publish gate | **PASS** only after independent signature verification and confirmation that every other hard gate is recorded accurately |
 | Every known Critical/High defect | Hard publish gate | Closed or explicitly accepted in the public release risk record |
 | Independent secret scan of the exported/new public object graph | Additional assurance | Record exact evidence or disclose **NOT PERFORMED** |
@@ -81,12 +81,22 @@ unless it reveals a source or artifact change; its status must be disclosed.
   ledger beneath the ignored operator boundary, review its version, fresh
   release ID, sequences, floors, source commit and source date, and never
   regenerate or overwrite it for the same candidate.
+- For the `0.1.0` stable handoff, require the frozen release/policy tuple
+  `8/4/8/1` (release sequence, policy sequence, minimum release sequence,
+  minimum lifecycle). The signing conductor rejects every other tuple because
+  rollback to RC5-RC7 is incompatible with the hardened macOS launcher and
+  Linux provisioner package boundary.
 
 ## 3. Build and authenticate the candidate
 
-- Build the exact nine-artifact matrix twice with
+- Build the exact fourteen-artifact matrix twice with
   `scripts/release/build-artifacts.sh`; require byte-identical same-builder
   outputs.
+- Treat retained exact-nine `0.1.0-rc.*` package state as an unsupported
+  in-place predecessor. Verify stable installation refuses it before mutation;
+  the non-purging uninstaller is not a clean reset. Run stable qualification on
+  a genuinely fresh host and never invoke the candidate lifecycle around the
+  selected installed manager.
 - When available, reproduce the unsigned artifacts on an independent clean
   builder from a fresh clone of the candidate public history and record the
   result as additional assurance. Disclose when it was not performed.
@@ -130,9 +140,13 @@ authorities.
   `owntransit-qualification-v1` SSHSIG, and inspect every evidence digest. The
   helper signs an honest `BLOCKED` record when any fixed test is not `PASS` or
   either unresolved Critical/High count is nonzero; it does not execute tests.
-- Complete the clean macOS arm64 and Linux amd64 matrices in `ROADMAP.md`,
-  including cold boot, reconnect, upgrade, interrupted apply, concurrency,
+- Complete the clean macOS arm64, Linux amd64, and Linux arm64 matrices in
+  `ROADMAP.md`, including cold boot, reconnect, interrupted apply, concurrency,
   authenticated rollback, non-purging uninstall and clean OwnTransit recovery.
+  Each Linux architecture is a separate hard gate, backed by a reviewed
+  composite dossier rather than the installer/reboot JSON alone. For initial
+  stable `0.1.0`, record upgrade as **N/A**: there is no supported predecessor,
+  and public `0.1.0-rc.*` state is not an in-place upgrade source.
 - Prove the connector remains outbound-only and can dial only literal
   `tcp4 127.0.0.1:22`; prove the client writes only SSH bytes to stdout.
 - Complete hostile-relay and resource-exhaustion qualification against the

@@ -38,6 +38,11 @@ usage: sign-candidate.sh \
   --policy-sequence POSITIVE_INTEGER \
   --release-floor POSITIVE_INTEGER \
   --lifecycle-floor POSITIVE_INTEGER \
+  [--anchor-policy-sequence NONNEGATIVE_INTEGER] \
+  [--anchor-release-floor NONNEGATIVE_INTEGER] \
+  [--anchor-lifecycle-floor NONNEGATIVE_INTEGER] \
+  [--anchor-policy-key-id KEY_ID] \
+  [--anchor-tombstones none] \
   --output ABSOLUTE_NEW_DIRECTORY
 
 Creates one offline, atomically published candidate handoff. The fixed output
@@ -46,8 +51,13 @@ detached release/policy/native-checksum signatures, an outer signed checksum
 inventory, and a rendered Homebrew formula. It never generates a key, downloads,
 publishes, installs, tags, or changes the input bundle.
 
-This first-release helper verifies policy against the empty local anchor. Later
-policy advances must use an explicit previously persisted anchor ceremony.
+Without anchor flags, this helper verifies a sequence-1 policy against the
+empty anchor. A later policy must supply all three exact values from the
+independently persisted previous anchor; the candidate policy is then proved
+to advance that anchor without weakening either floor. This scalar transition
+supports only an anchor whose tombstone list is empty and requires the pinned
+policy-key ID explicitly; a tombstoned anchor needs a future canonical
+anchor-file ceremony and is rejected by this helper.
 EOF
 }
 
@@ -67,11 +77,16 @@ source_commit=
 policy_sequence=
 release_floor=
 lifecycle_floor=
+anchor_policy_sequence=0
+anchor_release_floor=0
+anchor_lifecycle_floor=0
+anchor_policy_key_id=
+anchor_tombstones=
 output=
 
 while test "$#" -gt 0; do
   case "$1" in
-    --bundle|--candidate|--releasectl|--release-private-key|--release-public-key|--policy-private-key|--policy-public-key|--distribution-key|--distribution-public-key|--allowed-signers|--source-root|--version|--source-commit|--policy-sequence|--release-floor|--lifecycle-floor|--output)
+    --bundle|--candidate|--releasectl|--release-private-key|--release-public-key|--policy-private-key|--policy-public-key|--distribution-key|--distribution-public-key|--allowed-signers|--source-root|--version|--source-commit|--policy-sequence|--release-floor|--lifecycle-floor|--anchor-policy-sequence|--anchor-release-floor|--anchor-lifecycle-floor|--anchor-policy-key-id|--anchor-tombstones|--output)
       test "$#" -ge 2 || fail "$1 requires a value"
       option=$1
       value=$2
@@ -93,6 +108,11 @@ while test "$#" -gt 0; do
         --policy-sequence) policy_sequence=$value ;;
         --release-floor) release_floor=$value ;;
         --lifecycle-floor) lifecycle_floor=$value ;;
+        --anchor-policy-sequence) anchor_policy_sequence=$value ;;
+        --anchor-release-floor) anchor_release_floor=$value ;;
+        --anchor-lifecycle-floor) anchor_lifecycle_floor=$value ;;
+        --anchor-policy-key-id) anchor_policy_key_id=$value ;;
+        --anchor-tombstones) anchor_tombstones=$value ;;
         --output) output=$value ;;
       esac
       ;;
@@ -144,6 +164,15 @@ canonical_positive_decimal() {
   test "${#decimal}" -le 20
 }
 
+canonical_nonnegative_decimal() {
+  decimal=$1
+  case "$decimal" in
+    0) return 0 ;;
+    ''|*[!0-9]*|0*) return 1 ;;
+  esac
+  test "${#decimal}" -le 20
+}
+
 decimal_is_at_most() {
   left=$1
   right=$2
@@ -163,9 +192,18 @@ sha256_file() {
   fi
 }
 
+darwin_mode() {
+  darwin_mode_raw=$(stat -f %p -- "$1") || return 1
+  case "$darwin_mode_raw" in ''|*[!0-7]*) return 1 ;; esac
+  printf '%o\n' "$((0$darwin_mode_raw & 07777))"
+}
+
 file_metadata() {
   if test "$(uname -s)" = Darwin; then
-    stat -f '%HT|%l|%Lp' -- "$1"
+    file_kind=$(stat -f %HT -- "$1") || return 1
+    file_links=$(stat -f %l -- "$1") || return 1
+    file_permissions=$(darwin_mode "$1") || return 1
+    printf '%s|%s|%s\n' "$file_kind" "$file_links" "$file_permissions"
   else
     stat -c '%F|%h|%a' -- "$1"
   fi
@@ -173,7 +211,10 @@ file_metadata() {
 
 directory_metadata() {
   if test "$(uname -s)" = Darwin; then
-    stat -f '%HT|%u|%Lp' -- "$1"
+    directory_kind=$(stat -f %HT -- "$1") || return 1
+    directory_owner=$(stat -f %u -- "$1") || return 1
+    directory_permissions=$(darwin_mode "$1") || return 1
+    printf '%s|%s|%s\n' "$directory_kind" "$directory_owner" "$directory_permissions"
   else
     stat -c '%F|%u|%a' -- "$1"
   fi
@@ -207,10 +248,41 @@ case "$version" in [A-Za-z0-9]*) ;; *) fail "version must begin with an alphanum
 test "${#version}" -le 128 || fail "version is too long"
 case "$source_commit" in ''|*[!0-9a-f]*) fail "source commit must be lowercase hexadecimal" ;; esac
 case "${#source_commit}" in 40|64) ;; *) fail "source commit must contain 40 or 64 hexadecimal characters" ;; esac
+command -v git >/dev/null 2>&1 || fail "git is required"
+test "$(git -C "$source_root" rev-parse --show-toplevel)" = "$source_root" ||
+  fail "source-root must be the exact canonical Git root"
+actual_source_commit=$(git -C "$source_root" rev-parse --verify 'HEAD^{commit}') ||
+  fail "cannot resolve source HEAD"
+test "$actual_source_commit" = "$source_commit" || fail "--source-commit does not equal source HEAD"
+changelog_entry=$(git -C "$source_root" ls-tree "$source_commit" -- CHANGELOG.md) ||
+  fail "cannot inspect committed CHANGELOG.md"
+set -- $changelog_entry
+test "$#" -eq 4 && test "$1" = 100644 && test "$2" = blob && test "$4" = CHANGELOG.md ||
+  fail "committed CHANGELOG.md must be one ordinary file"
+git -C "$source_root" show "$source_commit:CHANGELOG.md" | grep -Fqx "## [$version]" ||
+  fail "committed CHANGELOG.md has no exact release heading for $version"
 canonical_positive_decimal "$policy_sequence" || fail "policy sequence must be a canonical positive decimal integer"
 canonical_positive_decimal "$release_floor" || fail "release floor must be a canonical positive decimal integer"
 canonical_positive_decimal "$lifecycle_floor" || fail "lifecycle floor must be a canonical positive decimal integer"
-test "$policy_sequence" = 1 || fail "the empty-anchor first-release path requires policy sequence 1"
+canonical_nonnegative_decimal "$anchor_policy_sequence" || fail "anchor policy sequence must be a canonical nonnegative decimal integer"
+canonical_nonnegative_decimal "$anchor_release_floor" || fail "anchor release floor must be a canonical nonnegative decimal integer"
+canonical_nonnegative_decimal "$anchor_lifecycle_floor" || fail "anchor lifecycle floor must be a canonical nonnegative decimal integer"
+if test "$anchor_policy_sequence" = 0; then
+  test "$anchor_release_floor" = 0 && test "$anchor_lifecycle_floor" = 0 ||
+    fail "an empty anchor requires all three anchor values to be zero"
+  test -z "$anchor_policy_key_id" && test -z "$anchor_tombstones" ||
+    fail "an empty anchor must not supply persisted key or tombstone claims"
+  test "$policy_sequence" = 1 || fail "the empty-anchor first-release path requires policy sequence 1"
+else
+  canonical_positive_decimal "$anchor_release_floor" || fail "a persisted anchor requires a positive release floor"
+  canonical_positive_decimal "$anchor_lifecycle_floor" || fail "a persisted anchor requires a positive lifecycle floor"
+  decimal_is_at_most "$anchor_policy_sequence" "$policy_sequence" && test "$anchor_policy_sequence" != "$policy_sequence" ||
+    fail "candidate policy sequence must advance the persisted anchor"
+  decimal_is_at_most "$anchor_release_floor" "$release_floor" || fail "candidate policy weakens the persisted release floor"
+  decimal_is_at_most "$anchor_lifecycle_floor" "$lifecycle_floor" || fail "candidate policy weakens the persisted lifecycle floor"
+  test -n "$anchor_policy_key_id" || fail "a persisted anchor requires its pinned policy-key ID"
+  test "$anchor_tombstones" = none || fail "this policy-advance helper requires an explicitly empty persisted tombstone list"
+fi
 
 case "$output" in /*) ;; *) fail "output path must be absolute" ;; esac
 test "$output" != / || fail "output cannot be the filesystem root"
@@ -229,7 +301,7 @@ parent_owner=${parent_rest%%|*}
 parent_mode=${parent_rest#*|}
 case "$parent_kind" in Directory|directory) ;; *) fail "output parent must be a directory" ;; esac
 test "$parent_owner" -eq "$(id -u)" || fail "output parent must be owned by the effective user"
-case "$parent_mode" in [0-7][0-7][0-7]|[0-7][0-7][0-7][0-7]) ;; *) fail "output parent mode is invalid" ;; esac
+case "$parent_mode" in [0-7][0-7][0-7]) ;; *) fail "output parent mode has special or invalid bits" ;; esac
 parent_permissions=$((0$parent_mode))
 test $((parent_permissions & 022)) -eq 0 || fail "output parent must not be group- or world-writable"
 
@@ -248,6 +320,9 @@ test -n "$release_key_id" && test -n "$policy_key_id" || fail "public key ID is 
 test "$(printf '%s\n' "$release_key_id" | wc -l | tr -d '[:space:]')" -eq 1 || fail "release public key ID is malformed"
 test "$(printf '%s\n' "$policy_key_id" | wc -l | tr -d '[:space:]')" -eq 1 || fail "policy public key ID is malformed"
 test "$release_key_id" != "$policy_key_id" || fail "release and policy public key IDs must be different"
+if test "$anchor_policy_sequence" != 0; then
+  test "$policy_key_id" = "$anchor_policy_key_id" || fail "policy public key differs from the persisted anchor"
+fi
 
 key_prompt_input=/dev/null
 if /usr/bin/tty 2>/dev/null </dev/tty >/dev/null; then
@@ -307,6 +382,20 @@ canonical_positive_decimal "$source_date_epoch" || fail "source date epoch must 
 test "${#source_date_epoch}" -le 10 || fail "source date epoch is out of range"
 case "$source_manifest_sha256" in ''|*[!0-9a-f]*) fail "source manifest digest must be lowercase hexadecimal" ;; esac
 test "${#source_manifest_sha256}" -eq 64 || fail "source manifest digest must contain 64 hexadecimal characters"
+
+# The 0.1.0 stable handoff deliberately burns every RC rollback path. RC5-RC7
+# contain package-boundary behavior that the stable installers must never be
+# permitted to reactivate (including the pre-self-authentication macOS launcher
+# and the legacy Linux provisioner directory profile). Keep this tuple fixed in
+# the offline signing conductor rather than relying on an operator to remember
+# four correlated command-line values during the signing ceremony.
+if test "$version" = 0.1.0; then
+  test "$release_sequence" = 8 || fail "OwnTransit 0.1.0 requires release sequence 8"
+  test "$policy_sequence" = 4 || fail "OwnTransit 0.1.0 requires policy sequence 4"
+  test "$release_floor" = 8 || fail "OwnTransit 0.1.0 requires release floor 8"
+  test "$lifecycle_floor" = 1 || fail "OwnTransit 0.1.0 requires lifecycle floor 1"
+fi
+
 decimal_is_at_most "$release_floor" "$release_sequence" || fail "release floor cannot exceed the candidate release sequence"
 test "$(sha256_file "$bundle/SOURCE-MANIFEST.txt")" = "$source_manifest_sha256" || fail "BUILD-INPUTS source manifest digest does not match SOURCE-MANIFEST.txt"
 
@@ -331,6 +420,7 @@ validate_bundle() {
   checksum_mode=${checksum_rest#*|}
   case "$checksum_kind" in "Regular File"|"regular file") ;; *) fail "$label SHA256SUMS is not a regular file" ;; esac
   test "$checksum_links" -eq 1 || fail "$label SHA256SUMS has multiple hard links"
+  case "$checksum_mode" in [0-7][0-7][0-7]) ;; *) fail "$label SHA256SUMS has special or invalid mode bits" ;; esac
   checksum_permissions=$((0$checksum_mode))
   test $((checksum_permissions & 022)) -eq 0 || fail "$label SHA256SUMS is group- or world-writable"
   directories="$workspace/$label.directories"
@@ -339,6 +429,7 @@ validate_bundle() {
     metadata=$(directory_metadata "$directory") || fail "cannot inspect $label directory"
     kind=${metadata%%|*}; rest=${metadata#*|}; mode=${rest#*|}
     case "$kind" in Directory|directory) ;; *) fail "$label contains a non-directory entry" ;; esac
+    case "$mode" in [0-7][0-7][0-7]) ;; *) fail "$label contains a directory with special or invalid mode bits" ;; esac
     permissions=$((0$mode))
     test $((permissions & 022)) -eq 0 || fail "$label contains a group- or world-writable directory"
   done < "$directories"
@@ -363,6 +454,7 @@ validate_bundle() {
     kind=${metadata%%|*}; rest=${metadata#*|}; links=${rest%%|*}; mode=${rest#*|}
     case "$kind" in "Regular File"|"regular file") ;; *) fail "$label member is not a regular file: $relative" ;; esac
     test "$links" -eq 1 || fail "$label member has multiple hard links: $relative"
+    case "$mode" in [0-7][0-7][0-7]) ;; *) fail "$label member has special or invalid mode bits: $relative" ;; esac
     permissions=$((0$mode))
     test $((permissions & 022)) -eq 0 || fail "$label member is group- or world-writable: $relative"
     test "$(sha256_file "$member")" = "$digest" || fail "$label checksum mismatch: $relative"
@@ -427,7 +519,11 @@ policy_signature="$publish/assets/RELEASE-POLICY.sig"
   --sequence "$policy_sequence" --created-unix "$source_date_epoch" \
   --release-floor "$release_floor" --lifecycle-floor "$lifecycle_floor" || fail "release policy construction failed"
 "$releasectl" sign-policy --policy "$policy" --policy-private-key "$policy_private_key" --out "$policy_signature" || fail "release policy signing failed"
-"$releasectl" verify-policy --policy "$policy" --signature "$policy_signature" --policy-public-key "$trusted_policy_public" > "$workspace/policy-anchor.json" || fail "release policy verification failed"
+"$releasectl" verify-policy --policy "$policy" --signature "$policy_signature" --policy-public-key "$trusted_policy_public" \
+  --anchor-policy-sequence "$anchor_policy_sequence" \
+  --anchor-release-floor "$anchor_release_floor" \
+  --anchor-lifecycle-floor "$anchor_lifecycle_floor" \
+  > "$workspace/policy-anchor.json" || fail "release policy verification failed"
 expected_policy_anchor="{\"schema\":\"owntransit.release-policy-anchor.v1\",\"highest_policy_sequence\":$policy_sequence,\"minimum_release_sequence\":$release_floor,\"minimum_lifecycle\":$lifecycle_floor,\"tombstoned_release_ids\":null}"
 test "$(cat "$workspace/policy-anchor.json")" = "$expected_policy_anchor" || fail "verified policy anchor does not match the candidate sequences and floors"
 
@@ -463,7 +559,11 @@ source_archive_sha256=$(sha256_file "$source_archive")
 validate_bundle "$publish/assets/native" final-bundle
 verify_output=$("$releasectl" verify-bundle --bundle "$publish/assets/native" --manifest "$manifest" --signature "$signature" --release-public-key "$trusted_release_public") || fail "final signed release bundle verification failed"
 test "$verify_output" = "verified release $release_id sequence $release_sequence key $release_key_id" || fail "final release verification returned unexpected identity"
-"$releasectl" verify-policy --policy "$policy" --signature "$policy_signature" --policy-public-key "$trusted_policy_public" > "$workspace/final-policy-anchor.json" || fail "final release policy verification failed"
+"$releasectl" verify-policy --policy "$policy" --signature "$policy_signature" --policy-public-key "$trusted_policy_public" \
+  --anchor-policy-sequence "$anchor_policy_sequence" \
+  --anchor-release-floor "$anchor_release_floor" \
+  --anchor-lifecycle-floor "$anchor_lifecycle_floor" \
+  > "$workspace/final-policy-anchor.json" || fail "final release policy verification failed"
 cmp -s "$workspace/policy-anchor.json" "$workspace/final-policy-anchor.json" || fail "policy verification result changed"
 test "$(cat "$workspace/final-policy-anchor.json")" = "$expected_policy_anchor" || fail "final verified policy anchor does not match the candidate sequences and floors"
 checksum_digest=$(sha256_file "$publish/assets/native/SHA256SUMS")

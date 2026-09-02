@@ -1,14 +1,25 @@
 # Install OwnTransit
 
 > [!WARNING]
-> OwnTransit 0.1.0 is currently a candidate for Apple-silicon macOS and Linux
-> amd64, not an official stable publication. The repository can build a signed,
-> installable candidate handoff, but use it only for qualification unless its
+> OwnTransit 0.1.0 is currently a candidate for Apple-silicon macOS (`arm64`),
+> 64-bit x86 Linux (`amd64`/`x86_64`), and 64-bit ARM Linux
+> (`arm64`/`aarch64`), not an official stable publication. Intel macOS is
+> outside the 0.1.0 support matrix. The repository can build a
+> signed, installable candidate handoff, but use it only for qualification unless its
 > exact signed qualification record is independently verified and reports every
 > hard release gate as passed. A Git checkout, unsigned local build, or checksum
 > downloaded beside an archive is not an authenticated package. Independent
 > external security certification is not claimed. Keep an operator-owned
 > alternative access and recovery path throughout qualification and canarying.
+
+OwnTransit `0.1.0-rc.*` packages were qualification artifacts and are not a
+supported in-place upgrade source for stable `0.1.0`. Do not install stable
+`0.1.0` over retained RC package state. The supplied uninstall commands are
+intentionally non-purging: they preserve selectors, rollback anchors, receipts,
+identities, credentials, and recovery state, so they do not turn an RC host
+into a clean stable-install target. Use a genuinely fresh host. A separately
+reviewed destructive RC trust-reset followed by complete re-enrollment is not
+currently implemented.
 
 ## The recipient experience
 
@@ -70,9 +81,11 @@ authenticating the handoff trust and its signed outer `SHA256SUMS`, copy and
 extract it into the release instructions' protected root-owned location. On
 macOS the handoff supports the `client` and `provisioner` roles.
 
-On Linux amd64, the authenticated native handoff supports `client`,
-`connector`, `relay`, and `provisioner`. Both platforms use the same short
-entry point:
+On Linux, the authenticated architecture-specific `linux-amd64` or
+`linux-arm64` native handoff supports `client`, `connector`, `relay`, and
+`provisioner`. The Linux names correspond to `x86_64`/`amd64` and
+`aarch64`/`arm64` hardware respectively. All three supported
+platform/architecture targets use the same short entry point:
 
 ```sh
 sudo /ABSOLUTE/NATIVE/packaging/scripts/install.sh --bundle /ABSOLUTE/NATIVE --assets /ABSOLUTE/assets --trust /ABSOLUTE/trust --role client --client-user LOCAL_USER
@@ -88,6 +101,12 @@ selected artifact hashes from those authenticated records, and then executes
 the fail-closed platform installer. It does not decide that the supplied trust
 directory is trustworthy: the release instructions must identify those keys
 through an independent channel first.
+
+The Linux provisioner role additionally requires the host kernel setting
+`fs.protected_hardlinks=1`; installation and every later provisioner package
+operation fail closed otherwise. On macOS, the protected provisioner release
+tree stays mode `0750` and the installer publishes a distinct mode-`0755`
+public copy—there is no directory-permission migration to perform manually.
 
 The protected staging rule is intentional. Do not run any installer directly
 from a user-writable checkout, download, or extraction directory, and do not
@@ -258,6 +277,34 @@ The resumed command performs the live authenticated carrier proof and reports
 `READY`. Never stop the temporary exchange before the client reaches the
 Applied state; its mailbox is intentionally memory-only. After apply, losing
 the mailbox is harmless and cannot block local cleanup.
+
+### Reverse-proxy quota boundary
+
+The supplied Nginx snippets deliberately rate-limit by
+`$realip_remote_addr`: the address of the immediate TCP peer before the
+[Nginx Real-IP module](https://nginx.org/en/docs/http/ngx_http_realip_module.html)
+applies any request-carried replacement address. Do not substitute
+`$remote_addr`, `$binary_remote_addr`, `X-Forwarded-For`, `X-Real-IP`, or
+another request header. A shared host may have an overly broad RealIP policy;
+that ambient policy must not let an Internet client select an OwnTransit quota
+identity.
+
+This boundary requires Nginx 1.9.7 or newer with `ngx_http_realip_module`. If
+Nginx reports an unknown `$realip_remote_addr`, that build is unsupported for
+these snippets; falling back to a rewritten address is not safe. Install both
+snippets, verify the
+complete candidate configuration with `nginx -t`, inspect `nginx -T` to ensure
+the four OwnTransit per-peer zones retain the exact key, and only then perform
+a graceful reload. The `*_per_peer` names intentionally do not reuse the
+earlier `*_per_ip` shared-memory zones: Nginx rejects a live zone whose key
+changes during reload.
+
+Do not remove or rewrite host-wide RealIP directives as part of an OwnTransit
+deployment. That could change unrelated website or control-panel behavior and
+is unnecessary for this boundary. If another proxy or CDN connects directly
+to Nginx, all clients using the same immediate proxy address share a per-peer
+bucket. That conservative availability tradeoff is intentional; the global
+virtual-server buckets remain an independent ceiling.
 
 OwnTransit 0.1.0 performs this initial ceremony for exactly one relay, one
 connector, one route, and one client. Adding a second client to an existing

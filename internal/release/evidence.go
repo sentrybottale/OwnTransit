@@ -15,7 +15,7 @@ import (
 
 const (
 	ProvenanceSchema        = "owntransit.build-provenance.v1"
-	BuildProfile            = "owntransit.v1.exact-nine"
+	BuildProfile            = "owntransit.v1.exact-fourteen"
 	SPDXVersion             = "SPDX-2.3"
 	SPDXDataLicense         = "CC0-1.0"
 	SPDXDocumentID          = "SPDXRef-DOCUMENT"

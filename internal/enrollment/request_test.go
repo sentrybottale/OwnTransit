@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +13,47 @@ import (
 	"github.com/sentrybottale/owntransit/internal/pki"
 	"github.com/sentrybottale/owntransit/internal/protocol"
 )
+
+func TestRuntimeBindingAcceptsEverySupportedArchitecture(t *testing.T) {
+	releaseID := protocol.ID{1}.String()
+	for _, test := range []struct {
+		name   string
+		role   Role
+		goos   string
+		goarch string
+		target string
+	}{
+		{name: "darwin client", role: RoleClient, goos: "darwin", goarch: "arm64"},
+		{name: "linux amd64 client", role: RoleClient, goos: "linux", goarch: "amd64"},
+		{name: "linux arm64 client", role: RoleClient, goos: "linux", goarch: "arm64"},
+		{name: "linux amd64 connector", role: RoleConnector, goos: "linux", goarch: "amd64", target: "tcp4/" + config.ConnectorSSHTarget},
+		{name: "linux arm64 connector", role: RoleConnector, goos: "linux", goarch: "arm64", target: "tcp4/" + config.ConnectorSSHTarget},
+		{name: "linux amd64 relay", role: RoleRelay, goos: "linux", goarch: "amd64"},
+		{name: "linux arm64 relay", role: RoleRelay, goos: "linux", goarch: "arm64"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			binding := RuntimeBinding{
+				ReleaseID: releaseID, ReleaseSequence: 1, ArtifactSHA256: strings.Repeat("a", 64),
+				OS: test.goos, Arch: test.goarch, Role: test.role, Protocol: DeploymentProtocol,
+				LifecycleGeneration: CurrentLifecycleGeneration, ConnectorTarget: test.target,
+			}
+			if err := binding.Validate(test.role); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+
+	for _, arch := range []string{"", "386", "s390x"} {
+		binding := RuntimeBinding{
+			ReleaseID: releaseID, ReleaseSequence: 1, ArtifactSHA256: strings.Repeat("a", 64),
+			OS: "linux", Arch: arch, Role: RoleConnector, Protocol: DeploymentProtocol,
+			LifecycleGeneration: CurrentLifecycleGeneration, ConnectorTarget: "tcp4/" + config.ConnectorSSHTarget,
+		}
+		if err := binding.Validate(RoleConnector); err == nil {
+			t.Fatalf("unsupported Linux architecture %q was accepted", arch)
+		}
+	}
+}
 
 func TestClientRequestBindsCSRProofRecipientNonceAndValidity(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
