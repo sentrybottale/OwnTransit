@@ -11,7 +11,7 @@ or publish artifacts automatically.
 
 ## [Unreleased]
 
-## [0.1.0]
+## [0.1.0-rc.5]
 
 ### Added
 
@@ -66,14 +66,20 @@ or publish artifacts automatically.
 
 ### Assurance
 
-- The tooling can build an exact signed 0.1.0 candidate handoff. Official stable
-  publication requires that handoff's independently verified signed
-  qualification record and PASS results for every hard platform gate; this
-  entry does not claim those results exist.
-- Independent external security certification is not claimed for 0.1.0.
+- The tooling can build an exact signed 0.1.0-rc.5 candidate handoff. The
+  project owner may publish those exact bytes only as a prominently marked
+  GitHub qualification prerelease with their honest signed qualification
+  record, including a `BLOCKED` record while hard platform gates remain open.
+  That public lane permits only genuinely `NOT-PERFORMED` gates, never an
+  observed failure, with no known Critical or High finding left open or merely
+  accepted.
+  Official stable 0.1.0 publication still requires an independently verified
+  signed `PASS` record for every hard gate.
+- Independent external security certification is not claimed for 0.1.0-rc.5.
 
-The 0.1.0 candidate source supersedes the unpublished 0.1.0-rc.3 and
-0.1.0-rc.4 snapshots. This entry does not declare a stable publication.
+The 0.1.0-rc.5 candidate supersedes the unpublished 0.1.0 candidate bytes and
+the unpublished 0.1.0-rc.3 and 0.1.0-rc.4 snapshots. This entry does not
+declare a stable publication or supported deployment.
 
 ## [0.1.0-rc.4]
 
