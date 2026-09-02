@@ -501,6 +501,11 @@ require_text .github/workflows/release-candidate.yml 'go test -mod=readonly -rac
 require_text .github/workflows/release-candidate.yml 'go test -mod=readonly -race -tags=owntransit_poc_ssh ./...'
 require_text .github/workflows/release-candidate.yml 'go vet -mod=readonly ./...'
 require_text .github/workflows/release-candidate.yml 'go vet -mod=readonly -tags=owntransit_poc_ssh ./...'
+grep -Fxq '    name: Go security profiles' .github/workflows/release-candidate.yml ||
+  fail 'workflow is missing the stable required Go security aggregate context'
+grep -Fxq '    name: rendered Homebrew formula' .github/workflows/release-candidate.yml ||
+  fail 'workflow is missing the stable required Homebrew context'
+require_text .github/workflows/release-candidate.yml 'MATRIX_RESULT: ${{ needs.go-security.result }}'
 require_text scripts/security-check.sh 'for linux_arch in amd64 arm64; do'
 test "$(grep -Fc 'container build --progress plain --platform "linux/$linux_arch"' scripts/security-check.sh)" -eq 5 ||
   fail 'Apple Container full security gates must run all five stages for each supported Linux architecture'

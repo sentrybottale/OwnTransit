@@ -122,8 +122,21 @@ jobs:
             -test.run '^(TestProvisionerPackageLifecycleAppliesAndRollsBackWithoutRuntimeReader|TestInstalledPackageDirectoriesEnforceRoleProfile)$' \
             -test.count=1
 
+  go-security-required:
+    name: Go security profiles
+    if: ${{ always() }}
+    needs:
+      - go-security
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every native Linux security profile
+        env:
+          MATRIX_RESULT: ${{ needs.go-security.result }}
+        run: test "$MATRIX_RESULT" = success
+
   homebrew-formula:
-    name: Darwin arm64 security and Homebrew
+    name: rendered Homebrew formula
     runs-on: macos-15
     timeout-minutes: 35
     steps:
