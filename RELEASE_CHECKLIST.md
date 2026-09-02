@@ -81,6 +81,11 @@ unless it reveals a source or artifact change; its status must be disclosed.
   ledger beneath the ignored operator boundary, review its version, fresh
   release ID, sequences, floors, source commit and source date, and never
   regenerate or overwrite it for the same candidate.
+- For the `0.1.0` stable handoff, require the frozen release/policy tuple
+  `8/4/8/1` (release sequence, policy sequence, minimum release sequence,
+  minimum lifecycle). The signing conductor rejects every other tuple because
+  rollback to RC5-RC7 is incompatible with the hardened macOS launcher and
+  Linux provisioner package boundary.
 
 ## 3. Build and authenticate the candidate
 

@@ -9,14 +9,22 @@ bytes.
 The authenticated installer places two different binaries in the immutable
 release directory:
 
-- `owntransit` is a deliberately small fixed launcher, `root:_owntransit` mode
-  `2751`. Other users can enter it through the execute bit but cannot read or
-  change it.
+- `owntransit` is the authenticated release copy of the deliberately small
+  fixed launcher, `root:_owntransit` mode `2751`. The containing release
+  directory is `root:_owntransit` mode `0750`, so the selected user cannot
+  traverse to or execute this protected copy directly.
 - `owntransit-real` is the network client, `root:_owntransit` mode `0750`, with
   no setid bit. An ordinary user cannot read or execute it directly; only the
   authenticated launcher transition supplies the reader EGID.
 - `owntransitctl` remains `root:wheel` mode `0700`. No Homebrew Cellar,
   source-tree, or user-writable binary is ever setgid or run as root.
+
+The public ProxyCommand entry point is a separate single-link regular inode at
+`/Library/OwnTransit/bin/owntransit`, also `root:_owntransit` mode `2751`.
+It has exactly the signed release launcher's SHA-256 but is neither a symlink
+nor a hard link to the protected copy. `/Library/OwnTransit/bin` remains
+`root:wheel` mode `0755`, so an ordinary user can execute—but cannot read or
+replace—the public launcher without gaining traversal into the release tree.
 
 The launcher accepts no ordinary arguments. It authenticates the caller against
 the protected `/Library/OwnTransit/launcher-auth/client.v1` binding: exact
@@ -25,9 +33,11 @@ release ID, and SHA-256 of `owntransit-real` must all match. UID reuse therefore
 fails closed. It rejects a changed effective UID, a missing setgid transition,
 or reader authority already present in the caller's primary/supplementary group
 vector. It then hashes and metadata-checks the fixed root-owned real client,
-closes every inherited file descriptor above stderr, selects `/` as its working
-directory, replaces the environment with fixed locale/path values, and execs
-only:
+requires that the descriptor-relative root-owned `current` selector still
+identifies the binding's exact release, enumerates `/dev/fd` to mark every
+inherited descriptor above stderr close-on-exec even after a lowered resource
+limit, selects `/` as its working directory, replaces the environment with
+fixed locale/path values, and execs only:
 
 ```text
 /Library/OwnTransit/roles/client/releases/RELEASE_ID/owntransit-real proxy
@@ -35,9 +45,37 @@ only:
 
 The privileged client resolves the fixed Darwin runtime and anchor-view paths
 from its authenticated EGID; the launcher never forwards caller- or
-script-selected paths. `/Library/OwnTransit/bin/owntransit` selects only
-`../roles/client/current/owntransit`. The protected lifecycle executable has
-no public symlink and remains under the same signed current selector.
+script-selected paths. The public launcher authorizes one release from its
+protected binding and confirms that the authenticated manager selector still
+names `releases/RELEASE_ID` immediately before the final process transition.
+The protected lifecycle executable has no public symlink and remains under the
+same signed current selector.
+
+The package finalizer publishes the public launcher through the fixed
+`/Library/OwnTransit/launcher-stage` directory, which is `root:wheel` mode
+`0700`. A permanent single-link, empty `root:wheel` mode-`0600`
+`package-mutation.v1.lock` holds a nonblocking exclusive advisory lock across
+client and provisioner apply, rollback, recovery, detach and public-frontend
+publication. After completion it is the only entry in that directory; the
+deterministic launcher, client-frontend and provisioner-frontend transaction
+stages must be absent. Publication creates a fresh root-only mode-`0600` inode,
+writes and syncs the signed launcher bytes, changes ownership before applying
+mode `2751` (because macOS clears setgid on ownership change), verifies the
+final metadata, ACL and digest, and atomically renames the inode into the public
+directory. A noncanonical staging entry, unsafe existing public type or
+metadata, final digest mismatch or ACL fails closed. Upgrade accepts only the
+exact historical selector symlink as a one-time symlink migration input;
+steady state is always the distinct regular inode.
+
+Before any protected read, the launcher requires Darwin's raw executable path
+to be exactly `/Library/OwnTransit/bin/owntransit` and descriptor-authenticates
+that canonical root-owned public entry. macOS permits an ordinary user to make
+a hard link to some execute-only root-owned files. Such an alias is therefore
+not treated as an identity: canonical invocation remains usable while the
+alias fails before it can acquire the reader GID. Upgrade tolerates and replaces
+a multiply linked old public entry; uninstall removes setgid from all links to
+that inode before detaching the canonical name. Protected release and freshly
+staged inodes remain single-link requirements.
 
 The installer requires `--client-user` naming one existing canonical non-root
 local account. It creates `_owntransit` only when that name is absent locally
@@ -59,10 +97,22 @@ canonical username, numeric UID, user GeneratedUID, group name, numeric GID,
 and group GeneratedUID. Reinstall adopts the preserved empty group only when
 the receipt and every live local/search-policy fact still match exactly.
 Missing halves, reuse, collision, ambiguity, ACLs, membership, nesting, or UUID
-changes fail closed. Ordinary uninstall detaches only the fixed public launcher
-and preserves the manager selector, releases, installed notices, rollback
-anchor, release-specific launcher binding, group, and identity receipt.
-Destructive identity or package-state purge is deliberately not implemented.
+changes fail closed. Ordinary uninstall invokes the selected authenticated
+lifecycle binary's `package-detach` operation under the package-mutation lock.
+It authenticates the current runtime, changes the opened public launcher from
+mode `2751` to `0751` to deactivate every retained hard-link alias, syncs it,
+then durably unlinks the canonical launcher and public non-setgid frontend.
+A retry accepts only that authenticated mode-`0751` interruption state or an
+already-absent exact name. It preserves the manager selector, releases,
+installed notices, rollback anchor, release-specific launcher binding, group,
+and identity receipt. Destructive identity or package-state purge is
+deliberately not implemented.
+
+After a client package selects a release, installation invokes
+`package-recover` through that newly selected authenticated lifecycle binary.
+This completes an interrupted finalizer or revalidates the running lifecycle
+even when the journal already says complete, so migration cannot leave a new
+selector paired with the old public-launcher boundary.
 
 A failed Directory Services or signed package mutation is not hidden or guessed
 away. Exact reinstall/recovery adopts only authenticated manager state and the
@@ -88,10 +138,15 @@ sudo scripts/qualify/macos-client-boundary.sh \
 
 The gate verifies zero membership/nesting, identity receipt and live
 GeneratedUID agreement, exact file modes and ACL absence, denial of direct
-runtime/anchor reads by an ordinary target process, exact launcher EGID for the
-bound user, wrong-UID denial, rejection of caller-selected arguments, and the
-root-owned release directory that prevents client replacement. It performs no
-successful identity or installation mutation.
+runtime/anchor reads by an ordinary target process, equal signed digests but
+distinct inodes for the protected and public launchers, the exact persistent
+root-only mutation lock with no transaction-stage residue, denial of direct
+protected-launcher traversal, successful canonical execution while an ordinary
+user retains a hard link, rejection of that alias before reader authority,
+exact public-launcher EGID for the bound user, wrong-UID denial, rejection of
+caller-selected arguments, and the root-owned release directory that prevents
+client replacement. It performs no successful identity or installation
+mutation.
 
 The direct `.pkg` lane cannot securely select and revalidate the target local
 identity, so `package-pkg.sh` fails closed for the client role. It also fails

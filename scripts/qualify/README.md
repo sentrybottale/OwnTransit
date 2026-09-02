@@ -7,13 +7,14 @@ symlinks, hard links, checksum tampering, an output inside the bundle and a
 noncanonical archive name all fail without publishing output. It is a tooling
 test, not clean-host lifecycle evidence.
 
-## Linux amd64 clean-host and reboot gate
+## Linux amd64 clean-host and reboot gate (x86_64 hardware)
 
 `linux-amd64-vm.sh` is intended only for a fresh, disposable, reboot-capable
-amd64 VM with systemd as PID 1. It refuses containers, non-amd64 systems,
-non-root execution, an existing OwnTransit installation, reused service
-accounts, an occupied qualification port, and hosts without this protected
-marker:
+64-bit x86 (`amd64`/`x86_64`) VM with systemd as PID 1. It refuses containers,
+non-amd64 systems, non-root execution, an existing OwnTransit installation,
+reused service accounts, an occupied qualification port,
+`fs.protected_hardlinks` values other than exact `1`, and hosts without this
+protected marker:
 
 ```text
 /etc/owntransit-qualification-disposable

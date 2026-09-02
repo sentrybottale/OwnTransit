@@ -3,8 +3,10 @@
 **Your SSH. Your keys. Untrusted transit.**
 
 > [!IMPORTANT]
-> OwnTransit 0.1.0 is the candidate release line for Apple-silicon macOS and
-> Linux amd64 within the SSH-only boundary described here. The repository can
+> OwnTransit 0.1.0 is the candidate release line for Apple-silicon macOS
+> (`arm64`) and 64-bit x86 Linux (`amd64`, also called `x86_64`) within the
+> SSH-only boundary described here. Intel macOS is outside the 0.1.0 support
+> matrix. The repository can
 > build a signed, installable candidate handoff, but that handoff is not an
 > official stable release until its exact assets and policy are authenticated,
 > its signed qualification record reports every hard release gate as passed,
@@ -169,10 +171,11 @@ plane.
 
 ## OwnTransit 0.1.0 artifact contract
 
-- `owntransit` for macOS arm64 and Linux amd64;
-- `owntransit-connector` for Linux amd64, compiled only for the fixed SSH
+- `owntransit` for macOS arm64 and Linux amd64 (x86_64 hardware);
+- `owntransit-launcher` for the authenticated macOS arm64 client boundary;
+- `owntransit-connector` for Linux amd64 (x86_64 hardware), compiled only for the fixed SSH
   target;
-- `owntransit-relay` as a digest-addressed Linux amd64 image;
+- `owntransit-relay` as a digest-addressed Linux amd64 image for x86_64 hosts;
 - `owntransitctl` for target-local lifecycle transactions; and
 - `owntransit-provision` for offline approval and signing.
 

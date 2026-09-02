@@ -16,6 +16,7 @@ type RuntimeIdentity struct {
 	ReleaseID       string
 	ReleaseSequence uint64
 	ArtifactSHA256  string
+	LauncherSHA256  string
 	OS              string
 	Arch            string
 	Role            string
@@ -107,8 +108,24 @@ func runtimeIdentityFromReceipt(receipt receiptRecord) (RuntimeIdentity, error) 
 	if !validDigest(artifactDigest) {
 		return RuntimeIdentity{}, fmt.Errorf("packagetxn: authenticated %s artifact is absent from the current receipt", artifactName)
 	}
+	launcherDigest := ""
+	if receipt.Role == "client" && receipt.OS == "darwin" && receipt.Arch == "arm64" {
+		for _, file := range receipt.Files {
+			if file.ArtifactName != "launcher-darwin-arm64" {
+				continue
+			}
+			if launcherDigest != "" || file.Name != "owntransit" || file.Mode != 0o2751 || file.GID == 0 {
+				return RuntimeIdentity{}, errors.New("packagetxn: selected Darwin client launcher receipt is invalid or duplicated")
+			}
+			launcherDigest = file.SHA256
+		}
+		if !validDigest(launcherDigest) {
+			return RuntimeIdentity{}, errors.New("packagetxn: authenticated Darwin client launcher is absent from the current receipt")
+		}
+	}
 	return RuntimeIdentity{
 		ReleaseID: receipt.ReleaseID, ReleaseSequence: receipt.Sequence,
-		ArtifactSHA256: artifactDigest, OS: receipt.OS, Arch: receipt.Arch, Role: receipt.Role,
+		ArtifactSHA256: artifactDigest, LauncherSHA256: launcherDigest,
+		OS: receipt.OS, Arch: receipt.Arch, Role: receipt.Role,
 	}, nil
 }

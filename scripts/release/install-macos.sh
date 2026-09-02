@@ -98,6 +98,18 @@ valid_digest() {
   esac
   test "${#digest_value}" -eq 64
 }
+
+legacy_unlocked_lifecycle_tuple() {
+	case "$1:$2" in
+		5dcdpm6bdsp5jxlw3vdgljhyapr5uhah5aewm42lqgjlmsca6s7a:31dd7799d78a53079c6f651864655706364e6aa27adcc223433a2dbc5eb9ba30|\
+		resy4feogxdah3vtv3fnctmh7thp2vkopf5p3c45b7jrzxaj4nta:317ecb9eb24adfb2b0e70a600309209ddc9dd8ee0b2132bdfa9bed0b58f33c19|\
+		aceg34dlxq7yo7tdbtmzbwwvlhdhfaeuis2dcct4k32kar5dj3na:a6793d0acc506e6824d76a0841beb29d30fc18ade0d8cc0f3fec818a1d49f653)
+			return 0
+			;;
+		*) return 1 ;;
+	esac
+}
+
 case "$release_id" in *[!a-z2-7]*|'') fail "release ID must be lowercase unpadded RFC 4648 base32" ;; esac
 test "${#release_id}" -eq 52 || fail "release ID must contain 52 base32 characters"
 case "$release_id" in *[aq]) ;; *) fail "release ID has non-canonical unused trailing bits" ;; esac
@@ -128,6 +140,9 @@ case "$role" in
 esac
 if test "$needs_lifecycle" = yes; then
   valid_digest "$lifecycle_sha256" || fail "--lifecycle-sha256 is required and must be canonical"
+	if legacy_unlocked_lifecycle_tuple "$release_id" "$lifecycle_sha256"; then
+		fail "this hardened installer cannot target an obsolete unguarded macOS lifecycle"
+	fi
   for signed_input in "$manifest_signature" "$release_public_key" "$policy" "$policy_signature" "$policy_public_key"; do
     case "$signed_input" in
       /*) ;;
@@ -144,7 +159,7 @@ test -d "$bundle" && test ! -L "$bundle" || fail "bundle must be a regular direc
 bundle_resolved=$(CDPATH= cd -P -- "$bundle" && pwd) || fail "cannot resolve bundle"
 test "$bundle_resolved" = "$bundle" || fail "bundle path must be canonical and contain no symlinked component"
 
-for command_name in awk basename cat chmod chown cmp dirname dscl dseditgroup dsmemberutil find grep id install ln ls mktemp mv plutil readlink rm rmdir sed shasum stat sudo tr uname wc; do
+for command_name in awk basename cat chmod chown cmp dirname dscl dseditgroup dsmemberutil find grep id install ln lockf ls mktemp mv plutil readlink rm rmdir sed shasum stat sudo tr uname wc; do
   command -v "$command_name" >/dev/null 2>&1 || fail "required command is unavailable: $command_name"
 done
 
@@ -681,14 +696,18 @@ choose_unrelated_local_uid() {
 }
 
 verify_client_executable_boundary() {
-  client_launcher=$1
-  client_real=$2
-  test -f "$client_launcher" && test ! -L "$client_launcher" || fail "client launcher is not a regular non-symlink file"
-  test "$(stat -f %u "$client_launcher")" -eq 0 && test "$(stat -f %g "$client_launcher")" = "$reader_gid" || fail "client launcher is not root:reader owned"
-  test "$(macos_mode "$client_launcher")" = 2751 || fail "client launcher mode is not setgid 2751"
-  test "$(stat -f %l "$client_launcher")" -eq 1 || fail "client launcher is not a fresh single-link inode"
-  require_no_extended_acl "$client_launcher"
-  test "$(sha256_file "$client_launcher")" = "$launcher_sha256" || fail "authenticated client launcher changed during installation"
+	release_launcher=$1
+	public_launcher=$2
+	client_real=$3
+	for client_launcher in "$release_launcher" "$public_launcher"; do
+		test -f "$client_launcher" && test ! -L "$client_launcher" || fail "client launcher is not a regular non-symlink file: $client_launcher"
+		test "$(stat -f %u "$client_launcher")" -eq 0 && test "$(stat -f %g "$client_launcher")" = "$reader_gid" || fail "client launcher is not root:reader owned: $client_launcher"
+		test "$(macos_mode "$client_launcher")" = 2751 || fail "client launcher mode is not setgid 2751: $client_launcher"
+		test "$(stat -f %l "$client_launcher")" -eq 1 || fail "client launcher is not a fresh single-link inode: $client_launcher"
+		require_no_extended_acl "$client_launcher"
+		test "$(sha256_file "$client_launcher")" = "$launcher_sha256" || fail "authenticated client launcher changed during installation: $client_launcher"
+	done
+	test "$(stat -f '%d:%i' "$release_launcher")" != "$(stat -f '%d:%i' "$public_launcher")" || fail "public launcher is a hard link to the protected release launcher"
 
   test -f "$client_real" && test ! -L "$client_real" || fail "real client is not a regular non-symlink file"
   test "$(stat -f %u "$client_real")" -eq 0 && test "$(stat -f %g "$client_real")" = "$reader_gid" || fail "real client is not root:reader owned"
@@ -701,17 +720,18 @@ verify_client_executable_boundary() {
   test "$target_control" = "$client_uid" || fail "client-user control command ran as the wrong UID"
   if run_as_uid "$client_uid" /bin/test -r "$launcher_binding"; then fail "ordinary client-user process can read the protected launcher binding"; fi
   if run_as_uid "$client_uid" /bin/cat "$launcher_binding" >/dev/null 2>&1; then fail "ordinary client-user process read protected launcher binding bytes"; fi
-  if run_as_uid "$client_uid" /bin/test -r "$client_launcher"; then fail "client user can read the setgid launcher"; fi
-  run_as_uid "$client_uid" /bin/test -x "$client_launcher" || fail "client user cannot execute the setgid launcher"
-  if run_as_uid "$client_uid" /bin/test -w "$client_launcher"; then fail "client user can write the client launcher"; fi
+	if run_as_uid "$client_uid" /bin/test -r "$public_launcher"; then fail "client user can read the public setgid launcher"; fi
+	run_as_uid "$client_uid" /bin/test -x "$public_launcher" || fail "client user cannot execute the public setgid launcher"
+	if run_as_uid "$client_uid" /bin/test -x "$release_launcher"; then fail "client user can directly traverse and execute the protected release launcher"; fi
+	if run_as_uid "$client_uid" /bin/test -w "$public_launcher"; then fail "client user can write the public client launcher"; fi
   if run_as_uid "$client_uid" /bin/test -w "$client_real"; then fail "client user can write the real client"; fi
   if run_as_uid "$client_uid" /bin/test -w "$(dirname "$client_real")"; then fail "client user can mutate the release directory"; fi
   if run_as_uid "$client_uid" "$client_real" verify-reader-gid "$reader_gid" >/dev/null 2>&1; then
     fail "direct real-client execution acquired reader authority without the launcher"
   fi
-  run_as_uid "$client_uid" "$client_launcher" --qualify-reader-gid >/dev/null 2>&1 ||
-    fail "authenticated launcher did not grant the exact reader EGID to the bound user"
-  if run_as_uid "$client_uid" "$client_launcher" --config=/var/tmp/attacker >/dev/null 2>&1; then
+	run_as_uid "$client_uid" "$public_launcher" --qualify-reader-gid >/dev/null 2>&1 ||
+		fail "authenticated launcher did not grant the exact reader EGID to the bound user"
+	if run_as_uid "$client_uid" "$public_launcher" --config=/var/tmp/attacker >/dev/null 2>&1; then
     fail "launcher accepted caller-selected configuration"
   fi
 
@@ -720,21 +740,49 @@ verify_client_executable_boundary() {
     fail "cannot verify unrelated-user group exclusion"
   test "$unrelated_membership" = 'user is not a member of the group' || fail "unrelated user is unexpectedly a reader-group member"
   if run_as_uid "$unrelated_uid" /bin/test -r "$launcher_binding"; then fail "unrelated user can read the protected launcher binding"; fi
-  if run_as_uid "$unrelated_uid" /bin/test -r "$client_launcher"; then fail "unrelated user can read the setgid launcher"; fi
-  run_as_uid "$unrelated_uid" /bin/test -x "$client_launcher" || fail "setgid launcher is not reachable for its own UID authorization check"
-  if run_as_uid "$unrelated_uid" "$client_launcher" --qualify-reader-gid >/dev/null 2>&1; then
+	if run_as_uid "$unrelated_uid" /bin/test -r "$public_launcher"; then fail "unrelated user can read the public setgid launcher"; fi
+	run_as_uid "$unrelated_uid" /bin/test -x "$public_launcher" || fail "public setgid launcher is not reachable for its own UID authorization check"
+	if run_as_uid "$unrelated_uid" "$public_launcher" --qualify-reader-gid >/dev/null 2>&1; then
     fail "unrelated user $unrelated_user passed the launcher's exact-UID authorization"
   fi
 
-  test "$(sha256_file "$client_launcher")" = "$launcher_sha256" || fail "launcher changed during permission probes"
+	test "$(sha256_file "$release_launcher")" = "$launcher_sha256" || fail "release launcher changed during permission probes"
+	test "$(sha256_file "$public_launcher")" = "$launcher_sha256" || fail "public launcher changed during permission probes"
   test "$(sha256_file "$client_real")" = "$artifact_sha256" || fail "real client changed during permission probes"
   test -z "$(find "$install_root" -type f -perm -4000 -print)" || fail "installation root contains a setuid file"
+}
+
+require_package_mutation_lock_file() {
+	mutation_lock="$launcher_stage_directory/package-mutation.v1.lock"
+	test -f "$mutation_lock" && test ! -L "$mutation_lock" || fail "package-mutation lock is absent or not regular"
+	test "$(stat -f %u "$mutation_lock")" -eq 0 && test "$(stat -f %g "$mutation_lock")" -eq 0 ||
+		fail "package-mutation lock is not root:wheel owned"
+	test "$(macos_mode "$mutation_lock")" = 600 && test "$(stat -f %l "$mutation_lock")" -eq 1 &&
+		test "$(stat -f %z "$mutation_lock")" -eq 0 || fail "package-mutation lock metadata is invalid"
+	require_no_extended_acl "$mutation_lock"
+}
+
+require_package_mutation_lock() {
+	test "$(ls -A "$launcher_stage_directory")" = package-mutation.v1.lock ||
+		fail "private launcher stage contains missing or unexpected transaction state"
+	require_package_mutation_lock_file
+}
+
+prepare_package_mutation_lock() {
+	mutation_lock="$launcher_stage_directory/package-mutation.v1.lock"
+	if test ! -e "$mutation_lock" && test ! -L "$mutation_lock"; then
+		# noclobber makes concurrent creation fail without replacing an inode
+		# another installer may already have locked.
+		(set -C; : > "$mutation_lock") 2>/dev/null || true
+	fi
+	require_package_mutation_lock_file
 }
 
 install_root=/Library/OwnTransit
 roles_root="$install_root/roles"
 bin_directory="$install_root/bin"
 launcher_auth_directory="$install_root/launcher-auth"
+launcher_stage_directory="$install_root/launcher-stage"
 launcher_binding="$launcher_auth_directory/client.v1"
 reader_receipt_temporary=
 identity_mutation_attempted=no
@@ -748,35 +796,23 @@ cleanup_install() {
 }
 trap cleanup_install EXIT HUP INT TERM
 
-ensure_exact_symlink() {
-  exact_link=$1
-  exact_target=$2
-  if test -e "$exact_link" || test -L "$exact_link"; then
-    test -L "$exact_link" || fail "launcher exists and is not a symlink: $exact_link"
-    test "$(readlink "$exact_link")" = "$exact_target" || fail "launcher selects an unexpected target: $exact_link"
-    return
-  fi
-  exact_stage="${exact_link}.$$.new"
-  test ! -e "$exact_stage" && test ! -L "$exact_stage" || fail "launcher stage already exists: $exact_stage"
-  ln -s "$exact_target" "$exact_stage"
-  mv "$exact_stage" "$exact_link"
-}
-
 ensure_root_directory /Library 755
 ensure_root_directory "$install_root" 755
 ensure_root_directory "$bin_directory" 755
 ensure_root_directory "$roles_root" 755
 ensure_root_directory /private/var/db/OwnTransit 755
 ensure_root_directory /private/var/db/OwnTransit/package-rollback 700
+ensure_root_directory "$launcher_stage_directory" 700
 if test "$role" = client; then
   ensure_root_directory "$install_root/client" 755
   ensure_root_directory /private/var/db/OwnTransit/client 755
-  prepare_client_reader_identity
-  ensure_reader_directory "$launcher_auth_directory" 750
+	prepare_client_reader_identity
+	ensure_reader_directory "$launcher_auth_directory" 750
 fi
 
 lifecycle_candidate="$bundle/$lifecycle_path"
 lifecycle_runner=$lifecycle_candidate
+legacy_unlocked_lifecycle=no
 current_link="$roles_root/$role/current"
 if test -e "$current_link" || test -L "$current_link"; then
   test -L "$current_link" || fail "role current selector exists and is not a symlink"
@@ -795,34 +831,77 @@ if test -e "$current_link" || test -L "$current_link"; then
   test "$(stat -f %u "$lifecycle_runner")" -eq 0 && test "$(stat -f %g "$lifecycle_runner")" -eq 0 || fail "selected lifecycle executable is not root:wheel owned"
   test "$(macos_mode "$lifecycle_runner")" = 700 && test "$(stat -f %l "$lifecycle_runner")" -eq 1 || fail "selected lifecycle executable metadata is invalid"
   require_no_extended_acl "$lifecycle_runner"
+	current_lifecycle_sha256=$(sha256_file "$lifecycle_runner")
+	# RC5-RC7 predate the lifecycle-owned package mutation guard. Keep only
+	# these exact public ID+digest tuples behind the compatibility wrapper,
+	# including an idempotent invocation with a legacy bundle. Unknown
+	# predecessors fail closed; later releases must add their exact self-locking
+	# predecessor tuple instead of guessing from an ID alone.
+	if legacy_unlocked_lifecycle_tuple "$current_release" "$current_lifecycle_sha256"; then
+		legacy_unlocked_lifecycle=yes
+	else
+		test "$current_release" = "$release_id" && test "$current_lifecycle_sha256" = "$lifecycle_sha256" ||
+			fail "selected predecessor is not an authenticated supported macOS upgrade source"
+	fi
 fi
 
-/usr/bin/env -i \
-  HOME=/var/root \
-  LANG=C \
-  LC_ALL=C \
-  PATH=/usr/bin:/bin:/usr/sbin:/sbin \
-  "$lifecycle_runner" package-apply \
-    --role "$role" \
-    --bundle "$bundle" \
-    --manifest "$manifest_path" \
-    --manifest-signature "$manifest_signature" \
-    --release-public-key "$release_public_key" \
-    --policy "$policy" \
-    --policy-signature "$policy_signature" \
-    --policy-public-key "$policy_public_key"
+if test "$legacy_unlocked_lifecycle" = yes; then
+	mutation_lock="$launcher_stage_directory/package-mutation.v1.lock"
+	prepare_package_mutation_lock
+	/usr/bin/lockf -k -n -t 0 "$mutation_lock" \
+		/usr/bin/env -i \
+			HOME=/var/root \
+			LANG=C \
+			LC_ALL=C \
+			PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+			"$lifecycle_runner" package-apply \
+				--role "$role" \
+				--bundle "$bundle" \
+				--manifest "$manifest_path" \
+				--manifest-signature "$manifest_signature" \
+				--release-public-key "$release_public_key" \
+				--policy "$policy" \
+				--policy-signature "$policy_signature" \
+				--policy-public-key "$policy_public_key"
+else
+	/usr/bin/env -i \
+		HOME=/var/root \
+		LANG=C \
+		LC_ALL=C \
+		PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+		"$lifecycle_runner" package-apply \
+			--role "$role" \
+			--bundle "$bundle" \
+			--manifest "$manifest_path" \
+			--manifest-signature "$manifest_signature" \
+			--release-public-key "$release_public_key" \
+			--policy "$policy" \
+			--policy-signature "$policy_signature" \
+			--policy-public-key "$policy_public_key"
+fi
 
 test -L "$current_link" || fail "package transaction did not publish the role current selector"
 test "$(readlink "$current_link")" = "releases/$release_id" || fail "package transaction selected another release"
 release_directory="$roles_root/$role/releases/$release_id"
 
 test "$(sha256_file "$release_directory/owntransitctl")" = "$lifecycle_sha256" || fail "installed lifecycle artifact changed"
+test -f "$release_directory/owntransitctl" && test ! -L "$release_directory/owntransitctl" || fail "installed lifecycle artifact is absent or not regular"
+test "$(stat -f %u "$release_directory/owntransitctl")" -eq 0 && test "$(stat -f %g "$release_directory/owntransitctl")" -eq 0 || fail "installed lifecycle artifact is not root:wheel owned"
+test "$(macos_mode "$release_directory/owntransitctl")" = 700 && test "$(stat -f %l "$release_directory/owntransitctl")" -eq 1 || fail "installed lifecycle artifact metadata is invalid"
+require_no_extended_acl "$release_directory/owntransitctl"
+/usr/bin/env -i \
+	HOME=/var/root \
+	LANG=C \
+	LC_ALL=C \
+	PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+	"$release_directory/owntransitctl" package-recover --role "$role"
 test "$(sha256_file "$release_directory/LICENSE")" = "$(sha256_file "$bundle/$project_license_path")" || fail "installed project license differs from the authenticated evidence"
 test "$(sha256_file "$release_directory/THIRD_PARTY_LICENSES.txt")" = "$(sha256_file "$bundle/$third_party_licenses_path")" || fail "installed third-party notices differ from the authenticated evidence"
+require_package_mutation_lock
 
 if test "$role" = provisioner; then
   test -d "$release_directory" && test ! -L "$release_directory" || fail "provisioner release path is not a regular directory"
-  test "$(stat -f %u "$release_directory")" -eq 0 && test "$(stat -f %g "$release_directory")" -eq 0 && test "$(macos_mode "$release_directory")" = 755 || fail "provisioner release directory metadata is invalid"
+  test "$(stat -f %u "$release_directory")" -eq 0 && test "$(stat -f %g "$release_directory")" -eq 0 && test "$(macos_mode "$release_directory")" = 750 || fail "provisioner release directory metadata is invalid"
   require_no_extended_acl "$release_directory"
   for installed_record in 'owntransit-provision:755' 'owntransitctl:700' 'receipt.json:600' 'LICENSE:644' 'THIRD_PARTY_LICENSES.txt:644'; do
     installed_file=${installed_record%%:*}
@@ -834,7 +913,13 @@ if test "$role" = provisioner; then
     require_no_extended_acl "$installed_path"
   done
   test "$(sha256_file "$release_directory/owntransit-provision")" = "$artifact_sha256" || fail "installed provisioner differs from the authenticated artifact"
-  ensure_exact_symlink "$bin_directory/owntransit-provision" "../roles/provisioner/current/owntransit-provision"
+  public_provisioner="$bin_directory/owntransit-provision"
+  test -f "$public_provisioner" && test ! -L "$public_provisioner" || fail "package finalizer did not publish a regular provisioner frontend"
+  test "$(stat -f %u "$public_provisioner")" -eq 0 && test "$(stat -f %g "$public_provisioner")" -eq 0 && test "$(macos_mode "$public_provisioner")" = 755 || fail "public provisioner frontend metadata is invalid"
+  test "$(stat -f %l "$public_provisioner")" -eq 1 || fail "public provisioner frontend is not a fresh single-link inode"
+  require_no_extended_acl "$public_provisioner"
+  test "$(sha256_file "$public_provisioner")" = "$artifact_sha256" || fail "public provisioner frontend differs from the authenticated artifact"
+  test "$(stat -f '%d:%i' "$public_provisioner")" != "$(stat -f '%d:%i' "$release_directory/owntransit-provision")" || fail "public provisioner frontend is a hard link to the protected release artifact"
   trap - EXIT HUP INT TERM
   rm -rf -- "$verification_directory"
   printf 'installed OwnTransit macOS provisioner release %s under selector %s\n' "$release_id" "$current_link"
@@ -843,8 +928,8 @@ if test "$role" = provisioner; then
   exit 0
 fi
 
-ensure_exact_symlink "$bin_directory/owntransit" "../roles/client/current/owntransit"
-verify_client_executable_boundary "$release_directory/owntransit" "$release_directory/owntransit-real"
+public_launcher="$bin_directory/owntransit"
+verify_client_executable_boundary "$release_directory/owntransit" "$public_launcher" "$release_directory/owntransit-real"
 public_frontend="$bin_directory/owntransit-cli"
 test -f "$public_frontend" && test ! -L "$public_frontend" || fail "package finalizer did not publish a regular normal client frontend"
 test "$(stat -f %u "$public_frontend")" -eq 0 && test "$(stat -f %g "$public_frontend")" -eq 0 && test "$(macos_mode "$public_frontend")" = 755 || fail "normal client frontend activation is invalid"
@@ -855,12 +940,13 @@ if find "$install_root" -type f -perm -4000 -print | grep . >/dev/null; then
 fi
 unexpected_setgid="$verification_directory/unexpected-setgid"
 find "$install_root" -type f -perm -2000 -print | while IFS= read -r setgid_file; do
-  case "$setgid_file" in
-    "$roles_root/client/releases/"*/owntransit) ;;
-    *) printf '%s\n' "$setgid_file" ;;
-  esac
+	case "$setgid_file" in
+		"$roles_root/client/releases/"*/owntransit) ;;
+		"$public_launcher") ;;
+		*) printf '%s\n' "$setgid_file" ;;
+	esac
 done > "$unexpected_setgid"
-test ! -s "$unexpected_setgid" || fail "installation root contains a setgid file outside authenticated client releases"
+test ! -s "$unexpected_setgid" || fail "installation root contains a setgid file outside authenticated client launchers"
 
 trap - EXIT HUP INT TERM
 rm -rf -- "$verification_directory"

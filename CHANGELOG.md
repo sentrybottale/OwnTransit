@@ -9,7 +9,77 @@ becomes a publication record only after its authenticated evidence, signed
 qualification record and release decision are complete. Git tags never create
 or publish artifacts automatically.
 
-## [Unreleased]
+## [0.1.0]
+
+### Security
+
+- Replaced the macOS client's public release-selector symlink with a distinct
+  single-link `root:_owntransit` mode-`2751` regular launcher. Its bytes must
+  match the authenticated release-launcher digest, while the protected release
+  launcher and mode-`0750` real client remain inside the non-user-traversable
+  role tree.
+- Published that launcher only through a fixed `root:wheel` mode-`0700` private
+  stage using a fresh inode, ownership-before-setgid ordering, fsync, exact
+  metadata/ACL/digest checks and atomic rename. Noncanonical residue and unsafe
+  public-entry types or metadata fail closed; only the exact historical symlink
+  is accepted for symlink migration.
+- Made the launcher revalidate the descriptor-relative authenticated `current`
+  selector immediately before exec and enumerate `/dev/fd` when closing
+  inherited descriptor authority, including descriptors above a subsequently
+  lowered resource limit.
+- Made the setgid launcher authenticate its exact raw public invocation path
+  before every protected read. An ordinary user's retained hard-link alias is
+  denied, while canonical execution and replacement remain available when the
+  public inode has additional links; uninstall first removes setgid from every
+  retained link.
+- Serialized macOS client and provisioner package apply, rollback, recovery,
+  detach and all deterministic public-entry stages with one persistent,
+  root-only advisory lock. Interrupted stages are recoverable only through
+  their exact bounded metadata profiles.
+- Froze the `0.1.0` signing ceremony to release/policy/floor/lifecycle tuple
+  `8/4/8/1`, preventing rollback to RC5-RC7 package boundaries after the
+  launcher and Linux provisioner migrations.
+- Kept the macOS provisioner release tree non-user-traversable as
+  `root:wheel` mode `0750` and published a distinct `root:wheel` mode-`0755`
+  public provisioner copy with the authenticated digest and a different inode.
+  Only the exact historical selector symlink is accepted for migration; macOS
+  performs no provisioner-directory chmod migration.
+- Moved macOS public-entry removal into the authenticated lifecycle's durable
+  `package-detach` operation. Client detach removes setgid from the opened
+  launcher inode before unlinking its canonical name, deactivating retained
+  hard-link aliases, and resumes only from authenticated partial states.
+- Serialized complete Linux install and non-purging uninstall integration
+  windows with one persistent root-only platform lock. Connector and relay
+  detach additionally retains the role supervisor lock, revalidates the
+  selected release, and converges only exact-or-absent partial residue.
+
+### Fixed
+
+- Bound Darwin launcher activation to the signed launcher's receipt digest and
+  made post-selection client install invoke recovery through the newly selected
+  lifecycle binary. Even an idempotent complete recovery now authenticates the
+  running lifecycle before accepting installed state.
+- Made package-directory ownership and traversal role- and platform-aware.
+  Runtime-bearing roles and the macOS provisioner remain mode `0750`; only the
+  Linux provisioner's root-owned mode-`0755` package path is reached through
+  its ordinary public selector. Linux requires `fs.protected_hardlinks=1`
+  before every provisioner package operation and alone repairs the legacy
+  provisioner mode-`0750` tree inner-first, resuming only when the exact signed
+  candidate release and lifecycle digest are already selected.
+
+### Assurance
+
+- Extended macOS install, uninstall, qualification and static gates for the
+  distinct public launcher and provisioner copy, equal signed digest/different
+  inode invariants, exact persistent global mutation lock, durable detach,
+  private staging cleanup, canonical-path and retained-hard-link-alias
+  behavior, direct protected-launcher denial, exact selector check and
+  inherited-descriptor cleanup.
+- Added Apple Container as a digest-pinned fallback for deterministic native
+  archive qualification on macOS hosts without local GNU tar or Docker.
+- Made pinned container verification execute on actual Linux amd64 rather than
+  the builder architecture, and made privileged helper-process tests portable
+  across native x86_64 and Apple Silicon's x86_64 emulation.
 
 ## [0.1.0-rc.7]
 

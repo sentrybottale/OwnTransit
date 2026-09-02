@@ -138,6 +138,10 @@ case "$role" in
     fail "role must be client, connector, relay, or provisioner"
     ;;
 esac
+if test "$role" = provisioner; then
+  test -f /proc/sys/fs/protected_hardlinks && test "$(cat /proc/sys/fs/protected_hardlinks)" = 1 ||
+    fail "Linux provisioner installation requires fs.protected_hardlinks=1"
+fi
 
 if test "$role" = client; then
   case "$client_user" in
@@ -166,9 +170,10 @@ test -d "$bundle" && test ! -L "$bundle" || fail "bundle must be a regular direc
 bundle_resolved=$(CDPATH= cd -P -- "$bundle" && pwd) || fail "cannot resolve bundle"
 test "$bundle_resolved" = "$bundle" || fail "bundle path must be canonical and contain no symlinked component"
 
-for command_name in awk basename cat chmod chown cmp dirname env find grep id install ln mktemp mv readlink rm rmdir sha256sum stat tr uname wc; do
+for command_name in awk basename cat chmod chown cmp dirname env find flock grep id install ln mktemp mv readlink rm rmdir sha256sum stat tr uname wc; do
   command -v "$command_name" >/dev/null 2>&1 || fail "required command is unavailable: $command_name"
 done
+test -x /usr/bin/flock || fail "flock must be available at /usr/bin/flock"
 if test "$needs_lifecycle" = yes && test "$role" != provisioner; then
   for command_name in getent groupadd usermod; do
     command -v "$command_name" >/dev/null 2>&1 || fail "required identity command is unavailable: $command_name"
@@ -319,6 +324,97 @@ ensure_root_directory() {
   fi
 }
 
+require_platform_mutation_lock() {
+  lock_path=$1
+  test -f "$lock_path" && test ! -L "$lock_path" || fail "Linux package-mutation lock is not a regular non-symlink file"
+  test "$(stat -c %u "$lock_path")" -eq 0 && test "$(stat -c %g "$lock_path")" -eq 0 || fail "Linux package-mutation lock is not root-owned"
+  test "$(stat -c %a "$lock_path")" = 600 || fail "Linux package-mutation lock mode is not 0600"
+  test "$(stat -c %h "$lock_path")" -eq 1 || fail "Linux package-mutation lock has multiple hard links"
+  test "$(stat -c %s "$lock_path")" -eq 0 || fail "Linux package-mutation lock is not empty"
+}
+
+acquire_platform_mutation_lock() {
+  mutation_root=/var/lib/owntransit/package-supervisor
+  platform_mutation_lock="$mutation_root/platform.v1.lock"
+  if test ! -e "$platform_mutation_lock" && test ! -L "$platform_mutation_lock"; then
+    if (umask 077; set -C; : > "$platform_mutation_lock") 2>/dev/null; then
+      :
+    else
+      test -e "$platform_mutation_lock" || test -L "$platform_mutation_lock" || fail "cannot create Linux package-mutation lock"
+    fi
+  fi
+  require_platform_mutation_lock "$platform_mutation_lock"
+  exec 9<> "$platform_mutation_lock"
+  lock_fd_path="/proc/$$/fd/9"
+  named_lock_identity=$(stat -Lc '%d:%i:%u:%g:%a:%h:%s' "$platform_mutation_lock") || fail "cannot inspect named Linux package-mutation lock"
+  opened_lock_identity=$(stat -Lc '%d:%i:%u:%g:%a:%h:%s' "$lock_fd_path") || fail "cannot inspect opened Linux package-mutation lock"
+  test "$named_lock_identity" = "$opened_lock_identity" || fail "opened Linux package-mutation lock differs from its canonical name"
+  /usr/bin/flock -n 9 || fail "another Linux package install or uninstall is active"
+  require_platform_mutation_lock "$platform_mutation_lock"
+  test "$(stat -Lc '%d:%i:%u:%g:%a:%h:%s' "$platform_mutation_lock")" = "$(stat -Lc '%d:%i:%u:%g:%a:%h:%s' "$lock_fd_path")" ||
+    fail "Linux package-mutation lock changed during acquisition"
+  test -d "$mutation_root" && test ! -L "$mutation_root" &&
+    test "$(stat -c %u "$mutation_root")" -eq 0 && test "$(stat -c %g "$mutation_root")" -eq 0 &&
+    test "$(stat -c %a "$mutation_root")" = 700 || fail "Linux package-mutation root changed during acquisition"
+}
+
+require_provisioner_package_directory() {
+  provisioner_directory=$1
+  test -d "$provisioner_directory" && test ! -L "$provisioner_directory" ||
+    fail "provisioner package path is not a regular directory: $provisioner_directory"
+  test "$(stat -c %u "$provisioner_directory")" -eq 0 && test "$(stat -c %g "$provisioner_directory")" -eq 0 ||
+    fail "provisioner package directory is not root-owned: $provisioner_directory"
+  provisioner_mode=$(stat -c %a "$provisioner_directory")
+  case "$provisioner_mode" in
+    750|755) ;;
+    *) fail "provisioner package directory is neither legacy 0750 nor public 0755: $provisioner_directory" ;;
+  esac
+}
+
+# Resume the one-time legacy 0750 -> 0755 provisioner correction only when the
+# exact signed candidate is already selected. Runtime-bearing roles remain on
+# their dedicated root:reader 0750 package namespace.
+migrate_legacy_provisioner_directories() {
+  provisioner_role_directory="$roles_root/provisioner"
+  provisioner_releases_directory="$provisioner_role_directory/releases"
+  require_provisioner_package_directory "$provisioner_role_directory"
+  require_provisioner_package_directory "$provisioner_releases_directory"
+
+  provisioner_directories="$verification_directory/provisioner-release-directories"
+  find "$provisioner_releases_directory" -mindepth 1 -maxdepth 1 -print > "$provisioner_directories" ||
+    fail "cannot enumerate provisioner releases for directory migration"
+  test -s "$provisioner_directories" || fail "selected provisioner has no installed release directory"
+  while IFS= read -r provisioner_release_directory; do
+    test -d "$provisioner_release_directory" && test ! -L "$provisioner_release_directory" ||
+      fail "provisioner release namespace contains a non-directory entry"
+    provisioner_release=$(basename "$provisioner_release_directory")
+    case "$provisioner_release" in *[!a-z2-7]*|'') fail "provisioner release directory has an invalid ID" ;; esac
+    test "${#provisioner_release}" -eq 52 || fail "provisioner release directory ID has the wrong length"
+    case "$provisioner_release" in *[aq]) ;; *) fail "provisioner release directory ID is non-canonical" ;; esac
+    test "$provisioner_release" != aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ||
+      fail "provisioner release directory ID is zero"
+    test "$provisioner_release_directory" = "$provisioner_releases_directory/$provisioner_release" ||
+      fail "provisioner release directory path is non-canonical"
+    require_provisioner_package_directory "$provisioner_release_directory"
+  done < "$provisioner_directories"
+
+  while IFS= read -r provisioner_release_directory; do
+    chmod 0755 "$provisioner_release_directory"
+  done < "$provisioner_directories"
+  chmod 0755 "$provisioner_releases_directory"
+  chmod 0755 "$provisioner_role_directory"
+
+  require_provisioner_package_directory "$provisioner_role_directory"
+  test "$(stat -c %a "$provisioner_role_directory")" = 755 || fail "provisioner role directory migration did not complete"
+  require_provisioner_package_directory "$provisioner_releases_directory"
+  test "$(stat -c %a "$provisioner_releases_directory")" = 755 || fail "provisioner releases directory migration did not complete"
+  while IFS= read -r provisioner_release_directory; do
+    require_provisioner_package_directory "$provisioner_release_directory"
+    test "$(stat -c %a "$provisioner_release_directory")" = 755 ||
+      fail "provisioner release directory migration did not complete"
+  done < "$provisioner_directories"
+}
+
 require_local_account_database() {
   account_file=$1
   test -f "$account_file" && test ! -L "$account_file" || fail "$account_file is not a local regular account database"
@@ -331,6 +427,10 @@ install_root=/usr/libexec/owntransit
 roles_root="$install_root/roles"
 public_bin=/usr/local/bin
 
+ensure_root_directory /var/lib/owntransit 755
+ensure_root_directory /var/lib/owntransit/package-supervisor 700
+acquire_platform_mutation_lock
+
 ensure_root_directory /usr/local 755
 ensure_root_directory "$public_bin" 755
 ensure_root_directory /usr/libexec 755
@@ -338,10 +438,8 @@ ensure_root_directory "$install_root" 755
 ensure_root_directory "$roles_root" 755
 
 if test "$needs_lifecycle" = yes; then
-  ensure_root_directory /var/lib/owntransit 755
   ensure_root_directory /var/lib/owntransit/package-rollback 700
   if test "$role" != provisioner; then
-    ensure_root_directory /var/lib/owntransit/package-supervisor 700
     workspace="/var/lib/owntransit/$role"
     ensure_root_directory "$workspace" 755
   fi
@@ -518,6 +616,10 @@ if test -e "$current_link" || test -L "$current_link"; then
   test -f "$lifecycle_runner" && test ! -L "$lifecycle_runner" || fail "selected lifecycle executable is absent or not regular"
   test "$(stat -c %u "$lifecycle_runner")" -eq 0 && test "$(stat -c %g "$lifecycle_runner")" -eq 0 || fail "selected lifecycle executable is not root-owned"
   test "$(stat -c %a "$lifecycle_runner")" = 700 && test "$(stat -c %h "$lifecycle_runner")" -eq 1 || fail "selected lifecycle executable metadata is invalid"
+  if test "$role" = provisioner && test "$current_release" = "$release_id" &&
+    test "$(sha256_file "$lifecycle_runner")" = "$lifecycle_sha256"; then
+    migrate_legacy_provisioner_directories
+  fi
 fi
 env -i \
   HOME=/root \
@@ -536,6 +638,15 @@ env -i \
 
 test -L "$current_link" || fail "package transaction did not publish the role current selector"
 test "$(readlink "$current_link")" = "releases/$release_id" || fail "package transaction selected another release"
+release_directory="$roles_root/$role/releases/$release_id"
+test -f "$release_directory/owntransitctl" && test ! -L "$release_directory/owntransitctl" || fail "installed lifecycle artifact is absent or not regular"
+test "$(stat -c %u "$release_directory/owntransitctl")" -eq 0 && test "$(stat -c %g "$release_directory/owntransitctl")" -eq 0 || fail "installed lifecycle artifact is not root-owned"
+test "$(stat -c %a "$release_directory/owntransitctl")" = 700 && test "$(stat -c %h "$release_directory/owntransitctl")" -eq 1 || fail "installed lifecycle artifact metadata is invalid"
+test "$(sha256_file "$release_directory/owntransitctl")" = "$lifecycle_sha256" || fail "installed lifecycle artifact changed"
+
+if test "$role" = provisioner; then
+  migrate_legacy_provisioner_directories
+fi
 
 if test "$role" = client; then
   ensure_exact_symlink "$public_bin/owntransit" "$current_link/owntransit"

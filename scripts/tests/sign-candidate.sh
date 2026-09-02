@@ -139,6 +139,7 @@ printf '%s\n' 'package main' 'func main() {}' > "$workspace/source/cmd/example/m
 printf '%s\n' 'package example' > "$workspace/source/internal/example/example.go"
 printf '%s\n' 'Apache License Version 2.0' > "$workspace/source/LICENSE"
 printf '%s\n' 'No third-party notices.' > "$workspace/source/THIRD_PARTY_NOTICES.md"
+printf '%s\n' '# Changelog' '' '## [0.1.0-rc.1]' '' '## [0.1.0]' > "$workspace/source/CHANGELOG.md"
 source_date_epoch=1700000000
 git -C "$workspace/source" init -q
 git -C "$workspace/source" config user.email test@example.invalid
@@ -304,6 +305,8 @@ invoke_signer() {
   selected_candidate=${10:-$candidate}
   selected_anchor_policy_key_id=${11:-}
   selected_anchor_tombstones=${12:-}
+  selected_source_root=${13:-$workspace/source}
+  selected_source_commit=${14:-$source_commit}
   set -- "$signer" \
     --bundle "$bundle" \
     --candidate "$selected_candidate" \
@@ -315,9 +318,9 @@ invoke_signer() {
     --distribution-key "$distribution_key" \
     --distribution-public-key "$distribution_public_key" \
     --allowed-signers "$selected_allowed_signers" \
-    --source-root "$workspace/source" \
+    --source-root "$selected_source_root" \
     --version "$version" \
-    --source-commit "$source_commit" \
+    --source-commit "$selected_source_commit" \
     --policy-sequence "$selected_policy_sequence" \
     --release-floor "$selected_release_floor" \
     --lifecycle-floor "$selected_lifecycle_floor" \
@@ -335,6 +338,25 @@ invoke_signer() {
 }
 
 output="$workspace/output-parent/candidate"
+missing_changelog_source="$workspace/source-missing-changelog"
+cp -R "$workspace/source" "$missing_changelog_source"
+printf '%s\n' '# Changelog' '' '## [0.1.0]' > "$missing_changelog_source/CHANGELOG.md"
+git -C "$missing_changelog_source" add CHANGELOG.md
+GIT_AUTHOR_DATE="@$source_date_epoch +0000" GIT_COMMITTER_DATE="@$source_date_epoch +0000" \
+  git -C "$missing_changelog_source" commit -q -m missing-release-heading
+missing_changelog_commit=$(git -C "$missing_changelog_source" rev-parse HEAD)
+# Leave a misleading valid working-tree heading in place: the signer must read
+# the selected commit, not these uncommitted bytes.
+cp "$workspace/source/CHANGELOG.md" "$missing_changelog_source/CHANGELOG.md"
+if changelog_rejection=$(invoke_signer "$workspace/keys/policy-public.pem" \
+  "$workspace/output-parent/rejected-changelog" "$workspace/keys/allowed_signers" \
+  1 1 2 0 0 0 "$candidate" '' '' "$missing_changelog_source" "$missing_changelog_commit" 2>&1); then
+  fail "candidate signing accepted a commit without its exact changelog release heading"
+fi
+printf '%s\n' "$changelog_rejection" | grep -Fq "committed CHANGELOG.md has no exact release heading for $version" ||
+  fail "missing changelog release heading was rejected for the wrong reason: $changelog_rejection"
+test ! -e "$workspace/output-parent/rejected-changelog" || fail "missing changelog release heading created output"
+
 invoke_signer "$workspace/keys/policy-public.pem" "$output" > "$workspace/sign-candidate.out"
 grep -Fq "created signed candidate handoff: $output" "$workspace/sign-candidate.out" || fail "positive conductor did not report its atomic output"
 grep -Fq "release_id=$release_id" "$workspace/sign-candidate.out" || fail "positive conductor reported the wrong release ID"
@@ -674,5 +696,77 @@ if "$project_root/scripts/release/sign-candidate.sh" \
   --output "$preexisting_output" >/dev/null 2>&1; then
   fail "pre-existing output was accepted"
 fi
+
+rewrite_bundle_contract() {
+  contract_version=$1
+  contract_release_sequence=$2
+  contract_lifecycle=$3
+  printf '%s\n' \
+    "version=$contract_version" \
+    "release_id=$release_id" \
+    "release_sequence=$contract_release_sequence" \
+    "source_commit=$source_commit" \
+    "source_date_epoch=$source_date_epoch" \
+    "source_manifest_sha256=$source_manifest_sha256" > "$bundle/BUILD-INPUTS"
+  printf '%s\n' \
+    "{\"schema\":\"owntransit.software-release.v1\",\"product\":\"owntransit\",\"version\":\"$contract_version\",\"release_id\":\"$release_id\",\"sequence\":$contract_release_sequence,\"created_unix\":$source_date_epoch,\"minimum_lifecycle\":$contract_lifecycle,\"source\":{\"repository\":\"https://github.com/sentrybottale/owntransit\",\"commit\":\"$source_commit\",\"dirty\":false,\"source_manifest_sha256\":\"$source_manifest_sha256\"},\"toolchain\":{\"go_version\":\"go1.26.7\",\"builder_image\":\"fixture\"}}" > "$bundle/RELEASE-MANIFEST.json"
+  rebuilt_checksums="$workspace/rebuilt-native-SHA256SUMS"
+  (
+    cd "$bundle"
+    while IFS= read -r relative; do
+      printf '%s  %s\n' "$(sha256_file "$relative")" "$relative"
+    done < "$native_paths"
+  ) > "$rebuilt_checksums"
+  mv "$rebuilt_checksums" "$bundle/SHA256SUMS"
+  chmod 0644 "$bundle/SHA256SUMS"
+}
+
+expect_stable_freeze_rejection() {
+  rejection_name=$1
+  expected_error=$2
+  selected_release_sequence=$3
+  selected_policy_sequence=$4
+  selected_release_floor=$5
+  selected_lifecycle_floor=$6
+  rewrite_bundle_contract 0.1.0 "$selected_release_sequence" "$selected_lifecycle_floor"
+  rejection_path="$workspace/output-parent/rejected-stable-$rejection_name"
+  if rejection_text=$(invoke_signer "$workspace/keys/policy-public.pem" "$rejection_path" "$workspace/keys/allowed_signers" \
+    "$selected_policy_sequence" "$selected_release_floor" "$selected_lifecycle_floor" \
+    3 5 1 "$stable_candidate" sha256/policy none 2>&1); then
+    fail "0.1.0 stable signing accepted the wrong $rejection_name"
+  fi
+  printf '%s\n' "$rejection_text" | grep -Fq "$expected_error" ||
+    fail "0.1.0 stable $rejection_name was rejected for the wrong reason: $rejection_text"
+  test ! -e "$rejection_path" || fail "rejected 0.1.0 stable $rejection_name created output"
+}
+
+version=0.1.0
+stable_candidate="$workspace/candidate-stable.json"
+printf '%s\n' \
+  "{\"schema\":\"owntransit.release-candidate-ledger.v1\",\"status\":\"qualification-only\",\"version\":\"$version\",\"release_id\":\"$release_id\",\"release_sequence\":8,\"policy_sequence\":4,\"minimum_release_sequence\":8,\"minimum_lifecycle\":1,\"source_commit\":\"$source_commit\",\"source_date_epoch\":$source_date_epoch}" \
+  > "$stable_candidate"
+chmod 0600 "$stable_candidate"
+
+stable_rejection_sign_calls_before=$(grep -c '^sign-manifest$' "$workspace/fake-releasectl.calls")
+expect_stable_freeze_rejection release-sequence \
+  'OwnTransit 0.1.0 requires release sequence 8' 7 4 8 1
+expect_stable_freeze_rejection policy-sequence \
+  'OwnTransit 0.1.0 requires policy sequence 4' 8 5 8 1
+expect_stable_freeze_rejection release-floor \
+  'OwnTransit 0.1.0 requires release floor 8' 8 4 7 1
+expect_stable_freeze_rejection lifecycle-floor \
+  'OwnTransit 0.1.0 requires lifecycle floor 1' 8 4 8 2
+test "$(grep -c '^sign-manifest$' "$workspace/fake-releasectl.calls")" = "$stable_rejection_sign_calls_before" ||
+  fail "a rejected 0.1.0 stable tuple reached a signing operation"
+
+rewrite_bundle_contract 0.1.0 8 1
+stable_output="$workspace/output-parent/stable-candidate"
+invoke_signer "$workspace/keys/policy-public.pem" "$stable_output" "$workspace/keys/allowed_signers" \
+  4 8 1 3 5 1 "$stable_candidate" sha256/policy none > "$workspace/sign-candidate-stable.out"
+grep -Fq "created signed candidate handoff: $stable_output" "$workspace/sign-candidate-stable.out" ||
+  fail "exact 0.1.0 stable signing tuple did not produce its atomic handoff"
+test "$(cat "$stable_output/assets/RELEASE-POLICY.json")" = \
+  '{"schema":"fixture-policy","sequence":4,"minimum_release_sequence":8,"minimum_lifecycle":1}' ||
+  fail "0.1.0 stable handoff did not preserve the frozen signed policy tuple"
 
 printf '%s\n' 'sign-candidate full-conductor and fail-closed tests passed'

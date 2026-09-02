@@ -403,6 +403,11 @@ func (manager *Manager) recover(preflight bool) (Result, error) {
 		return Result{}, err
 	}
 	if snapshot.state.journal == nil || snapshot.state.journal.Phase == phaseComplete {
+		if snapshot.currentReceipt != nil {
+			if err := manager.verifyRunningLifecycle(snapshot, decision{}); err != nil {
+				return Result{}, err
+			}
+		}
 		return resultFromSelector(manager, snapshot.state.selector, snapshot.currentReceipt, false, false, true)
 	}
 	journal := *snapshot.state.journal

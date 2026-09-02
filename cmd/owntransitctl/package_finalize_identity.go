@@ -27,7 +27,8 @@ func renderDarwinLauncherBinding(receipt []byte, runtimeIdentity packagetxn.Runt
 		return nil, 0, err
 	}
 	if runtimeIdentity.Role != "client" || runtimeIdentity.OS != "darwin" || runtimeIdentity.Arch != "arm64" ||
-		!validPackageReleaseID(runtimeIdentity.ReleaseID) || runtimeIdentity.ReleaseSequence == 0 || !validPackageDigest(runtimeIdentity.ArtifactSHA256) {
+		!validPackageReleaseID(runtimeIdentity.ReleaseID) || runtimeIdentity.ReleaseSequence == 0 ||
+		!validPackageDigest(runtimeIdentity.ArtifactSHA256) || !validPackageDigest(runtimeIdentity.LauncherSHA256) {
 		return nil, 0, errors.New("Darwin launcher activation requires one authenticated current client runtime")
 	}
 	encoded := []byte(fmt.Sprintf(

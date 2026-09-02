@@ -19,6 +19,50 @@ import (
 
 const viewWriterReaderHelperEnvironment = "OWNTRANSIT_VIEW_WRITER_READER_HELPER"
 
+func copyTestExecutableForUnprivilegedReader(t *testing.T) string {
+	t.Helper()
+	sourcePath, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+
+	directory, err := os.MkdirTemp("/tmp", "owntransit-viewwriter-helper-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(directory, 0o700)
+		_ = os.RemoveAll(directory)
+	})
+	destinationPath := filepath.Join(directory, "securefs.test")
+	destination, err := os.OpenFile(destinationPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o700)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer destination.Close()
+	if _, err := io.Copy(destination, source); err != nil {
+		t.Fatal(err)
+	}
+	if err := destination.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	if err := destination.Chmod(0o555); err != nil {
+		t.Fatal(err)
+	}
+	if err := destination.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return destinationPath
+}
+
 // TestViewWriterReaderHelper is selected explicitly in a child process whose
 // credentials are reduced to the dedicated runtime reader. It continuously
 // enumerates the public tree while the root parent creates and replaces a
@@ -85,7 +129,7 @@ func TestViewWriterNeverExposesPartialOrTemporaryMaterial(t *testing.T) {
 	}
 	defer root.Close()
 
-	command := exec.Command("/proc/self/exe", "-test.run=^TestViewWriterReaderHelper$")
+	command := exec.Command(copyTestExecutableForUnprivilegedReader(t), "-test.run=^TestViewWriterReaderHelper$")
 	command.Env = append(os.Environ(), viewWriterReaderHelperEnvironment+"="+rootPath)
 	command.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{
 		Uid: 65534, Gid: uint32(readerGID), Groups: []uint32{uint32(readerGID)},

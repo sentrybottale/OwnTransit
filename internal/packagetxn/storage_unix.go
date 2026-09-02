@@ -142,7 +142,7 @@ func loadAndVerifyRelease(releasesFD int, releaseID string, manager *Manager) (r
 		return receiptRecord{}, nil, "", fmt.Errorf("%w: open release directory: %v", ErrResidue, err)
 	}
 	defer unix.Close(releaseFD)
-	if err := requireDirectory(releaseFD, manager.ownerUID, manager.readerGID, 0o750, manager.checkACL); err != nil {
+	if err := requirePackageDirectory(releaseFD, manager); err != nil {
 		return receiptRecord{}, nil, "", err
 	}
 	receiptBytes, exists, err := readOptionalExactFile(releaseFD, receiptFileName, 0o600, maximumMetadataSize, manager)
@@ -597,7 +597,7 @@ func retireReleaseDirectory(releasesFD int, releaseID, expectedReceiptDigest str
 		return fmt.Errorf("%w: open retired release directory: %v", ErrResidue, err)
 	}
 	defer unix.Close(releaseFD)
-	if err := requireDirectory(releaseFD, manager.ownerUID, manager.readerGID, 0o750, manager.checkACL); err != nil {
+	if err := requirePackageDirectory(releaseFD, manager); err != nil {
 		return err
 	}
 	receiptBytes, exists, err := readOptionalExactFile(releaseFD, receiptFileName, 0o600, maximumMetadataSize, manager)

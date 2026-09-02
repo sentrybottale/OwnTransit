@@ -113,8 +113,8 @@ func TestCTLPackageApplyPassesSignedInputsWithoutCallerSuppliedDigests(t *testin
 	}
 }
 
-func TestCTLPackageRollbackAndRecoveryAreRoleScoped(t *testing.T) {
-	var rollbackRole, rollbackRelease, recoveryRole string
+func TestCTLPackageRollbackRecoveryAndDetachAreRoleScoped(t *testing.T) {
+	var rollbackRole, rollbackRelease, recoveryRole, detachRole string
 	commands := ctlCommands{
 		packageRollback: func(options packageRollbackOptions) ([]byte, error) {
 			rollbackRole, rollbackRelease = options.role, options.toReleaseID
@@ -124,18 +124,23 @@ func TestCTLPackageRollbackAndRecoveryAreRoleScoped(t *testing.T) {
 			recoveryRole = options.role
 			return []byte("{}\n"), nil
 		},
+		packageDetach: func(options packageStateOptions) ([]byte, error) {
+			detachRole = options.role
+			return []byte("{}\n"), nil
+		},
 	}
 	for _, arguments := range [][]string{
 		{"package-rollback", "--role", "provisioner", "--to-release", "retained-release"},
 		{"package-recover", "--role", "provisioner"},
+		{"package-detach", "--role", "provisioner"},
 	} {
 		var output, diagnostics bytes.Buffer
 		if code := executeCTL(arguments, &output, &diagnostics, commands); code != 0 || diagnostics.Len() != 0 {
 			t.Fatalf("executeCTL(%v)=%d stderr=%q", arguments, code, diagnostics.String())
 		}
 	}
-	if rollbackRole != "provisioner" || rollbackRelease != "retained-release" || recoveryRole != "provisioner" {
-		t.Fatalf("rollback=(%q,%q), recover=%q", rollbackRole, rollbackRelease, recoveryRole)
+	if rollbackRole != "provisioner" || rollbackRelease != "retained-release" || recoveryRole != "provisioner" || detachRole != "provisioner" {
+		t.Fatalf("rollback=(%q,%q), recover=%q, detach=%q", rollbackRole, rollbackRelease, recoveryRole, detachRole)
 	}
 }
 

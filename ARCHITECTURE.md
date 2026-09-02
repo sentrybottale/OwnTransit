@@ -174,6 +174,19 @@ outside the endpoint-isolation claim; the platform ownership, ACL, reboot,
 interruption and hostile-filesystem boundary must be exercised by each exact
 supported-platform release handoff.
 
+The native filesystem boundary is platform-specific. On macOS arm64, one
+persistent root-only `package-mutation.v1.lock` serializes client and
+provisioner apply, rollback, recovery, detach and public-entry publication. The
+provisioner release tree remains `root:wheel` mode `0750`; a distinct digest-matched
+`root:wheel` mode-`0755` copy is the only public provisioner executable. On
+Linux amd64 (x86_64 hardware), the provisioner package tree is mode `0755` behind an
+ordinary selector, so installation and every provisioner package operation
+require `fs.protected_hardlinks=1`. Only Linux has the authenticated legacy
+directory migration from mode `0750` to `0755`. A permanent root-only
+`package-supervisor/platform.v1.lock` covers each complete Linux installer or
+non-purging uninstaller integration window; service-role detach also retains
+the connector or relay supervisor lock through stop, disable and unlink.
+
 Initial request, guided approval, apply, signed floor/upgrade policy, exact
 rollback, interruption recovery and native package integration are part of the
 0.1.0 candidate implementation. An official stable handoff must qualify the

@@ -241,6 +241,55 @@ func (root *ReadOnlyRoot) ReadFile(name string, limit int64) ([]byte, error) {
 	return contents, nil
 }
 
+// ReadRootSymlink reads one exact root:root, single-link symbolic link through
+// the held publication directory. The containing root remains the authority:
+// symlink mode bits and ACLs are not portable security boundaries. The name is
+// descriptor-relative and both inode identity and directory policy are
+// rechecked around the read.
+func (root *ReadOnlyRoot) ReadRootSymlink(name string, limit int) (string, error) {
+	if err := validateComponent(name); err != nil {
+		return "", err
+	}
+	if limit <= 0 || int64(limit) > MaxReadBytes {
+		return "", fmt.Errorf("securefs: symlink read limit must be within 1..%d bytes", MaxReadBytes)
+	}
+	if root == nil {
+		return "", ErrReadOnlyClosed
+	}
+	root.mu.RLock()
+	defer root.mu.RUnlock()
+	if !root.open {
+		return "", ErrReadOnlyClosed
+	}
+	if err := requireReadOnlyCallerGroup(root.readerGID); err != nil {
+		return "", err
+	}
+	var before unix.Stat_t
+	if err := unix.Fstatat(root.fd, name, &before, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return "", fmt.Errorf("securefs: inspect root-owned symlink %q: %w", name, err)
+	}
+	if before.Mode&unix.S_IFMT != unix.S_IFLNK || before.Uid != 0 || before.Gid != 0 || before.Nlink != 1 || before.Size <= 0 || before.Size > int64(limit) {
+		return "", fmt.Errorf("securefs: root-owned symlink %q has invalid metadata", name)
+	}
+	buffer := make([]byte, limit+1)
+	length, err := unix.Readlinkat(root.fd, name, buffer)
+	if err != nil || length <= 0 || length > limit {
+		return "", fmt.Errorf("securefs: read root-owned symlink %q", name)
+	}
+	var after unix.Stat_t
+	if err := unix.Fstatat(root.fd, name, &after, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return "", fmt.Errorf("securefs: reinspect root-owned symlink %q: %w", name, err)
+	}
+	if before.Dev != after.Dev || before.Ino != after.Ino || before.Mode != after.Mode || before.Uid != after.Uid ||
+		before.Gid != after.Gid || before.Nlink != after.Nlink || before.Size != after.Size || int64(length) != after.Size {
+		return "", fmt.Errorf("securefs: root-owned symlink %q changed while being read", name)
+	}
+	if _, err := inspectReadOnlyDirectory(root.fd, root.ownerUID, root.readerGID); err != nil {
+		return "", fmt.Errorf("securefs: revalidate symlink root: %w", err)
+	}
+	return string(buffer[:length]), nil
+}
+
 type readOnlyPolicy struct {
 	ownerUID  uint32
 	readerGID uint32

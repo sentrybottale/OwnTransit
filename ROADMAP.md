@@ -149,9 +149,10 @@ evidence required per supported release**
 
 - Signature-verified Homebrew/source-installed macOS arm64 client. Developer ID
   packaging remains disabled and outside the v1 requirement.
-- Signed Linux amd64 client package with unprivileged per-user enrollment.
-- Signed Linux amd64 connector package with a dedicated locked service identity
-  and root-owned PID-1 system unit.
+- Signed Linux amd64 package for x86_64 hosts with unprivileged per-user
+  enrollment.
+- Signed Linux amd64 connector package for x86_64 hosts with a dedicated locked service
+  identity and root-owned PID-1 system unit.
 - Digest-addressed relay image with immutable credential-set mounts.
 - Preserve target-local apply, verify, authenticated rollback, interruption
   recovery and non-purging uninstall over durable locks, generation
@@ -172,6 +173,15 @@ evidence required per supported release**
   only durable inputs against the exact released packages.
 - Fixed root-owned no-shell ProxyCommand launcher and shell-injection tests. The
   installer never writes OpenSSH configuration.
+- Preserve the macOS arm64 provisioner's protected `root:wheel` mode-`0750`
+  package tree and distinct public mode-`0755` copy; do not replace that
+  boundary with a traversable package tree or public hard link.
+- Preserve one root-only macOS `package-mutation.v1.lock` across client and
+  provisioner apply, rollback, recovery, public-entry publication and durable
+  lifecycle-owned detach.
+- Require Linux `fs.protected_hardlinks=1` before every provisioner package
+  operation; only Linux may migrate its legacy provisioner package directories
+  from mode `0750` to `0755`.
 
 ## Phase 5 — release qualification and additional assurance
 

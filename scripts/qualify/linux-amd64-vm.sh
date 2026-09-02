@@ -126,6 +126,7 @@ check_host_boundary() {
   case "$(uname -m)" in x86_64|amd64) ;; *) fail "qualification requires amd64" ;; esac
   test "$(ps -p 1 -o comm= | tr -d '[:space:]')" = systemd || fail "PID 1 is not systemd"
   test -d /run/systemd/system || fail "systemd system manager is not operational"
+  test -f /proc/sys/fs/protected_hardlinks && test "$(cat /proc/sys/fs/protected_hardlinks)" = 1 || fail "fs.protected_hardlinks is not enabled"
   require_root_regular_protected "$marker" disposable-marker
   test "$(cat "$marker")" = OWNTRANSIT_DISPOSABLE_VM=1 || fail "disposable marker has the wrong content"
   boot_id=$(cat /proc/sys/kernel/random/boot_id)
@@ -133,11 +134,12 @@ check_host_boundary() {
 }
 
 require_commands() {
-  for command_name in awk cat chmod chown cmp cp date dirname file find getent grep id install ln mktemp mv ps readlink rm runuser sed sha256sum sleep ss stat strings systemctl systemd-analyze test touch tr uname wc; do
+  for command_name in awk cat chmod chown cmp cp date dirname file find flock getent grep id install ln mktemp mv ps readlink rm runuser sed sha256sum sleep ss stat strings systemctl systemd-analyze test touch tr true uname wc; do
     command -v "$command_name" >/dev/null 2>&1 || fail "required command is unavailable: $command_name"
   done
   test "$(command -v runuser)" = /usr/sbin/runuser || fail "runuser must be /usr/sbin/runuser"
-  for fixed_command in cat chmod chown cp mv rm test touch; do
+  test "$(command -v flock)" = /usr/bin/flock || fail "flock must be /usr/bin/flock"
+  for fixed_command in cat chmod chown cp flock mv rm test touch true; do
     test -x "/usr/bin/$fixed_command" || fail "$fixed_command must be available at /usr/bin/$fixed_command"
   done
 }
@@ -159,6 +161,13 @@ listed_digest() {
   value=$(awk -v wanted="$requested_path" '$2 == wanted { print $1 }' "$bundle/SHA256SUMS")
   valid_digest "$value" || fail "signed bundle is missing $requested_path"
   printf '%s\n' "$value"
+}
+
+build_input() {
+  input_name=$1
+  input_count=$(awk -F= -v wanted="$input_name" '$1 == wanted { count++ } END { print count + 0 }' "$bundle/BUILD-INPUTS")
+  test "$input_count" -eq 1 || fail "signed BUILD-INPUTS does not contain exactly one $input_name"
+  awk -F= -v wanted="$input_name" '$1 == wanted { print substr($0, length(wanted) + 2) }' "$bundle/BUILD-INPUTS"
 }
 
 check_bundle() {
@@ -186,10 +195,13 @@ check_bundle() {
     --signer "$signer" \
     --namespace owntransit-release-v1 >/dev/null
 
-  release_id=$(awk -F= '$1 == "release_id" { print $2 }' "$bundle/BUILD-INPUTS")
+  release_id=$(build_input release_id)
   valid_release_id "$release_id" || fail "signed BUILD-INPUTS has an invalid canonical release ID"
-  version=$(awk -F= '$1 == "version" { print $2 }' "$bundle/BUILD-INPUTS")
+  version=$(build_input version)
   safe_version "$version" || fail "signed BUILD-INPUTS has an unsafe version"
+  release_sequence=$(build_input release_sequence)
+  case "$release_sequence" in ''|*[!0-9]*|0|0*) fail "signed BUILD-INPUTS has a non-canonical release sequence" ;; esac
+  test "$release_sequence" -gt 0 || fail "signed BUILD-INPUTS release sequence must be positive"
   connector_digest=$(listed_digest artifacts/owntransit-connector-linux-amd64)
   lifecycle_digest=$(listed_digest artifacts/owntransitctl-linux-amd64)
   relay_digest=$(listed_digest artifacts/owntransit-relay-linux-amd64.oci.tar)
@@ -351,12 +363,32 @@ assert_service_running_without_listener() {
   fi
 }
 
+assert_platform_mutation_lock() {
+  mutation_root=/var/lib/owntransit/package-supervisor
+  mutation_lock="$mutation_root/platform.v1.lock"
+  test -d "$mutation_root" && test ! -L "$mutation_root" || fail "package-mutation root is not a regular directory"
+  test "$(stat -c %u "$mutation_root")" -eq 0 && test "$(stat -c %g "$mutation_root")" -eq 0 && test "$(stat -c %a "$mutation_root")" = 700 || fail "package-mutation root is not root:root mode 0700"
+  test -f "$mutation_lock" && test ! -L "$mutation_lock" || fail "platform package-mutation lock is not regular"
+  test "$(stat -c %u "$mutation_lock")" -eq 0 && test "$(stat -c %g "$mutation_lock")" -eq 0 && test "$(stat -c %a "$mutation_lock")" = 600 || fail "platform package-mutation lock is not root:root mode 0600"
+  test "$(stat -c %h "$mutation_lock")" -eq 1 && test "$(stat -c %s "$mutation_lock")" -eq 0 || fail "platform package-mutation lock is not empty and single-link"
+  /usr/bin/flock -n "$mutation_lock" /usr/bin/true || fail "platform package-mutation lock remained held without a live package operation"
+}
+
 extract_json_id() {
   summary_file=$1
   value=$(sed -n 's/.*"installation_id":"\([a-z2-7]*\)".*/\1/p' "$summary_file")
   case "$value" in *[!a-z2-7]*|'') fail "bootstrap summary has an invalid installation ID" ;; esac
   test "${#value}" -eq 52 || fail "bootstrap installation ID has the wrong length"
   printf '%s\n' "$value"
+}
+
+assert_status_release_sequence() {
+  status_json=$1
+  expected_sequence=$2
+  printf '%s\n' "$status_json" | grep -Fq '"active":true' || fail "connector lifecycle state is not active"
+  printf '%s\n' "$status_json" | grep -Eq "\"highest_release_sequence\":$expected_sequence([,}])" || fail "connector highest release sequence does not match the signed candidate"
+  printf '%s\n' "$status_json" | grep -Eq "\"active_release_sequence\":$expected_sequence([,}])" || fail "connector active release sequence does not match the signed candidate"
+  printf '%s\n' "$status_json" | grep -Eq "\"rollback_floors\":\{[^}]*\"release_sequence\":$expected_sequence([,}])" || fail "connector rollback floor does not match the signed candidate"
 }
 
 check_host_boundary
@@ -367,10 +399,13 @@ if test "$phase" = verify-after-reboot; then
   require_root_regular_protected "$phase_file" qualification-phase
   prepared_boot_id=$(awk -F= '$1 == "prepared_boot_id" { print $2 }' "$phase_file")
   recorded_release_id=$(awk -F= '$1 == "release_id" { print $2 }' "$phase_file")
+  recorded_release_sequence=$(awk -F= '$1 == "release_sequence" { print $2 }' "$phase_file")
   recorded_checksums=$(awk -F= '$1 == "checksums_sha256" { print $2 }' "$phase_file")
   recorded_connector=$(awk -F= '$1 == "connector_sha256" { print $2 }' "$phase_file")
   recorded_unit=$(awk -F= '$1 == "unit_sha256" { print $2 }' "$phase_file")
   valid_release_id "$recorded_release_id" || fail "recorded release ID is invalid"
+  case "$recorded_release_sequence" in ''|*[!0-9]*|0|0*) fail "recorded release sequence is invalid" ;; esac
+  test "$recorded_release_sequence" -gt 0 || fail "recorded release sequence must be positive"
   valid_digest "$recorded_checksums" || fail "recorded checksums digest is invalid"
   valid_digest "$recorded_connector" || fail "recorded connector digest is invalid"
   valid_digest "$recorded_unit" || fail "recorded unit digest is invalid"
@@ -384,6 +419,7 @@ if test "$phase" = verify-after-reboot; then
   assert_service_read_only_views no-root-mutation
   assert_service_hardening
   assert_service_running_without_listener
+  assert_platform_mutation_lock
   restart_count=$(systemctl_value NRestarts)
   case "$restart_count" in ''|*[!0-9]*) fail "service restart count is invalid" ;; esac
   test "$restart_count" -eq 0 || fail "connector restarted unexpectedly after boot"
@@ -392,11 +428,13 @@ if test "$phase" = verify-after-reboot; then
   test "$active_monotonic" -gt 0 || fail "service has no current-boot activation timestamp"
   installed_version_json=$(/usr/libexec/owntransit/roles/connector/current/owntransit-connector version)
   printf '%s\n' "$installed_version_json" | grep -Fq "\"release_id\":\"$recorded_release_id\"" || fail "installed release identity changed"
+  reboot_status_json=$(/usr/libexec/owntransit/roles/connector/current/owntransitctl status --state-root /var/lib/owntransit/connector/private)
+  assert_status_release_sequence "$reboot_status_json" "$recorded_release_sequence"
   verified_unix=$(date +%s)
   evidence="$qualification_root/reboot-evidence.json"
   test ! -e "$evidence" && test ! -L "$evidence" || fail "final evidence already exists"
-  printf '{"schema":"owntransit.qualify.linux-amd64-reboot.v1","result":"pass","platform":"linux","architecture":"amd64","release_id":"%s","checksums_sha256":"%s","connector_sha256":"%s","unit_sha256":"%s","prepared_boot_id":"%s","verified_boot_id":"%s","verified_unix":%s,"unit_enabled":true,"active_state":"active","sub_state":"running","main_pid":%s,"restart_count":%s,"cold_boot_verified":true,"connector_listener_count":0,"qualification_credentials":"throwaway-local","relay_endpoint":"loopback-refused"}\n' \
-    "$recorded_release_id" "$recorded_checksums" "$recorded_connector" "$recorded_unit" "$prepared_boot_id" "$boot_id" "$verified_unix" "$main_pid" "$restart_count" > "$evidence"
+  printf '{"schema":"owntransit.qualify.linux-amd64-reboot.v1","result":"pass","platform":"linux","architecture":"amd64","release_id":"%s","release_sequence":%s,"checksums_sha256":"%s","connector_sha256":"%s","unit_sha256":"%s","prepared_boot_id":"%s","verified_boot_id":"%s","verified_unix":%s,"unit_enabled":true,"active_state":"active","sub_state":"running","main_pid":%s,"restart_count":%s,"cold_boot_verified":true,"protected_hardlinks":true,"platform_mutation_lock":true,"connector_listener_count":0,"qualification_credentials":"throwaway-local","relay_endpoint":"loopback-refused"}\n' \
+    "$recorded_release_id" "$recorded_release_sequence" "$recorded_checksums" "$recorded_connector" "$recorded_unit" "$prepared_boot_id" "$boot_id" "$verified_unix" "$main_pid" "$restart_count" > "$evidence"
   chmod 0644 "$evidence"
   cat "$evidence"
   exit 0
@@ -405,8 +443,8 @@ fi
 check_bundle
 pristine_host
 if test "$phase" = preflight; then
-  printf '{"schema":"owntransit.qualify.linux-amd64-preflight.v1","result":"pass","platform":"linux","architecture":"amd64","pid1":"systemd","disposable_marker":true,"host_pristine":true,"release_id":"%s","checksums_sha256":"%s","connector_sha256":"%s","unit_sha256":"%s","network_required":false,"reboot_invoked":false}\n' \
-    "$release_id" "$checksums_sha256" "$connector_digest" "$unit_digest"
+  printf '{"schema":"owntransit.qualify.linux-amd64-preflight.v1","result":"pass","platform":"linux","architecture":"amd64","pid1":"systemd","disposable_marker":true,"host_pristine":true,"protected_hardlinks":true,"release_id":"%s","release_sequence":%s,"checksums_sha256":"%s","connector_sha256":"%s","unit_sha256":"%s","network_required":false,"reboot_invoked":false}\n' \
+    "$release_id" "$release_sequence" "$checksums_sha256" "$connector_digest" "$unit_digest"
   exit 0
 fi
 
@@ -461,7 +499,7 @@ done
   --state-root "$relay_parent/private" --rollback-anchor-root "$relay_parent/authority" \
   --runtime-root "$relay_parent/runtime" --runtime-config-root /runtime \
   --anchor-view-root "$relay_parent/anchor-view" --reader-gid "$connector_reader_gid" --role relay \
-  --release-id "$release_id" --release-sequence 1 --artifact-sha256 "$relay_digest" --os linux --arch amd64 \
+  --release-id "$release_id" --release-sequence "$release_sequence" --artifact-sha256 "$relay_digest" --os linux --arch amd64 \
   --outer-ca "$trust_root/outer-endpoint-ca-cert.pem" --inner-connector-ca "$trust_root/inner-connector-ca-cert.pem" \
   --inner-client-ca "$trust_root/inner-client-capability-ca-cert.pem" --deployment-signer "$trust_root/deployment-signing-public.pem" \
   > "$private_root/relay-bootstrap.json"
@@ -469,7 +507,7 @@ done
   --state-root "$client_parent/private" --rollback-anchor-root "$client_parent/authority" \
   --runtime-root "$client_parent/runtime" --runtime-config-root "$client_parent/runtime" \
   --anchor-view-root "$client_parent/anchor-view" --reader-gid "$connector_reader_gid" --role client \
-  --release-id "$release_id" --release-sequence 1 --artifact-sha256 "$client_digest" --os linux --arch amd64 \
+  --release-id "$release_id" --release-sequence "$release_sequence" --artifact-sha256 "$client_digest" --os linux --arch amd64 \
   --outer-ca "$trust_root/outer-endpoint-ca-cert.pem" --inner-connector-ca "$trust_root/inner-connector-ca-cert.pem" \
   --inner-client-ca "$trust_root/inner-client-capability-ca-cert.pem" --deployment-signer "$trust_root/deployment-signing-public.pem" \
   > "$private_root/client-bootstrap.json"
@@ -477,7 +515,7 @@ done
   --state-root /var/lib/owntransit/connector/private --rollback-anchor-root /var/lib/owntransit/connector/authority \
   --runtime-root /var/lib/owntransit/connector/runtime --runtime-config-root /var/lib/owntransit/connector/runtime \
   --anchor-view-root /var/lib/owntransit/connector/anchor-view --reader-gid "$connector_reader_gid" --role connector \
-  --release-id "$release_id" --release-sequence 1 --artifact-sha256 "$connector_digest" --os linux --arch amd64 \
+  --release-id "$release_id" --release-sequence "$release_sequence" --artifact-sha256 "$connector_digest" --os linux --arch amd64 \
   --outer-ca "$trust_root/outer-endpoint-ca-cert.pem" --inner-connector-ca "$trust_root/inner-connector-ca-cert.pem" \
   --inner-client-ca "$trust_root/inner-client-capability-ca-cert.pem" --deployment-signer "$trust_root/deployment-signing-public.pem" \
   --connector-target tcp4/127.0.0.1:22 > "$private_root/connector-bootstrap.json"
@@ -504,8 +542,9 @@ responses="$private_root/responses"
 /usr/libexec/owntransit/roles/connector/current/owntransitctl apply \
   --state-root /var/lib/owntransit/connector/private \
   --response "$responses/connector-response.otb" > "$private_root/connector-apply.json"
-/usr/libexec/owntransit/roles/connector/current/owntransitctl status \
-  --state-root /var/lib/owntransit/connector/private | grep -Fq '"active":true' || fail "connector lifecycle state is not active"
+connector_status_json=$(/usr/libexec/owntransit/roles/connector/current/owntransitctl status \
+  --state-root /var/lib/owntransit/connector/private)
+assert_status_release_sequence "$connector_status_json" "$release_sequence"
 /usr/libexec/owntransit/roles/connector/current/owntransitctl verify \
   --state-root /var/lib/owntransit/connector/private >/dev/null
 
@@ -520,6 +559,7 @@ trap - EXIT HUP INT TERM
 
 test "$(sha256sum /etc/systemd/system/owntransit-connector.service | awk '{print $1}')" = "$unit_digest" || fail "installed systemd unit digest mismatch"
 assert_service_hardening
+assert_platform_mutation_lock
 systemctl enable "$service_name" >/dev/null
 systemctl start "$service_name"
 attempt=0
@@ -538,6 +578,7 @@ phase_file="$qualification_root/phase"
 printf '%s\n' \
   'schema=owntransit.qualify.linux-amd64-phase.v1' \
   "release_id=$release_id" \
+  "release_sequence=$release_sequence" \
   "checksums_sha256=$checksums_sha256" \
   "connector_sha256=$connector_digest" \
   "unit_sha256=$unit_digest" \
@@ -546,8 +587,8 @@ printf '%s\n' \
   > "$phase_file"
 chmod 0600 "$phase_file"
 prepare_evidence="$qualification_root/prepare-evidence.json"
-printf '{"schema":"owntransit.qualify.linux-amd64-prepare.v1","result":"awaiting-reboot","platform":"linux","architecture":"amd64","release_id":"%s","checksums_sha256":"%s","connector_sha256":"%s","unit_sha256":"%s","prepared_boot_id":"%s","prepared_unix":%s,"unit_enabled":true,"active_state":"active","sub_state":"running","main_pid":%s,"restart_count":0,"connector_listener_count":0,"qualification_credentials":"throwaway-local","relay_endpoint":"loopback-refused","network_required":false,"reboot_invoked":false}\n' \
-  "$release_id" "$checksums_sha256" "$connector_digest" "$unit_digest" "$boot_id" "$prepared_unix" "$main_pid" > "$prepare_evidence"
+printf '{"schema":"owntransit.qualify.linux-amd64-prepare.v1","result":"awaiting-reboot","platform":"linux","architecture":"amd64","release_id":"%s","release_sequence":%s,"checksums_sha256":"%s","connector_sha256":"%s","unit_sha256":"%s","prepared_boot_id":"%s","prepared_unix":%s,"unit_enabled":true,"active_state":"active","sub_state":"running","main_pid":%s,"restart_count":0,"protected_hardlinks":true,"platform_mutation_lock":true,"connector_listener_count":0,"qualification_credentials":"throwaway-local","relay_endpoint":"loopback-refused","network_required":false,"reboot_invoked":false}\n' \
+  "$release_id" "$release_sequence" "$checksums_sha256" "$connector_digest" "$unit_digest" "$boot_id" "$prepared_unix" "$main_pid" > "$prepare_evidence"
 chmod 0644 "$prepare_evidence"
 cat "$prepare_evidence"
 printf '%s\n' 'NEXT: reboot this disposable VM, then run scripts/qualify/linux-amd64-vm.sh verify-after-reboot' >&2

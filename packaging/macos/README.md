@@ -1,6 +1,7 @@
-# macOS release lanes
+# macOS arm64 release lanes
 
-OwnTransit has two deliberately separate macOS distribution lanes.
+OwnTransit has two deliberately separate Apple-silicon (`arm64`) macOS
+distribution lanes. Intel macOS is outside the 0.1.0 support matrix.
 
 ## No-fee source/Homebrew lane
 
@@ -54,7 +55,7 @@ a substitute claim that Apple notarized the software.
 Authentication of the free build does not activate a client or authorize a
 user-writable Cellar or source-tree executable to run with privilege. The
 separate signed system handoff copies independently authenticated artifacts
-into new root:wheel inodes beneath `/Library/OwnTransit`;
+into fresh root-owned, role-specific inodes beneath `/Library/OwnTransit`;
 `scripts/release/install-macos.sh` installs the protected lifecycle executable
 at `/Library/OwnTransit/roles/client/current/owntransitctl` mode `0700`. Guided
 setup may invoke only that fixed system copy through its reviewed privileged
@@ -88,17 +89,58 @@ The CGO-free Darwin descriptor path now rejects every extended ACL and fails
 closed when the filesystem or syscall ABI cannot prove that result. The client
 installer also uses a zero-member reader group plus a fixed, authenticated
 setgid launcher; it never gives the selected user's ordinary processes reader
-membership. See `CLIENT_READER_BOUNDARY.md` for the exact UID/GeneratedUID and
-immutable-client binding.
+membership. The signed release launcher remains inside a
+`root:_owntransit` mode-`0750` release directory. The public ProxyCommand path
+is a distinct single-link `root:_owntransit` mode-`2751` regular inode with the
+same authenticated digest—not the historical selector symlink and not a hard
+link into the protected tree. Publication uses a fixed `root:wheel` mode-`0700`
+private staging directory, ownership-before-setgid ordering, fsync and atomic
+rename. A permanent empty `root:wheel` mode-`0600`
+`package-mutation.v1.lock` serializes client and provisioner package selection,
+rollback, recovery, detach and public-frontend publication; it is the only
+permitted steady-state staging entry. Before protected reads the launcher
+authenticates its exact raw public invocation path, so a hard-link alias
+retained by an ordinary user cannot gain the reader GID. See
+`CLIENT_READER_BOUNDARY.md` for the exact UID/GeneratedUID, current-selector
+and immutable-client binding.
+
+After package selection the installer runs `package-recover` through the newly
+selected authenticated lifecycle copy. Recovery authenticates the running
+lifecycle even for an already-complete journal, so an interrupted finalizer or
+upgrade from an exact historical symlink cannot silently leave a mixed
+selector/public-entry state.
+
+The macOS provisioner package tree remains non-user-traversable:
+`root:wheel` mode `0750`. Finalization copies its authenticated executable to
+the distinct public `/Library/OwnTransit/bin/owntransit-provision` inode as
+`root:wheel` mode `0755`; the public and protected files must have the same
+digest and different inode identities. The copy uses its own deterministic
+root-only stage beneath the same mutation lock. Only the exact historical
+provisioner selector symlink is accepted as a migration input. macOS performs
+no provisioner-directory chmod migration.
+
+Ordinary macOS uninstall asks the selected authenticated lifecycle binary to
+run `package-detach` while holding that same lock. Client detach first removes
+setgid from the authenticated launcher inode, which deactivates retained hard
+links, then durably unlinks the canonical launcher and public client frontend.
+It resumes safely from the authenticated mode-`0751` launcher residue or from
+already-absent names. Provisioner detach similarly removes only its exact
+public copy. Both roles preserve protected releases, selectors, rollback
+floors, identities, credentials and recovery state.
 
 Every official 0.1.0 handoff must exercise the ACL trampoline and setgid
 launcher after lifecycle activation on a clean Apple-silicon Mac and carry the
 result in its exact qualification record. That evidence must prove
 ordinary-process denial for actual runtime and anchor bytes, correct setgid
-propagation, wrong-UID rejection, Directory Services group/GeneratedUID drift
-rejection, debugger/task-port and core-dump isolation, and restart survival.
-Unsupported filesystems or execution policies remain fail-closed stops, not
-reasons to weaken ownership, ACL, or identity checks.
+propagation through the distinct public inode, equal launcher digests and
+different inode identities, denial of direct traversal to the protected
+release launcher, the exact persistent root-only mutation lock with no staging
+residue, canonical-path execution and retained-hard-link rejection, wrong-UID
+rejection, Directory Services group/GeneratedUID drift rejection,
+debugger/task-port and core-dump isolation, authenticated current-selector validation, inherited
+descriptor closure and restart survival. Unsupported filesystems or execution
+policies remain fail-closed stops, not reasons to weaken ownership, ACL, or
+identity checks.
 
 The native staging `SHA256SUMS` signature uses the separate
 `owntransit-release-v1` SSHSIG namespace. Keep its detached signature outside

@@ -51,6 +51,22 @@ type packageLifecycleSummary struct {
 	ThirdPartyPath  string `json:"third_party_licenses_path"`
 }
 
+type packageDetachSummary struct {
+	Schema    string `json:"schema"`
+	Action    string `json:"action"`
+	Role      string `json:"role"`
+	ReleaseID string `json:"release_id"`
+	Detached  bool   `json:"detached"`
+}
+
+type nativePackageMutationGuard interface {
+	Close() error
+}
+
+type noOpPackageMutationGuard struct{}
+
+func (noOpPackageMutationGuard) Close() error { return nil }
+
 func parsePackageApplyArguments(arguments []string, diagnostics io.Writer) (packageApplyOptions, int, bool) {
 	flags := flag.NewFlagSet("owntransitctl package-apply", flag.ContinueOnError)
 	flags.SetOutput(diagnostics)
@@ -160,6 +176,11 @@ func applyPackageRelease(options packageApplyOptions) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse independently trusted policy public key: %w", err)
 	}
+	guard, err := acquireNativePackageMutationGuard(options.role)
+	if err != nil {
+		return nil, err
+	}
+	defer guard.Close()
 	manager, err := openNativePackageLifecycle(options.role)
 	if err != nil {
 		return nil, err
@@ -182,6 +203,11 @@ func applyPackageRelease(options packageApplyOptions) ([]byte, error) {
 }
 
 func rollbackPackageRelease(options packageRollbackOptions) ([]byte, error) {
+	guard, err := acquireNativePackageMutationGuard(options.role)
+	if err != nil {
+		return nil, err
+	}
+	defer guard.Close()
 	manager, err := openNativePackageLifecycle(options.role)
 	if err != nil {
 		return nil, err
@@ -201,6 +227,11 @@ func rollbackPackageRelease(options packageRollbackOptions) ([]byte, error) {
 }
 
 func recoverPackageRelease(options packageStateOptions) ([]byte, error) {
+	guard, err := acquireNativePackageMutationGuard(options.role)
+	if err != nil {
+		return nil, err
+	}
+	defer guard.Close()
 	manager, err := openNativePackageLifecycle(options.role)
 	if err != nil {
 		return nil, err
@@ -214,6 +245,34 @@ func recoverPackageRelease(options packageStateOptions) ([]byte, error) {
 		return nil, fmt.Errorf("finalize selected package runtime: %w", err)
 	}
 	return encodePackageResult("recover", options.role, result)
+}
+
+func detachPackageRelease(options packageStateOptions) ([]byte, error) {
+	guard, err := acquireNativePackageMutationGuard(options.role)
+	if err != nil {
+		return nil, err
+	}
+	defer guard.Close()
+	manager, err := openNativePackageLifecycle(options.role)
+	if err != nil {
+		return nil, err
+	}
+	defer manager.Close()
+	var runtimeIdentity packagetxn.RuntimeIdentity
+	err = manager.WithCurrentRuntimeIdentity(func(identity packagetxn.RuntimeIdentity) error {
+		if identity.Role != options.role || identity.ReleaseID == "" {
+			return errors.New("authenticated current package identity differs from the detach role")
+		}
+		runtimeIdentity = identity
+		return detachNativePackageRuntime(options.role, identity)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return encodePublic(packageDetachSummary{
+		Schema: "owntransit.ctl.package-detach.v1", Action: "detach", Role: options.role,
+		ReleaseID: runtimeIdentity.ReleaseID, Detached: true,
+	})
 }
 
 func openNativePackageLifecycle(role string) (*packagetxn.Manager, error) {

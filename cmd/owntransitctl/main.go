@@ -29,6 +29,7 @@ type ctlCommands struct {
 	packageApply    func(packageApplyOptions) ([]byte, error)
 	packageRollback func(packageRollbackOptions) ([]byte, error)
 	packageRecover  func(packageStateOptions) ([]byte, error)
+	packageDetach   func(packageStateOptions) ([]byte, error)
 	setupStage      func() ([]byte, error)
 	setupStatus     func() ([]byte, error)
 	setupConfirm    func() ([]byte, error)
@@ -79,6 +80,7 @@ func productionCTLCommands() ctlCommands {
 		packageApply:    applyPackageRelease,
 		packageRollback: rollbackPackageRelease,
 		packageRecover:  recoverPackageRelease,
+		packageDetach:   detachPackageRelease,
 		setupStage:      stageClientSetup,
 		setupStatus:     statusClientSetup,
 		setupConfirm:    confirmClientSetup,
@@ -171,12 +173,16 @@ func executeCTL(arguments []string, output, diagnostics io.Writer, commands ctlC
 			return code
 		}
 		result, err = commands.packageRollback(options)
-	case "package-recover":
+	case "package-recover", "package-detach":
 		options, code, ok := parsePackageStateArguments(command, commandArguments, diagnostics)
 		if !ok {
 			return code
 		}
-		result, err = commands.packageRecover(options)
+		if command == "package-recover" {
+			result, err = commands.packageRecover(options)
+		} else {
+			result, err = commands.packageDetach(options)
+		}
 	case "setup-stage", "setup-status", "setup-confirm", "setup-accept", "setup-resume", "setup-ready", "setup-clean", "setup-cancel":
 		if len(commandArguments) != 0 {
 			fmt.Fprintf(diagnostics, "owntransitctl %s: unexpected argument\n", command)

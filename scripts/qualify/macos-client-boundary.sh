@@ -74,7 +74,7 @@ valid_generated_uid() {
 valid_positive_id "$reader_gid" || fail "--reader-gid must be a positive canonical decimal GID"
 test "$reader_gid" -ge 5000 && test "$reader_gid" -le 59999 || fail "--reader-gid is outside the installer range"
 
-for command_name in awk cat dscl dsmemberutil find grep id ls mktemp plutil readlink rm sed shasum stat sudo touch tr uname wc; do
+for command_name in awk cat dscl dsmemberutil find grep id ln ls mktemp plutil readlink rm sed shasum stat sudo touch tr uname wc; do
   command -v "$command_name" >/dev/null 2>&1 || fail "required command is unavailable: $command_name"
 done
 
@@ -85,7 +85,11 @@ macos_mode() {
 }
 
 workspace=$(mktemp -d /var/tmp/owntransit-macos-qualify.XXXXXX) || fail "cannot create qualification workspace"
-cleanup() { rm -rf -- "$workspace"; }
+alias_workspace=
+cleanup() {
+  test -z "$alias_workspace" || rm -rf -- "$alias_workspace"
+  rm -rf -- "$workspace"
+}
 trap cleanup EXIT HUP INT TERM
 test "$(stat -f %u "$workspace")" -eq 0 && test "$(stat -f %g "$workspace")" -eq 0 && test "$(macos_mode "$workspace")" = 700 || fail "qualification workspace is not root:wheel 0700"
 
@@ -199,10 +203,13 @@ identity_directory="$install_root/identity"
 receipt="$identity_directory/client-reader.v1"
 release_directory="$release_parent/$release_id"
 client_launcher="$release_directory/owntransit"
+public_launcher="$bin_directory/owntransit"
 client_executable="$release_directory/owntransit-real"
 client_frontend="$bin_directory/owntransit-cli"
 lifecycle_executable="$release_directory/owntransitctl"
 launcher_auth_directory="$install_root/launcher-auth"
+launcher_stage_directory="$install_root/launcher-stage"
+mutation_lock="$launcher_stage_directory/package-mutation.v1.lock"
 launcher_binding="$launcher_auth_directory/client.v1"
 runtime_directory="$install_root/client/runtime"
 runtime_file="$runtime_directory/runtime.json"
@@ -216,6 +223,7 @@ require_root_reader_directory "$role_root" 750
 require_root_reader_directory "$release_parent" 750
 require_root_wheel_directory "$bin_directory" 755
 require_root_wheel_directory "$identity_directory" 700
+require_root_wheel_directory "$launcher_stage_directory" 700
 require_root_reader_directory "$release_directory" 750
 test -L "$role_root/current" && test "$(readlink "$role_root/current")" = "releases/$release_id" || fail "authenticated client selector identifies another release"
 
@@ -320,6 +328,12 @@ test -f "$client_launcher" && test ! -L "$client_launcher" || fail "client launc
 test "$(stat -f %u "$client_launcher")" -eq 0 && test "$(stat -f %g "$client_launcher")" = "$reader_gid" && test "$(macos_mode "$client_launcher")" = 2751 || fail "client launcher is not root:reader setgid 2751"
 test "$(stat -f %l "$client_launcher")" -eq 1 || fail "client launcher has multiple hard links"
 require_no_extended_acl "$client_launcher"
+test -f "$public_launcher" && test ! -L "$public_launcher" || fail "public client launcher is absent or not regular"
+test "$(stat -f %u "$public_launcher")" -eq 0 && test "$(stat -f %g "$public_launcher")" = "$reader_gid" && test "$(macos_mode "$public_launcher")" = 2751 || fail "public client launcher is not root:reader setgid 2751"
+test "$(stat -f %l "$public_launcher")" -eq 1 || fail "public client launcher has multiple hard links"
+require_no_extended_acl "$public_launcher"
+test "$(sha256_file "$public_launcher")" = "$(sha256_file "$client_launcher")" || fail "public and release launchers differ"
+test "$(stat -f '%d:%i' "$public_launcher")" != "$(stat -f '%d:%i' "$client_launcher")" || fail "public launcher is a hard link to the release launcher"
 test -f "$client_executable" && test ! -L "$client_executable" || fail "real client is absent or not regular"
 test "$(stat -f %u "$client_executable")" -eq 0 && test "$(stat -f %g "$client_executable")" = "$reader_gid" && test "$(macos_mode "$client_executable")" = 750 || fail "real client is not root:reader 0750"
 test "$(stat -f %l "$client_executable")" -eq 1 || fail "real client has multiple hard links"
@@ -343,17 +357,23 @@ for notice in LICENSE THIRD_PARTY_LICENSES.txt; do
   test "$(stat -f %u "$release_directory/$notice")" -eq 0 && test "$(stat -f %g "$release_directory/$notice")" -eq 0 && test "$(macos_mode "$release_directory/$notice")" = 644 || fail "installed license notice is not root:wheel 0644: $notice"
   require_no_extended_acl "$release_directory/$notice"
 done
-test -L "$bin_directory/owntransit" && test "$(readlink "$bin_directory/owntransit")" = "../roles/client/current/owntransit" || fail "client launcher does not select the fixed authenticated current path"
+test "$(ls -A "$launcher_stage_directory")" = package-mutation.v1.lock || fail "private launcher stage contains missing or unexpected transaction state"
+test -f "$mutation_lock" && test ! -L "$mutation_lock" || fail "package-mutation lock is absent or not regular"
+test "$(stat -f %u "$mutation_lock")" -eq 0 && test "$(stat -f %g "$mutation_lock")" -eq 0 && test "$(macos_mode "$mutation_lock")" = 600 || fail "package-mutation lock is not root:wheel 0600"
+test "$(stat -f %l "$mutation_lock")" -eq 1 && test "$(stat -f %z "$mutation_lock")" -eq 0 || fail "package-mutation lock metadata is invalid"
+require_no_extended_acl "$mutation_lock"
 setgid_files="$workspace/setgid-files"
 find "$install_root" -type f -perm -2000 -print > "$setgid_files"
 test -s "$setgid_files" || fail "installation root has no authenticated setgid launcher"
 while IFS= read -r setgid_file; do
-  case "$setgid_file" in
-    "$release_parent/"*/owntransit) ;;
-    *) fail "installation root contains an unexpected setgid file: $setgid_file" ;;
+	case "$setgid_file" in
+		"$release_parent/"*/owntransit) ;;
+		"$public_launcher") ;;
+		*) fail "installation root contains an unexpected setgid file: $setgid_file" ;;
   esac
 done < "$setgid_files"
 grep -Fqx "$client_launcher" "$setgid_files" || fail "current authenticated client launcher is not setgid"
+grep -Fqx "$public_launcher" "$setgid_files" || fail "public authenticated client launcher is not setgid"
 test -z "$(find "$install_root" -type f -perm -4000 -print)" || fail "installation root contains a setuid file"
 
 run_as_uid() {
@@ -362,21 +382,38 @@ run_as_uid() {
   /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin LC_ALL=C /usr/bin/sudo -n -u "#$probe_uid" -- "$@"
 }
 
+alias_workspace=$(run_as_uid "$client_uid" /usr/bin/mktemp -d /var/tmp/owntransit-launch-alias.XXXXXX) || fail "target user cannot create hard-link qualification workspace"
+case "$alias_workspace" in /var/tmp/owntransit-launch-alias.*) ;; *) fail "hard-link qualification workspace path is unexpected" ;; esac
+test -d "$alias_workspace" && test ! -L "$alias_workspace" || fail "hard-link qualification workspace is invalid"
+test "$(stat -f %u "$alias_workspace")" = "$client_uid" && test "$(macos_mode "$alias_workspace")" = 700 || fail "hard-link qualification workspace ownership or mode is invalid"
+retained_launcher="$alias_workspace/retained-launcher"
+run_as_uid "$client_uid" /bin/ln "$public_launcher" "$retained_launcher" >/dev/null 2>&1 || fail "ordinary target user could not reproduce the Darwin launcher hard-link condition"
+test "$(stat -f '%d:%i' "$retained_launcher")" = "$(stat -f '%d:%i' "$public_launcher")" || fail "hard-link qualification did not retain the public launcher inode"
+run_as_uid "$client_uid" "$public_launcher" --qualify-reader-gid >/dev/null 2>&1 || fail "canonical launcher was denied solely because an alias existed"
+if run_as_uid "$client_uid" "$retained_launcher" --qualify-reader-gid >/dev/null 2>&1; then
+  fail "retained launcher hard-link alias acquired reader authority"
+fi
+run_as_uid "$client_uid" /bin/rm -f -- "$retained_launcher" || fail "target user could not remove its launcher hard-link probe"
+test ! -e "$retained_launcher" && test ! -L "$retained_launcher" || fail "launcher hard-link qualification residue remains"
+test "$(stat -f %l "$public_launcher")" -eq 1 || fail "public launcher did not return to a single-link steady state"
+
 test "$(run_as_uid "$client_uid" /usr/bin/id -u 2>/dev/null)" = "$client_uid" || fail "target-user control command ran under the wrong UID"
 for protected_file in "$launcher_binding" "$runtime_file" "$anchor_file"; do
   if run_as_uid "$client_uid" /bin/test -r "$protected_file"; then fail "ordinary target-user process can read protected reader file: $protected_file"; fi
   if run_as_uid "$client_uid" /bin/cat "$protected_file" >/dev/null 2>&1; then fail "ordinary target-user process read protected bytes: $protected_file"; fi
 done
-if run_as_uid "$client_uid" /bin/test -r "$client_launcher"; then fail "target user can read the setgid launcher"; fi
-run_as_uid "$client_uid" /bin/test -x "$client_launcher" || fail "target user cannot execute the setgid launcher"
+if run_as_uid "$client_uid" /bin/test -r "$public_launcher"; then fail "target user can read the public setgid launcher"; fi
+run_as_uid "$client_uid" /bin/test -x "$public_launcher" || fail "target user cannot execute the public setgid launcher"
+if run_as_uid "$client_uid" /bin/test -x "$client_launcher"; then fail "target user can directly execute the protected release launcher"; fi
 if run_as_uid "$client_uid" /bin/test -r "$client_executable"; then fail "ordinary target-user process can read the group-protected real client"; fi
 if run_as_uid "$client_uid" /bin/test -x "$client_executable"; then fail "ordinary target-user process can execute the group-protected real client"; fi
 run_as_uid "$client_uid" "$client_frontend" version >/dev/null 2>&1 || fail "ordinary target user cannot execute the normal client frontend"
 if run_as_uid "$client_uid" "$client_frontend" proxy >/dev/null 2>&1; then fail "normal client frontend exposed the protected proxy command"; fi
-for immutable_path in "$release_directory" "$client_launcher" "$client_executable" "$client_frontend" "$launcher_auth_directory" "$runtime_directory" "$anchor_directory"; do
+for immutable_path in "$release_directory" "$client_launcher" "$public_launcher" "$client_executable" "$client_frontend" "$launcher_auth_directory" "$runtime_directory" "$anchor_directory"; do
   if run_as_uid "$client_uid" /bin/test -w "$immutable_path"; then fail "target user can mutate protected installed path: $immutable_path"; fi
 done
 launcher_digest_before=$(sha256_file "$client_launcher")
+public_launcher_digest_before=$(sha256_file "$public_launcher")
 client_digest_before=$(sha256_file "$client_executable")
 frontend_digest_before=$(sha256_file "$client_frontend")
 swap_probe="$release_directory/.owntransit-swap-probe"
@@ -386,11 +423,11 @@ if run_as_uid "$client_uid" /usr/bin/touch "$swap_probe" >/dev/null 2>&1; then
   fail "target user can create a replacement inode in the release directory"
 fi
 test ! -e "$swap_probe" && test ! -L "$swap_probe" || fail "failed swap probe left an installed-tree entry"
-test "$(sha256_file "$client_launcher")" = "$launcher_digest_before" && test "$(sha256_file "$client_executable")" = "$client_digest_before" && test "$(sha256_file "$client_frontend")" = "$frontend_digest_before" || fail "installed client, frontend, or launcher changed during swap probes"
+test "$(sha256_file "$client_launcher")" = "$launcher_digest_before" && test "$(sha256_file "$public_launcher")" = "$public_launcher_digest_before" && test "$(sha256_file "$client_executable")" = "$client_digest_before" && test "$(sha256_file "$client_frontend")" = "$frontend_digest_before" || fail "installed client, frontend, or launcher changed during swap probes"
 if run_as_uid "$client_uid" "$client_executable" verify-reader-gid "$reader_gid" >/dev/null 2>&1; then fail "direct real-client execution acquired reader authority"; fi
-run_as_uid "$client_uid" "$client_launcher" --qualify-reader-gid >/dev/null 2>&1 || fail "launcher did not grant the exact reader EGID to the bound UID"
+run_as_uid "$client_uid" "$public_launcher" --qualify-reader-gid >/dev/null 2>&1 || fail "launcher did not grant the exact reader EGID to the bound UID"
 for rejected_argument in proxy --config=/var/tmp/attacker --runtime-root=/var/tmp/attacker; do
-  if run_as_uid "$client_uid" "$client_launcher" "$rejected_argument" >/dev/null 2>&1; then fail "launcher accepted caller-selected authority: $rejected_argument"; fi
+  if run_as_uid "$client_uid" "$public_launcher" "$rejected_argument" >/dev/null 2>&1; then fail "launcher accepted caller-selected authority: $rejected_argument"; fi
 done
 
 unrelated_user=
@@ -418,9 +455,9 @@ printf '%s\n' "$unrelated_group_ids" | awk -v wanted="$reader_gid" '{ for (i = 1
 for protected_file in "$launcher_binding" "$runtime_file" "$anchor_file"; do
   if run_as_uid "$unrelated_uid" /bin/test -r "$protected_file"; then fail "unrelated user can read protected reader file: $protected_file"; fi
 done
-if run_as_uid "$unrelated_uid" /bin/test -r "$client_launcher"; then fail "unrelated user can read the setgid launcher"; fi
-run_as_uid "$unrelated_uid" /bin/test -x "$client_launcher" || fail "launcher cannot perform its internal wrong-UID rejection"
-if run_as_uid "$unrelated_uid" "$client_launcher" --qualify-reader-gid >/dev/null 2>&1; then fail "wrong real UID passed launcher authorization"; fi
+if run_as_uid "$unrelated_uid" /bin/test -r "$public_launcher"; then fail "unrelated user can read the public setgid launcher"; fi
+run_as_uid "$unrelated_uid" /bin/test -x "$public_launcher" || fail "launcher cannot perform its internal wrong-UID rejection"
+if run_as_uid "$unrelated_uid" "$public_launcher" --qualify-reader-gid >/dev/null 2>&1; then fail "wrong real UID passed launcher authorization"; fi
 if run_as_uid "$unrelated_uid" "$client_executable" verify-reader-gid "$reader_gid" >/dev/null 2>&1; then fail "unrelated direct process acquired the reader EGID"; fi
 
 trap - EXIT HUP INT TERM

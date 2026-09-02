@@ -16,6 +16,7 @@ func TestReadOnlyRootMethodSetIsNonMutating(t *testing.T) {
 		"Metadata":           true,
 		"OpenDir":            true,
 		"ReadFile":           true,
+		"ReadRootSymlink":    true,
 		"Recheck":            true,
 		"TrySharedLock":      true,
 		"ValidateExactFiles": true,
@@ -171,6 +172,9 @@ func TestReadOnlyRootClosedErrors(t *testing.T) {
 	}
 	if _, err := root.ReadFile("file", 1); !errors.Is(err, ErrReadOnlyClosed) {
 		t.Fatalf("nil ReadFile = %v, want ErrReadOnlyClosed", err)
+	}
+	if _, err := root.ReadRootSymlink("current", 64); !errors.Is(err, ErrReadOnlyClosed) {
+		t.Fatalf("nil ReadRootSymlink = %v, want ErrReadOnlyClosed", err)
 	}
 	if err := root.Recheck(); !errors.Is(err, ErrReadOnlyClosed) {
 		t.Fatalf("nil Recheck = %v, want ErrReadOnlyClosed", err)

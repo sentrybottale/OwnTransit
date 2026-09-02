@@ -27,7 +27,7 @@ import (
 
 func TestInitAuthorityCreatesOneRouteScopedAuthorityWithoutEndpointKeys(t *testing.T) {
 	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
-	directory := filepath.Join(t.TempDir(), "authority")
+	directory := filepath.Join(mustCanonicalTempDir(t), "authority")
 	summaryBytes, err := initAuthority(initAuthorityOptions{outputDir: directory, now: now})
 	if err != nil {
 		t.Fatal(err)
@@ -152,7 +152,7 @@ func TestInitAuthorityCreatesOneRouteScopedAuthorityWithoutEndpointKeys(t *testi
 
 func TestInitAuthorityRefusesExistingOrSymlinkOutput(t *testing.T) {
 	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
-	parent := t.TempDir()
+	parent := mustCanonicalTempDir(t)
 	existing := filepath.Join(parent, "existing")
 	if err := os.Mkdir(existing, 0o700); err != nil {
 		t.Fatal(err)
@@ -523,7 +523,7 @@ func TestApproveInitialRouteRejectsSymlinkedSignerBeforeCreatingOutput(t *testin
 func TestApproveInitialRouteRejectsIssuerScopedToAnotherRoute(t *testing.T) {
 	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
 	fixture := newApprovalFixture(t, now)
-	otherDirectory := filepath.Join(t.TempDir(), "other-authority")
+	otherDirectory := filepath.Join(mustCanonicalTempDir(t), "other-authority")
 	if _, err := initAuthority(initAuthorityOptions{outputDir: otherDirectory, now: now}); err != nil {
 		t.Fatal(err)
 	}
@@ -559,7 +559,7 @@ func TestApproveInitialRouteRefusesExistingOutputWithoutChangingIt(t *testing.T)
 func TestOfflineLifecycleSigningIsStrictAtomicAndContainsNoPrivateMaterial(t *testing.T) {
 	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
 	fixture := newLifecycleSigningFixture(t, now)
-	parent := t.TempDir()
+	parent := mustCanonicalTempDir(t)
 	keyPath := filepath.Join(parent, "deployment-key.pem")
 	if err := os.WriteFile(keyPath, fixture.signer.PrivatePEM, 0o600); err != nil {
 		t.Fatal(err)
@@ -639,7 +639,7 @@ func TestOfflineLifecycleSigningIsStrictAtomicAndContainsNoPrivateMaterial(t *te
 func TestOfflineLifecycleSigningRejectsUnknownFieldsLooseKeysAndSymlinks(t *testing.T) {
 	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
 	fixture := newLifecycleSigningFixture(t, now)
-	parent := t.TempDir()
+	parent := mustCanonicalTempDir(t)
 	keyPath := filepath.Join(parent, "deployment-key.pem")
 	if err := os.WriteFile(keyPath, fixture.signer.PrivatePEM, 0o644); err != nil {
 		t.Fatal(err)
@@ -800,13 +800,22 @@ type approvalFixture struct {
 	client           enrollment.PendingMaterial
 }
 
+func mustCanonicalTempDir(t *testing.T) string {
+	t.Helper()
+	directory, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve temporary directory: %v", err)
+	}
+	return directory
+}
+
 func newApprovalFixture(t *testing.T, now time.Time) approvalFixture {
 	return newApprovalFixtureAtSequence(t, now, 1)
 }
 
 func newApprovalFixtureAtSequence(t *testing.T, now time.Time, sequence uint64) approvalFixture {
 	t.Helper()
-	parent := t.TempDir()
+	parent := mustCanonicalTempDir(t)
 	authorityDir := filepath.Join(parent, "authority")
 	authorityBytes, err := initAuthority(initAuthorityOptions{outputDir: authorityDir, now: now})
 	if err != nil {

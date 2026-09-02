@@ -1,9 +1,10 @@
 # Install OwnTransit
 
 > [!WARNING]
-> OwnTransit 0.1.0 is currently a candidate for Apple-silicon macOS and Linux
-> amd64, not an official stable publication. The repository can build a signed,
-> installable candidate handoff, but use it only for qualification unless its
+> OwnTransit 0.1.0 is currently a candidate for Apple-silicon macOS (`arm64`)
+> and 64-bit x86 Linux (`amd64`/`x86_64`), not an official stable publication.
+> Intel macOS is outside the 0.1.0 support matrix. The repository can build a
+> signed, installable candidate handoff, but use it only for qualification unless its
 > exact signed qualification record is independently verified and reports every
 > hard release gate as passed. A Git checkout, unsigned local build, or checksum
 > downloaded beside an archive is not an authenticated package. Independent
@@ -70,9 +71,9 @@ authenticating the handoff trust and its signed outer `SHA256SUMS`, copy and
 extract it into the release instructions' protected root-owned location. On
 macOS the handoff supports the `client` and `provisioner` roles.
 
-On Linux amd64, the authenticated native handoff supports `client`,
-`connector`, `relay`, and `provisioner`. Both platforms use the same short
-entry point:
+On 64-bit x86 Linux, the authenticated `linux-amd64` native handoff supports
+`client`, `connector`, `relay`, and `provisioner`. Both platforms use the same
+short entry point:
 
 ```sh
 sudo /ABSOLUTE/NATIVE/packaging/scripts/install.sh --bundle /ABSOLUTE/NATIVE --assets /ABSOLUTE/assets --trust /ABSOLUTE/trust --role client --client-user LOCAL_USER
@@ -88,6 +89,12 @@ selected artifact hashes from those authenticated records, and then executes
 the fail-closed platform installer. It does not decide that the supplied trust
 directory is trustworthy: the release instructions must identify those keys
 through an independent channel first.
+
+The Linux provisioner role additionally requires the host kernel setting
+`fs.protected_hardlinks=1`; installation and every later provisioner package
+operation fail closed otherwise. On macOS, the protected provisioner release
+tree stays mode `0750` and the installer publishes a distinct mode-`0755`
+public copy—there is no directory-permission migration to perform manually.
 
 The protected staging rule is intentional. Do not run any installer directly
 from a user-writable checkout, download, or extraction directory, and do not

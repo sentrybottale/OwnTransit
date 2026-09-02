@@ -70,8 +70,13 @@ require_text scripts/tests/sign-candidate.sh 'chmod 1644 "$bundle/LICENSE"'
 require_text scripts/tests/qualification-record.sh 'chmod 1600 "$workspace/keys/distribution"'
 require_text scripts/release/install-macos.sh '"$lifecycle_runner" package-apply'
 require_text scripts/release/install-macos.sh 'roles_root="$install_root/roles"'
-require_text scripts/release/install-macos.sh 'ensure_exact_symlink "$bin_directory/owntransit" "../roles/client/current/owntransit"'
-require_text scripts/release/install-macos.sh 'ensure_exact_symlink "$bin_directory/owntransit-provision" "../roles/provisioner/current/owntransit-provision"'
+require_text cmd/owntransitctl/package_finalize_darwin.go 'publishDarwinProvisionerFrontend(result.Runtime)'
+if grep -Fq 'ensure_exact_symlink "$bin_directory/owntransit-provision"' scripts/release/install-macos.sh; then
+  fail 'macOS provisioner frontend must be a distinct public copy, not a protected-tree symlink'
+fi
+if grep -Fq 'ensure_exact_symlink "$bin_directory/owntransit"' scripts/release/install-macos.sh; then
+  fail 'macOS client public launcher must be a distinct regular inode, not a selector symlink'
+fi
 require_text scripts/release/install-macos.sh 'ensure_root_directory /private/var/db/OwnTransit/package-rollback 700'
 require_text scripts/release/install-macos.sh 'ensure_root_directory "$install_root/client" 755'
 require_text scripts/release/install-macos.sh 'ensure_root_directory /private/var/db/OwnTransit/client 755'
@@ -96,18 +101,106 @@ require_text scripts/release/install-macos.sh 'read_directory_list /Search /Grou
 require_text scripts/release/install-macos.sh 'read_directory_list /Search /Users PrimaryGroupID'
 require_text scripts/release/install-macos.sh '--launcher-sha256'
 require_text scripts/release/install-macos.sh 'artifacts/owntransit-launcher-darwin-arm64'
-require_text scripts/release/install-macos.sh 'verify_client_executable_boundary "$release_directory/owntransit" "$release_directory/owntransit-real"'
+require_text scripts/release/install-macos.sh 'ensure_root_directory "$launcher_stage_directory" 700'
+require_text scripts/release/install-macos.sh '"$release_directory/owntransitctl" package-recover --role "$role"'
+require_text scripts/release/install-macos.sh 'verify_client_executable_boundary "$release_directory/owntransit" "$public_launcher" "$release_directory/owntransit-real"'
+require_text scripts/release/install-macos.sh 'client launcher is not a regular non-symlink file: $client_launcher'
+require_text scripts/release/install-macos.sh 'test "$(macos_mode "$client_launcher")" = 2751'
+require_text scripts/release/install-macos.sh 'test "$(sha256_file "$public_launcher")" = "$launcher_sha256"'
+require_text scripts/release/install-macos.sh 'public launcher is a hard link to the protected release launcher'
+require_text scripts/release/install-macos.sh 'private launcher stage contains missing or unexpected transaction state'
+require_text scripts/release/install-macos.sh 'package-mutation.v1.lock'
+require_text scripts/release/install-macos.sh 'test "$(stat -f %z "$mutation_lock")" -eq 0'
+require_text scripts/release/install-macos.sh 'legacy_unlocked_lifecycle=no'
+require_text scripts/release/install-macos.sh '5dcdpm6bdsp5jxlw3vdgljhyapr5uhah5aewm42lqgjlmsca6s7a:31dd7799d78a53079c6f651864655706364e6aa27adcc223433a2dbc5eb9ba30'
+require_text scripts/release/install-macos.sh 'resy4feogxdah3vtv3fnctmh7thp2vkopf5p3c45b7jrzxaj4nta:317ecb9eb24adfb2b0e70a600309209ddc9dd8ee0b2132bdfa9bed0b58f33c19'
+require_text scripts/release/install-macos.sh 'aceg34dlxq7yo7tdbtmzbwwvlhdhfaeuis2dcct4k32kar5dj3na:a6793d0acc506e6824d76a0841beb29d30fc18ade0d8cc0f3fec818a1d49f653'
+require_text scripts/release/install-macos.sh 'current_release" = "$release_id'
+require_text scripts/release/install-macos.sh 'selected predecessor is not an authenticated supported macOS upgrade source'
+require_text scripts/release/install-macos.sh '(set -C; : > "$mutation_lock")'
+require_text scripts/release/install-macos.sh '/usr/bin/lockf -k -n -t 0 "$mutation_lock"'
+require_text scripts/release/install-macos.sh 'provisioner release directory metadata is invalid'
 require_text scripts/release/install-macos.sh 'public_frontend="$bin_directory/owntransit-cli"'
 require_text scripts/release/install-macos.sh 'package finalizer did not publish a regular normal client frontend'
 require_text scripts/release/install-macos.sh 'normal client frontend activation is invalid'
 require_text scripts/release/install-macos.sh 'normal non-setgid setup frontend:'
 require_text cmd/owntransitctl/package_finalize_identity.go 'schema=owntransit.macos-client-launcher.v1'
 require_text cmd/owntransitctl/package_finalize_darwin.go 'securefs.OpenViewRoot(darwinLauncherAuthRoot, readerGID)'
+require_text cmd/owntransitctl/package_finalize_darwin.go 'publishDarwinClientLauncher(receipt, result.Runtime)'
 require_text cmd/owntransitctl/package_frontend_darwin.go 'darwinClientFrontendName      = "owntransit-cli"'
-require_text cmd/owntransitctl/package_frontend_darwin.go 'Keep the staging inode root-only until its complete bytes are durable.'
+require_text cmd/owntransitctl/package_frontend_darwin.go 'darwinClientFrontendStageName = "client-frontend.v1.stage"'
+require_text cmd/owntransitctl/package_frontend_darwin.go 'openDarwinOwnedDirectory(darwinClientLauncherStageRoot, 0, 0, 0o700)'
+require_text cmd/owntransitctl/package_frontend_darwin.go 'removeRecoverableDarwinFrontendStage(int(stage.Fd()))'
+require_text cmd/owntransitctl/package_frontend_darwin.go 'unix.Renameat(int(stage.Fd()), darwinClientFrontendStageName, int(bin.Fd()), darwinClientFrontendName)'
 require_text cmd/owntransitctl/package_finalize_darwin.go 'publishDarwinClientFrontend(receipt, result.Runtime)'
+require_text cmd/owntransitctl/package_provisioner_darwin.go 'darwinProvisionerFrontendStageName  = "provisioner-frontend.v1.stage"'
+require_text cmd/owntransitctl/package_provisioner_darwin.go 'darwinLegacyProvisionerFrontendLink = "../roles/provisioner/current/owntransit-provision"'
+require_text cmd/owntransitctl/package_provisioner_darwin.go 'published Darwin provisioner is a hard link to the protected release artifact'
+require_text cmd/owntransitctl/package_launcher_darwin.go 'darwinClientLauncherStageRoot  = "/Library/OwnTransit/launcher-stage"'
+require_text cmd/owntransitctl/package_launcher_darwin.go 'openDarwinOwnedDirectory(darwinClientLauncherStageRoot, 0, 0, 0o700)'
+require_text cmd/owntransitctl/package_launcher_darwin.go 'unix.O_RDWR|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600'
+require_text cmd/owntransitctl/package_launcher_darwin.go '// chown must precede chmod: changing ownership clears setgid on macOS.'
+require_text cmd/owntransitctl/package_launcher_darwin.go 'unix.Fchown(fd, 0, int(identity.readerGID))'
+require_text cmd/owntransitctl/package_launcher_darwin.go 'unix.Fchmod(fd, 0o2751)'
+require_text cmd/owntransitctl/package_launcher_darwin.go 'published Darwin launcher is a hard link to the protected release launcher'
+require_text cmd/owntransitctl/package_launcher_darwin.go 'runtimeIdentity.LauncherSHA256'
+require_text cmd/owntransitctl/package_launcher_darwin.go 'stat.Gid == readerGID && permissions == 0o600 && stat.Size > 0'
+require_text cmd/owntransitctl/package_launcher_darwin.go 'opened.Nlink < 1'
+launcher_chown_line=$(grep -nF 'unix.Fchown(fd, 0, int(identity.readerGID))' cmd/owntransitctl/package_launcher_darwin.go | cut -d: -f1)
+launcher_chmod_line=$(grep -nF 'unix.Fchmod(fd, 0o2751)' cmd/owntransitctl/package_launcher_darwin.go | cut -d: -f1)
+test "$launcher_chown_line" -lt "$launcher_chmod_line" || fail 'Darwin launcher staging must change ownership before applying setgid mode'
+require_text internal/packagetxn/runtime_identity_unix.go 'LauncherSHA256: launcherDigest'
+require_text internal/packagetxn/runtime_identity_unix.go 'file.ArtifactName != "launcher-darwin-arm64"'
+require_text internal/packagetxn/transaction_unix.go 'func packageDirectoryProfile(manager *Manager) (uint32, uint32)'
+require_text internal/packagetxn/transaction_unix.go 'manager.role == "provisioner" && manager.platformOS == "linux"'
+require_text internal/packagetxn/transaction_unix.go 'return manager.ownerGID, 0o755'
+require_text internal/packagetxn/transaction_unix.go 'return manager.readerGID, 0o750'
+provisioner_installer=scripts/release/install-linux.sh
+require_text "$provisioner_installer" 'require_provisioner_package_directory()'
+require_text "$provisioner_installer" 'migrate_legacy_provisioner_directories()'
+require_text "$provisioner_installer" '750|755) ;;'
+require_text "$provisioner_installer" 'test "$role" = provisioner && test "$current_release" = "$release_id"'
+require_text "$provisioner_installer" 'test "$(sha256_file "$lifecycle_runner")" = "$lifecycle_sha256"; then'
+require_text "$provisioner_installer" 'chmod 0755 "$provisioner_release_directory"'
+require_text "$provisioner_installer" 'chmod 0755 "$provisioner_releases_directory"'
+require_text "$provisioner_installer" 'chmod 0755 "$provisioner_role_directory"'
+test "$(grep -Fc 'migrate_legacy_provisioner_directories' "$provisioner_installer")" -eq 3 ||
+  fail "$provisioner_installer must define, resume and post-apply the provisioner directory migration"
+provisioner_release_chmod=$(grep -nF 'chmod 0755 "$provisioner_release_directory"' "$provisioner_installer" | cut -d: -f1)
+provisioner_releases_chmod=$(grep -nF 'chmod 0755 "$provisioner_releases_directory"' "$provisioner_installer" | cut -d: -f1)
+provisioner_role_chmod=$(grep -nF 'chmod 0755 "$provisioner_role_directory"' "$provisioner_installer" | cut -d: -f1)
+test "$provisioner_release_chmod" -lt "$provisioner_releases_chmod" &&
+  test "$provisioner_releases_chmod" -lt "$provisioner_role_chmod" ||
+  fail "$provisioner_installer must migrate provisioner package directories inner-first"
+if grep -Fq 'migrate_legacy_provisioner_directories' scripts/release/install-macos.sh; then
+  fail 'macOS provisioner package tree must remain protected rather than migrated public'
+fi
+require_text internal/packagetxn/lifecycle_unix.go 'manager.verifyRunningLifecycle(snapshot, decision{})'
+require_text cmd/owntransitctl/package_lifecycle.go 'guard, err := acquireNativePackageMutationGuard(options.role)'
+require_text cmd/owntransitctl/package_mutation_guard_darwin.go 'darwinPackageMutationLockName = "package-mutation.v1.lock"'
+require_text cmd/owntransitctl/package_mutation_guard_darwin.go 'unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB)'
+require_text cmd/owntransitctl/package_mutation_guard_linux.go 'fs.protected_hardlinks=1'
+require_text scripts/release/install-linux.sh 'Linux provisioner installation requires fs.protected_hardlinks=1'
+recover_complete_block=$(awk '
+  /if snapshot.state.journal == nil \|\| snapshot.state.journal.Phase == phaseComplete \{/ { capture = 1 }
+  capture { print }
+  capture && /return resultForSnapshot/ { exit }
+' internal/packagetxn/lifecycle_unix.go)
+printf '%s\n' "$recover_complete_block" | grep -Fq 'manager.verifyRunningLifecycle(snapshot, decision{})' ||
+  fail 'idempotent package recovery does not authenticate the running lifecycle'
+require_text cmd/owntransit-launcher/main.go 'validateCurrent: validateInstalledCurrentRelease'
+require_text cmd/owntransit-launcher/main.go 'launcherExecutable  = "/Library/OwnTransit/bin/owntransit"'
+require_text cmd/owntransit-launcher/main.go 'validateSelf:    validateInstalledLauncherSelf'
+require_text cmd/owntransit-launcher/main.go 'executable != launcherExecutable'
+require_text cmd/owntransit-launcher/main.go 'stat.Nlink >= 1'
+require_text cmd/owntransitctl/setup_identity_darwin.go 'stat.Nlink < 1'
+require_text cmd/owntransit-launcher/main.go 'roleRoot.ReadRootSymlink(clientCurrentName, len(want))'
+require_text cmd/owntransit-launcher/main.go 'installed client is not a single-link root:reader 0750 bounded regular file'
+require_text cmd/owntransit-launcher/main.go 'os.Open("/dev/fd")'
+require_text cmd/owntransit-launcher/main.go 'directory.Readdirnames(-1)'
+require_text cmd/owntransit-launcher/main.go 'unix.F_SETFD, unix.FD_CLOEXEC'
 require_text scripts/release/install-macos.sh 'ordinary client-user process can read the protected launcher binding'
-require_text scripts/release/install-macos.sh '"$client_launcher" --qualify-reader-gid'
+require_text scripts/release/install-macos.sh '"$public_launcher" --qualify-reader-gid'
 require_text scripts/release/install-macos.sh '/usr/bin/sudo -n -u "#$target_uid"'
 require_text scripts/release/install-macos.sh 'unrelated user is unexpectedly a reader-group member'
 require_text scripts/release/install-macos.sh 'installation root contains a setuid file'
@@ -119,7 +212,11 @@ if grep -Eq 'for \(index[[:space:]]*=' scripts/release/install-macos.sh; then
   fail 'macOS installer assigns to the awk index builtin'
 fi
 require_text scripts/release/uninstall-macos.sh 'manager-owned current/previous selectors'
-require_text scripts/release/uninstall-macos.sh 'cmp -s "$release_directory/owntransit-real" "$public_frontend"'
+require_text scripts/release/uninstall-macos.sh '"$release_directory/owntransitctl" package-detach --role "$role"'
+require_text scripts/release/uninstall-macos.sh 'package detach left the public role entry'
+require_text cmd/owntransitctl/package_detach_darwin.go '[]uint32{0o2751, 0o751}'
+require_text cmd/owntransitctl/package_detach_darwin.go 'deactivates every retained hard-link alias'
+require_text cmd/owntransitctl/package_detach_darwin.go 'syncDetachedDarwinName'
 require_text scripts/release/uninstall-macos.sh 'destructive reader-identity purge is intentionally not implemented'
 require_text scripts/release/uninstall-macos.sh 'macos_mode_raw=$(stat -f %p -- "$1")'
 require_text scripts/release/uninstall-macos.sh '"$((0$macos_mode_raw & 07777))"'
@@ -152,6 +249,36 @@ require_text scripts/release/install-linux.sh 'relay bootstrap exchange unit is 
 require_text scripts/release/install-linux.sh 'relay bootstrap exchange unit has multiple hard links'
 require_text scripts/release/uninstall-linux.sh "'owntransit-relay-exchange@*.service'"
 require_text scripts/release/uninstall-linux.sh '/etc/systemd/system/owntransit-relay-exchange@.service'
+for linux_package_script in scripts/release/install-linux.sh scripts/release/uninstall-linux.sh; do
+  require_text "$linux_package_script" '/var/lib/owntransit/package-supervisor'
+  require_text "$linux_package_script" 'platform.v1.lock'
+  require_text "$linux_package_script" '/usr/bin/flock -n 9'
+  require_text "$linux_package_script" "/proc/\$\$/fd/9"
+  require_text "$linux_package_script" "stat -Lc '%d:%i:%u:%g:%a:%h:%s'"
+done
+require_text scripts/release/install-linux.sh 'ensure_root_directory /var/lib/owntransit/package-supervisor 700'
+require_text scripts/release/uninstall-linux.sh '"$selected_lifecycle" package-recover --role "$role"'
+require_text scripts/release/uninstall-linux.sh '/usr/bin/flock -n 8'
+require_text scripts/release/uninstall-linux.sh 'assert_selected_release'
+require_text scripts/release/uninstall-linux.sh 'validate_integration_residue'
+require_text scripts/release/uninstall-linux.sh 'client launcher remains after detach'
+require_text scripts/release/uninstall-linux.sh 'relay exchange unit remains after detach'
+
+install_lock_line=$(grep -nF 'acquire_platform_mutation_lock' scripts/release/install-linux.sh | tail -1 | cut -d: -f1)
+install_mutation_line=$(grep -nF 'ensure_root_directory /usr/local 755' scripts/release/install-linux.sh | cut -d: -f1)
+test -n "$install_lock_line" && test -n "$install_mutation_line" && test "$install_lock_line" -lt "$install_mutation_line" ||
+  fail 'Linux installer must hold the platform lock before package integration mutation'
+uninstall_lock_line=$(grep -nF '/usr/bin/flock -n 9' scripts/release/uninstall-linux.sh | cut -d: -f1)
+uninstall_selector_line=$(grep -nF 'current_link="$install_root/roles/$role/current"' scripts/release/uninstall-linux.sh | cut -d: -f1)
+test -n "$uninstall_lock_line" && test -n "$uninstall_selector_line" && test "$uninstall_lock_line" -lt "$uninstall_selector_line" ||
+  fail 'Linux uninstaller must hold the platform lock before selector inspection'
+uninstall_role_lock_line=$(grep -nF '/usr/bin/flock -n 8' scripts/release/uninstall-linux.sh | cut -d: -f1)
+uninstall_service_mutation_line=$(grep -nF 'exchange_units=$(systemctl list-units' scripts/release/uninstall-linux.sh | cut -d: -f1)
+test -n "$uninstall_role_lock_line" && test -n "$uninstall_service_mutation_line" && test "$uninstall_role_lock_line" -lt "$uninstall_service_mutation_line" ||
+  fail 'Linux service-role detach must hold the supervisor lock before systemd mutation'
+if grep -Eq '^[[:space:]]*(rm|rmdir)[[:space:]].*(platform\.v1\.lock|package-supervisor)' scripts/release/install-linux.sh scripts/release/uninstall-linux.sh; then
+  fail 'Linux platform mutation lock and its root must persist across install and uninstall'
+fi
 
 if grep -Fq -- '$install_root/releases' scripts/release/install-linux.sh scripts/release/uninstall-linux.sh; then
   fail 'Linux role packages must not share a release or selector namespace'
@@ -284,6 +411,8 @@ require_text scripts/release/archive-native.sh 'bundle file inventory is not the
 require_text scripts/release/archive-native.sh 'SHA256SUMS does not describe the exact native staging file set'
 require_text scripts/release/archive-native.sh 'output basename must be exactly $archive_root_name.tar.gz'
 require_text scripts/release/archive-native.sh 'builder_image="docker.io/library/golang:1.26.7-bookworm@$builder_digest"'
+require_text scripts/release/archive-native.sh 'elif command -v container >/dev/null 2>&1; then'
+require_text scripts/release/archive-native.sh '--mount "type=bind,source=$container_output,target=/output"'
 require_text scripts/release/archive-native.sh '--pull=never'
 require_text scripts/release/archive-native.sh '--mount "type=bind,source=$snapshot_parent,target=/input,readonly"'
 require_text scripts/release/archive-native.sh '--mount "type=bind,source=$docker_output,target=/output"'
@@ -297,10 +426,37 @@ if grep -Fq 'OWNTRANSIT_GNU_TAR' scripts/release/archive-native.sh; then
   fail 'native archive GNU tar selection must not be redirected through the environment'
 fi
 if grep -Fq 'source=$temporary,target=/output' scripts/release/archive-native.sh; then
-  fail 'native archive Docker output must not expose a writable alias to the read-only snapshot'
+  fail 'native archive container output must not expose a writable alias to the read-only snapshot'
 fi
 
 require_text scripts/release/sign-candidate.sh 'release and policy public key IDs must be different'
+require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires release sequence 8'
+require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires policy sequence 4'
+require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires release floor 8'
+require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires lifecycle floor 1'
+require_text scripts/tests/sign-candidate.sh 'a rejected 0.1.0 stable tuple reached a signing operation'
+require_text scripts/release/build-artifacts.sh 'committed CHANGELOG.md has no exact release heading for $version'
+require_text scripts/release/build-artifacts.sh 'git -C "$checkout_root" archive --format=tar --output="$source_archive" "$source_commit"'
+require_text scripts/release/build-artifacts.sh 'project_root=$source_root'
+require_text scripts/release/sign-candidate.sh 'committed CHANGELOG.md has no exact release heading for $version'
+require_text scripts/release/sign-candidate.sh 'git -C "$source_root" ls-tree "$source_commit" -- CHANGELOG.md'
+require_text scripts/tests/sign-candidate.sh 'candidate signing accepted a commit without its exact changelog release heading'
+require_text .github/workflows/release-candidate.yml 'runs-on: macos-15'
+require_text .github/workflows/release-candidate.yml 'test "$(uname -m)" = arm64'
+require_text .github/workflows/release-candidate.yml 'go-version: 1.26.7'
+require_text .github/workflows/release-candidate.yml 'go test -mod=readonly -race ./...'
+require_text .github/workflows/release-candidate.yml 'go test -mod=readonly -race -tags=owntransit_poc_ssh ./...'
+require_text .github/workflows/release-candidate.yml 'go vet -mod=readonly ./...'
+require_text .github/workflows/release-candidate.yml 'go vet -mod=readonly -tags=owntransit_poc_ssh ./...'
+test "$(grep -Fc 'container build --progress plain --platform linux/amd64' scripts/security-check.sh)" -eq 5 ||
+  fail 'Apple Container full security gates must run the exact supported Linux amd64 platform'
+test "$(grep -Fc 'docker buildx build --progress plain --platform linux/amd64' scripts/security-check.sh)" -eq 5 ||
+  fail 'Docker full security gates must run the exact supported Linux amd64 platform'
+require_text Containerfile 'AS linux-amd64-verify'
+require_text Containerfile 'test "$TARGETOS/$TARGETARCH" = linux/amd64'
+require_text Containerfile 'test "$(go env GOOS)/$(go env GOARCH)" = linux/amd64'
+test "$(grep -Ec '^FROM linux-amd64-verify AS (test|test-poc|vet|vulncheck|dependency-licenses)$' Containerfile)" -eq 5 ||
+  fail 'all five verification stages must execute from the Linux amd64 target-platform source stage'
 require_text scripts/release/sign-candidate.sh 'the empty-anchor first-release path requires policy sequence 1'
 require_text scripts/release/sign-candidate.sh '--anchor-policy-sequence'
 require_text scripts/release/sign-candidate.sh '--anchor-policy-key-id'
@@ -371,7 +527,8 @@ require_text scripts/qualify/linux-amd64-vm.sh '/usr/libexec/owntransit/roles/co
 require_text scripts/qualify/linux-amd64-vm.sh '/usr/libexec/owntransit/roles/connector/current/owntransit-connector'
 require_text scripts/qualify/linux-amd64-vm.sh '-relay-listen 0.0.0.0:9087'
 require_text scripts/qualify/macos-client-boundary.sh 'role_root="$roles_root/client"'
-require_text scripts/qualify/macos-client-boundary.sh '../roles/client/current/owntransit'
+require_text scripts/qualify/macos-client-boundary.sh 'public_launcher="$bin_directory/owntransit"'
+require_text scripts/qualify/macos-client-boundary.sh 'test -f "$public_launcher" && test ! -L "$public_launcher"'
 if grep -Fq -- '/usr/libexec/owntransit/bin/' scripts/qualify/linux-amd64-vm.sh ||
    grep -Fq -- '/Library/OwnTransit/releases/' scripts/qualify/macos-client-boundary.sh packaging/macos/CLIENT_READER_BOUNDARY.md; then
   fail 'qualification material still references a pre-manager shared release path'

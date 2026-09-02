@@ -116,6 +116,8 @@ test -d .git || fail "a Git checkout is required for a release build"
 actual_commit=$(git rev-parse --verify HEAD) || fail "cannot resolve source revision"
 test "$actual_commit" = "$source_commit" || fail "--source-commit does not equal Git HEAD"
 test -z "$(git status --porcelain=v1 --untracked-files=all)" || fail "release builds require a completely clean source tree"
+git show "$source_commit:CHANGELOG.md" | grep -Fqx "## [$version]" ||
+  fail "committed CHANGELOG.md has no exact release heading for $version"
 
 if test -z "$engine"; then
   if command -v container >/dev/null 2>&1; then
@@ -229,6 +231,22 @@ cleanup() {
   rm -rf -- "$build_root" "$stage_root"
 }
 trap cleanup EXIT HUP INT TERM
+
+# Build only the immutable tree selected by the full commit ID. Git index hints
+# such as assume-unchanged/skip-worktree cannot hide different candidate bytes,
+# and a concurrent edit of the checkout cannot enter the release artifacts.
+checkout_root=$project_root
+source_archive="$build_root/source.tar"
+source_root="$build_root/source"
+mkdir -m 0700 "$source_root"
+git -C "$checkout_root" archive --format=tar --output="$source_archive" "$source_commit" ||
+  fail "cannot snapshot the selected source commit"
+tar -xf "$source_archive" -C "$source_root" || fail "cannot extract the selected source commit"
+rm -f -- "$source_archive"
+project_root=$source_root
+cd "$project_root"
+grep -Fqx "## [$version]" CHANGELOG.md ||
+  fail "source snapshot CHANGELOG.md has no exact release heading for $version"
 
 manifest_before="$build_root/source-before.txt"
 manifest_after="$build_root/source-after.txt"

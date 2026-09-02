@@ -248,6 +248,19 @@ case "$version" in [A-Za-z0-9]*) ;; *) fail "version must begin with an alphanum
 test "${#version}" -le 128 || fail "version is too long"
 case "$source_commit" in ''|*[!0-9a-f]*) fail "source commit must be lowercase hexadecimal" ;; esac
 case "${#source_commit}" in 40|64) ;; *) fail "source commit must contain 40 or 64 hexadecimal characters" ;; esac
+command -v git >/dev/null 2>&1 || fail "git is required"
+test "$(git -C "$source_root" rev-parse --show-toplevel)" = "$source_root" ||
+  fail "source-root must be the exact canonical Git root"
+actual_source_commit=$(git -C "$source_root" rev-parse --verify 'HEAD^{commit}') ||
+  fail "cannot resolve source HEAD"
+test "$actual_source_commit" = "$source_commit" || fail "--source-commit does not equal source HEAD"
+changelog_entry=$(git -C "$source_root" ls-tree "$source_commit" -- CHANGELOG.md) ||
+  fail "cannot inspect committed CHANGELOG.md"
+set -- $changelog_entry
+test "$#" -eq 4 && test "$1" = 100644 && test "$2" = blob && test "$4" = CHANGELOG.md ||
+  fail "committed CHANGELOG.md must be one ordinary file"
+git -C "$source_root" show "$source_commit:CHANGELOG.md" | grep -Fqx "## [$version]" ||
+  fail "committed CHANGELOG.md has no exact release heading for $version"
 canonical_positive_decimal "$policy_sequence" || fail "policy sequence must be a canonical positive decimal integer"
 canonical_positive_decimal "$release_floor" || fail "release floor must be a canonical positive decimal integer"
 canonical_positive_decimal "$lifecycle_floor" || fail "lifecycle floor must be a canonical positive decimal integer"
@@ -369,6 +382,20 @@ canonical_positive_decimal "$source_date_epoch" || fail "source date epoch must 
 test "${#source_date_epoch}" -le 10 || fail "source date epoch is out of range"
 case "$source_manifest_sha256" in ''|*[!0-9a-f]*) fail "source manifest digest must be lowercase hexadecimal" ;; esac
 test "${#source_manifest_sha256}" -eq 64 || fail "source manifest digest must contain 64 hexadecimal characters"
+
+# The 0.1.0 stable handoff deliberately burns every RC rollback path. RC5-RC7
+# contain package-boundary behavior that the stable installers must never be
+# permitted to reactivate (including the pre-self-authentication macOS launcher
+# and the legacy Linux provisioner directory profile). Keep this tuple fixed in
+# the offline signing conductor rather than relying on an operator to remember
+# four correlated command-line values during the signing ceremony.
+if test "$version" = 0.1.0; then
+  test "$release_sequence" = 8 || fail "OwnTransit 0.1.0 requires release sequence 8"
+  test "$policy_sequence" = 4 || fail "OwnTransit 0.1.0 requires policy sequence 4"
+  test "$release_floor" = 8 || fail "OwnTransit 0.1.0 requires release floor 8"
+  test "$lifecycle_floor" = 1 || fail "OwnTransit 0.1.0 requires lifecycle floor 1"
+fi
+
 decimal_is_at_most "$release_floor" "$release_sequence" || fail "release floor cannot exceed the candidate release sequence"
 test "$(sha256_file "$bundle/SOURCE-MANIFEST.txt")" = "$source_manifest_sha256" || fail "BUILD-INPUTS source manifest digest does not match SOURCE-MANIFEST.txt"
 

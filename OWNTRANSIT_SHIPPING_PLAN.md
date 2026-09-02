@@ -101,11 +101,11 @@ An official OwnTransit 0.1.0 handoff contains exactly these logical artifacts:
 |---|---|---|
 | `owntransit` | macOS arm64 | On-demand outbound stdio carrier for an operator-owned OpenSSH ProxyCommand |
 | `owntransit-launcher` | macOS arm64 | Fixed setgid launcher bound to one local UID, GeneratedUID, release and client digest |
-| `owntransit` | Linux amd64 | The same outbound-only client carrier |
-| `owntransit-connector` | Linux amd64 | Outbound-only daemon with the fixed loopback SSH target |
-| `owntransit-relay` | Linux amd64 OCI image | Hostile rendezvous and byte-copy relay; no inner TLS termination |
-| `owntransitctl` | macOS arm64 and Linux amd64 | Target-local enrollment and lifecycle state |
-| `owntransit-provision` | macOS arm64 and Linux amd64 | Offline route authority and response creation |
+| `owntransit` | Linux amd64 (x86_64 CPU) | The same outbound-only client carrier |
+| `owntransit-connector` | Linux amd64 (x86_64 CPU) | Outbound-only daemon with the fixed loopback SSH target |
+| `owntransit-relay` | Linux amd64 OCI image (x86_64 CPU) | Hostile rendezvous and byte-copy relay; no inner TLS termination |
+| `owntransitctl` | macOS arm64 and Linux amd64 (x86_64 CPU) | Target-local enrollment and lifecycle state |
+| `owntransit-provision` | macOS arm64 and Linux amd64 (x86_64 CPU) | Offline route authority and response creation |
 
 The release manifest records the two clients, the macOS launcher, connector,
 relay, and both platform builds of the two administrative tools as nine
@@ -115,8 +115,9 @@ evidence.
 
 Platform support attaches to exact released bytes only after their native
 package, clean-host, upgrade, rollback and qualification matrices pass. The
-candidate targets macOS arm64 and Linux amd64; other architectures are outside
-the 0.1.0 scope. Cross-compilation alone is not support evidence.
+candidate targets Apple-silicon macOS (`arm64`) and 64-bit x86 Linux
+(`amd64`, also called `x86_64`). Intel macOS and every other architecture are
+outside the 0.1.0 scope. Cross-compilation alone is not support evidence.
 
 ## Intended command surface
 
@@ -165,13 +166,18 @@ owntransitctl rollback
 owntransitctl package-apply
 owntransitctl package-rollback
 owntransitctl package-recover
+owntransitctl package-detach
 ```
 
-Ordinary non-purging uninstall is an explicit platform package operation, not a
-remote lifecycle command. All privileged client setup steps use the fixed
-authenticated `owntransitctl` selected by the package manager and accept their
-bounded sensitive frames over stdin, never through caller-selected state
-paths, argv or environment variables.
+Ordinary non-purging uninstall is an explicit local platform package operation,
+not a remote lifecycle command. On macOS its public-entry removal is owned by
+the authenticated `package-detach` lifecycle operation so an interrupted
+detach can resume without guessing at shell-visible residue. `package-detach`
+is currently the macOS client/provisioner public-entry operation; Linux
+uninstall remains an explicit local platform script. All privileged client
+setup steps use the fixed authenticated `owntransitctl` selected by the package
+manager and accept their bounded sensitive frames over stdin, never through
+caller-selected state paths, argv or environment variables.
 
 ## Enrollment and bootstrap
 
@@ -266,6 +272,29 @@ one manager-held transaction. Client setup holds the same anchor/selector locks
 while consuming the authenticated runtime identity, so a concurrent apply,
 rollback or recovery fails closed. This package transaction remains distinct
 from the target-credential rollback anchor and exact-record rollback.
+
+On macOS, one permanent root-only `package-mutation.v1.lock` serializes client
+and provisioner apply, rollback, recovery, detach and public-frontend
+publication. The provisioner package tree remains `root:wheel` mode `0750`;
+its public `owntransit-provision` is a separately created `root:wheel` mode
+`0755` copy with the authenticated digest and a different inode. macOS never
+widens the protected provisioner tree to make a symlink traversable.
+
+On Linux, the provisioner package tree is root-owned mode `0755` and is
+reachable through its ordinary public selector. Both the installer and every
+provisioner package lifecycle operation require the kernel policy
+`fs.protected_hardlinks=1`. Only Linux performs the authenticated, resumable
+legacy provisioner-directory migration from mode `0750` to `0755`.
+
+One permanent empty `root:root` mode-`0600`
+`/var/lib/owntransit/package-supervisor/platform.v1.lock`, beneath its
+root-only mode-`0700` directory, serializes every complete Linux install and
+non-purging uninstall integration window. The lock is never removed. Connector
+and relay detach also holds the existing role supervisor lock before stopping
+or removing systemd integration, preventing a concurrent package lifecycle
+operation from restarting the service into a half-detached state. Partial
+detach is an accepted retry state only when every remaining public name is
+still the exact expected object.
 
 Ordinary uninstall is non-purging. Destructive purge and trust reset require a
 separate explicit recovery ceremony.

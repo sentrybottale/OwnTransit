@@ -15,7 +15,7 @@ usage() {
   cat <<'EOF'
 usage: uninstall-macos.sh --role client|provisioner --release-id 52_CHAR_BASE32_ID
 
-Detaches only the selected role's exact public launcher. The manager-owned current/previous selectors,
+Detaches only the selected role's exact public executable. The manager-owned current/previous selectors,
 immutable releases, receipts, installed license
 notices and external rollback anchors remain intact so exact reinstall/recovery
 cannot silently reset a floor. Client launcher binding, reader identity,
@@ -45,7 +45,7 @@ done
 
 test "$(uname -s)" = Darwin || fail "this uninstaller supports macOS only"
 test "$(id -u)" -eq 0 || fail "uninstall requires root"
-for command_name in cat cmp ls readlink rm sed stat tr uname wc; do
+for command_name in cat ls readlink sed stat tr uname wc; do
   command -v "$command_name" >/dev/null 2>&1 || fail "required command is unavailable: $command_name"
 done
 
@@ -114,7 +114,6 @@ case "$role" in
     release_directory="$install_root/roles/client/releases/$release_id"
     public_launcher="$bin_directory/owntransit"
     public_frontend="$bin_directory/owntransit-cli"
-    expected_public_target=../roles/client/current/owntransit
     test -L "$current_link" || fail "client current selector is absent"
     test "$(readlink "$current_link")" = "releases/$release_id" || fail "client current selector identifies another release"
     require_root_directory "$install_root/identity" 700
@@ -125,8 +124,6 @@ case "$role" in
     require_root_reader_directory "$release_directory" 750
     require_root_reader_file "$release_directory/owntransit" 2751
     require_root_reader_file "$release_directory/owntransit-real" 750
-    require_root_file "$public_frontend" 755
-    cmp -s "$release_directory/owntransit-real" "$public_frontend" || fail "normal client frontend differs from the selected authenticated release"
     require_root_file "$release_directory/owntransitctl" 700
     require_root_file "$release_directory/receipt.json" 600
     require_root_file "$release_directory/LICENSE" 644
@@ -141,10 +138,9 @@ case "$role" in
     current_link="$install_root/roles/provisioner/current"
     release_directory="$install_root/roles/provisioner/releases/$release_id"
     public_launcher="$bin_directory/owntransit-provision"
-    expected_public_target="../roles/provisioner/current/owntransit-provision"
     test -L "$current_link" || fail "provisioner current selector is absent"
     test "$(readlink "$current_link")" = "releases/$release_id" || fail "provisioner current selector identifies another release"
-    require_root_directory "$release_directory" 755
+    require_root_directory "$release_directory" 750
     require_root_file "$release_directory/owntransit-provision" 755
     require_root_file "$release_directory/owntransitctl" 700
     require_root_file "$release_directory/receipt.json" 600
@@ -154,11 +150,16 @@ case "$role" in
   *) fail "role must be client or provisioner" ;;
 esac
 
-test -L "$public_launcher" || fail "role launcher is absent or not a symlink"
-test "$(readlink "$public_launcher")" = "$expected_public_target" || fail "role launcher selects an unexpected target"
-rm -f -- "$public_launcher"
+/usr/bin/env -i \
+  HOME=/var/root \
+  LANG=C \
+  LC_ALL=C \
+  PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+  "$release_directory/owntransitctl" package-detach --role "$role"
+
+test ! -e "$public_launcher" && test ! -L "$public_launcher" || fail "package detach left the public role entry"
 if test "$role" = client; then
-  rm -f -- "$public_frontend"
+  test ! -e "$public_frontend" && test ! -L "$public_frontend" || fail "package detach left the public client frontend"
 fi
 
 printf 'detached OwnTransit macOS %s role release %s\n' "$role" "$release_id"

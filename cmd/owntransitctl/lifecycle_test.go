@@ -225,7 +225,7 @@ func TestConnectorBootstrapUsesOnlyTheCompiledTarget(t *testing.T) {
 }
 
 func TestApplyCommitsMatchingOfflineResponseAndEmitsPublicReceipt(t *testing.T) {
-	parent := t.TempDir()
+	parent := mustCanonicalTempDir(t)
 	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
 	outer, err := pki.NewCA("OwnTransit apply outer CA", now, 365*24*time.Hour)
 	if err != nil {
@@ -395,9 +395,18 @@ type bootstrapFixture struct {
 	options bootstrapOptions
 }
 
+func mustCanonicalTempDir(t *testing.T) string {
+	t.Helper()
+	directory, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve temporary directory: %v", err)
+	}
+	return directory
+}
+
 func newBootstrapFixture(t *testing.T, role enrollment.Role) bootstrapFixture {
 	t.Helper()
-	parent := t.TempDir()
+	parent := mustCanonicalTempDir(t)
 	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
 	outer, err := pki.NewCA("OwnTransit test outer CA", now, 365*24*time.Hour)
 	if err != nil {
