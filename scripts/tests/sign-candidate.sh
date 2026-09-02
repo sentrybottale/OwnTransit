@@ -190,6 +190,12 @@ printf '%s\n' \
   > "$candidate"
 chmod 0600 "$candidate"
 
+advanced_candidate="$workspace/candidate-policy-2.json"
+printf '%s\n' \
+  "{\"schema\":\"owntransit.release-candidate-ledger.v1\",\"status\":\"qualification-only\",\"version\":\"$version\",\"release_id\":\"$release_id\",\"release_sequence\":1,\"policy_sequence\":2,\"minimum_release_sequence\":1,\"minimum_lifecycle\":2,\"source_commit\":\"$source_commit\",\"source_date_epoch\":$source_date_epoch}" \
+  > "$advanced_candidate"
+chmod 0600 "$advanced_candidate"
+
 fake_releasectl="$workspace/fake-releasectl"
 cat > "$fake_releasectl" <<'EOF'
 #!/bin/sh
@@ -223,6 +229,9 @@ case "$command_name" in
     policy_sequence=$(argument --policy-sequence "$@")
     release_floor=$(argument --release-floor "$@")
     lifecycle_floor=$(argument --lifecycle-floor "$@")
+    expected_candidate=$(printf '{"schema":"owntransit.release-candidate-ledger.v1","status":"qualification-only","version":"%s","release_id":"%s","release_sequence":%s,"policy_sequence":%s,"minimum_release_sequence":%s,"minimum_lifecycle":%s,"source_commit":"%s","source_date_epoch":%s}' \
+      "$version" "$release_id" "$sequence" "$policy_sequence" "$release_floor" "$lifecycle_floor" "$source_commit" "$source_date_epoch")
+    test "$(cat "$selected_candidate")" = "$expected_candidate"
     printf 'verified qualification-only candidate version=%s release_id=%s release_sequence=%s policy_sequence=%s minimum_release_sequence=%s minimum_lifecycle=%s source_commit=%s source_date_epoch=%s\n' \
       "$version" "$release_id" "$sequence" "$policy_sequence" "$release_floor" "$lifecycle_floor" "$source_commit" "$source_date_epoch"
     ;;
@@ -256,12 +265,23 @@ case "$command_name" in
     ;;
   verify-policy)
     selected_policy=$(argument --policy "$@")
+    anchor_policy_sequence=$(argument --anchor-policy-sequence "$@" 2>/dev/null || printf '%s\n' 0)
+    anchor_release_floor=$(argument --anchor-release-floor "$@" 2>/dev/null || printf '%s\n' 0)
+    anchor_lifecycle_floor=$(argument --anchor-lifecycle-floor "$@" 2>/dev/null || printf '%s\n' 0)
     policy_values=$(sed -n 's/^{"schema":"fixture-policy","sequence":\([0-9][0-9]*\),"minimum_release_sequence":\([0-9][0-9]*\),"minimum_lifecycle":\([0-9][0-9]*\)}$/\1 \2 \3/p' "$selected_policy")
     test -n "$policy_values"
     set -- $policy_values
     test "$#" -eq 3
+    policy_sequence=$1
+    release_floor=$2
+    lifecycle_floor=$3
+    test "$policy_sequence" -gt "$anchor_policy_sequence"
+    test "$release_floor" -ge "$anchor_release_floor"
+    test "$lifecycle_floor" -ge "$anchor_lifecycle_floor"
+    printf 'policy=%s anchor=%s/%s/%s\n' "$policy_sequence" "$anchor_policy_sequence" "$anchor_release_floor" "$anchor_lifecycle_floor" \
+      >> "$(dirname "$0")/fake-releasectl.policy-anchors"
     printf '{"schema":"owntransit.release-policy-anchor.v1","highest_policy_sequence":%s,"minimum_release_sequence":%s,"minimum_lifecycle":%s,"tombstoned_release_ids":null}\n' \
-      "$1" "$2" "$3"
+      "$policy_sequence" "$release_floor" "$lifecycle_floor"
     ;;
   *) exit 64 ;;
 esac
@@ -273,9 +293,18 @@ invoke_signer() {
   selected_policy_public=$1
   selected_output=$2
   selected_allowed_signers=${3:-$workspace/keys/allowed_signers}
-  "$signer" \
+  selected_policy_sequence=${4:-1}
+  selected_release_floor=${5:-1}
+  selected_lifecycle_floor=${6:-2}
+  selected_anchor_policy_sequence=${7:-0}
+  selected_anchor_release_floor=${8:-0}
+  selected_anchor_lifecycle_floor=${9:-0}
+  selected_candidate=${10:-$candidate}
+  selected_anchor_policy_key_id=${11:-}
+  selected_anchor_tombstones=${12:-}
+  set -- "$signer" \
     --bundle "$bundle" \
-    --candidate "$candidate" \
+    --candidate "$selected_candidate" \
     --releasectl "$fake_releasectl" \
     --release-private-key "$workspace/keys/release-private.pem" \
     --release-public-key "$workspace/keys/release-public.pem" \
@@ -287,10 +316,20 @@ invoke_signer() {
     --source-root "$workspace/source" \
     --version "$version" \
     --source-commit "$source_commit" \
-    --policy-sequence 1 \
-    --release-floor 1 \
-    --lifecycle-floor 2 \
+    --policy-sequence "$selected_policy_sequence" \
+    --release-floor "$selected_release_floor" \
+    --lifecycle-floor "$selected_lifecycle_floor" \
+    --anchor-policy-sequence "$selected_anchor_policy_sequence" \
+    --anchor-release-floor "$selected_anchor_release_floor" \
+    --anchor-lifecycle-floor "$selected_anchor_lifecycle_floor" \
     --output "$selected_output"
+  if test -n "$selected_anchor_policy_key_id"; then
+    set -- "$@" --anchor-policy-key-id "$selected_anchor_policy_key_id"
+  fi
+  if test -n "$selected_anchor_tombstones"; then
+    set -- "$@" --anchor-tombstones "$selected_anchor_tombstones"
+  fi
+  "$@"
 }
 
 output="$workspace/output-parent/candidate"
@@ -313,6 +352,105 @@ printf '%s\n' \
   verify-policy \
   verify-bundle > "$expected_releasectl_calls"
 cmp -s "$expected_releasectl_calls" "$workspace/fake-releasectl.calls" || fail "positive conductor did not invoke the exact release/policy component sequence"
+printf '%s\n' 'policy=1 anchor=0/0/0' 'policy=1 anchor=0/0/0' > "$workspace/expected-policy-anchors"
+cmp -s "$workspace/expected-policy-anchors" "$workspace/fake-releasectl.policy-anchors" ||
+  fail "initial conductor did not verify policy twice against the exact empty anchor"
+
+advanced_output="$workspace/output-parent/advanced-candidate"
+invoke_signer "$workspace/keys/policy-public.pem" "$advanced_output" "$workspace/keys/allowed_signers" \
+  2 1 2 1 1 2 "$advanced_candidate" sha256/policy none > "$workspace/sign-candidate-advanced.out"
+grep -Fq "created signed candidate handoff: $advanced_output" "$workspace/sign-candidate-advanced.out" ||
+  fail "policy-advance conductor did not report its atomic output"
+grep -Fq '"sequence":2' "$advanced_output/assets/RELEASE-POLICY.json" || fail "advanced handoff carries another policy sequence"
+printf '%s\n' \
+  'policy=1 anchor=0/0/0' \
+  'policy=1 anchor=0/0/0' \
+  'policy=2 anchor=1/1/2' \
+  'policy=2 anchor=1/1/2' > "$workspace/expected-policy-anchors"
+cmp -s "$workspace/expected-policy-anchors" "$workspace/fake-releasectl.policy-anchors" ||
+  fail "policy-advance conductor did not verify policy twice against the exact persisted anchor"
+
+rejected_empty_advance="$workspace/output-parent/rejected-empty-anchor-advance"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_empty_advance" "$workspace/keys/allowed_signers" 2 1 2 0 0 0 >/dev/null 2>&1; then
+  fail "empty-anchor path accepted a policy sequence other than one"
+fi
+test ! -e "$rejected_empty_advance" || fail "rejected empty-anchor advance created output"
+
+rejected_partial_anchor="$workspace/output-parent/rejected-partial-anchor"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_partial_anchor" "$workspace/keys/allowed_signers" 2 1 2 1 0 2 >/dev/null 2>&1; then
+  fail "policy advance accepted a partial persisted anchor"
+fi
+test ! -e "$rejected_partial_anchor" || fail "rejected partial anchor created output"
+
+rejected_policy_replay="$workspace/output-parent/rejected-policy-replay"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_policy_replay" "$workspace/keys/allowed_signers" \
+  1 1 2 1 1 2 "$candidate" sha256/policy none >/dev/null 2>&1; then
+  fail "policy advance accepted a replayed policy sequence"
+fi
+test ! -e "$rejected_policy_replay" || fail "rejected policy replay created output"
+
+rejected_release_floor="$workspace/output-parent/rejected-weaker-release-floor"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_release_floor" "$workspace/keys/allowed_signers" \
+  2 1 2 1 2 2 "$advanced_candidate" sha256/policy none >/dev/null 2>&1; then
+  fail "policy advance weakened the persisted release floor"
+fi
+test ! -e "$rejected_release_floor" || fail "weaker-release-floor rejection created output"
+
+rejected_lifecycle_floor="$workspace/output-parent/rejected-weaker-lifecycle-floor"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_lifecycle_floor" "$workspace/keys/allowed_signers" \
+  2 1 1 1 1 2 "$advanced_candidate" sha256/policy none >/dev/null 2>&1; then
+  fail "policy advance weakened the persisted lifecycle floor"
+fi
+test ! -e "$rejected_lifecycle_floor" || fail "weaker-lifecycle-floor rejection created output"
+
+rejected_policy_key="$workspace/output-parent/rejected-policy-key-change"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_policy_key" "$workspace/keys/allowed_signers" \
+  2 1 2 1 1 2 "$advanced_candidate" sha256/not-the-pinned-key none >/dev/null 2>&1; then
+  fail "policy advance changed the pinned policy key"
+fi
+test ! -e "$rejected_policy_key" || fail "policy-key rejection created output"
+
+rejected_missing_policy_key="$workspace/output-parent/rejected-missing-policy-key"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_missing_policy_key" "$workspace/keys/allowed_signers" \
+  2 1 2 1 1 2 "$advanced_candidate" '' none >/dev/null 2>&1; then
+  fail "policy advance omitted the pinned policy-key ID"
+fi
+test ! -e "$rejected_missing_policy_key" || fail "missing-policy-key rejection created output"
+
+rejected_implicit_tombstones="$workspace/output-parent/rejected-implicit-tombstones"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_implicit_tombstones" "$workspace/keys/allowed_signers" \
+  2 1 2 1 1 2 "$advanced_candidate" sha256/policy >/dev/null 2>&1; then
+  fail "policy advance inferred an empty persisted tombstone set"
+fi
+test ! -e "$rejected_implicit_tombstones" || fail "implicit-tombstone rejection created output"
+
+rejected_nonempty_tombstones="$workspace/output-parent/rejected-nonempty-tombstones"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_nonempty_tombstones" "$workspace/keys/allowed_signers" \
+  2 1 2 1 1 2 "$advanced_candidate" sha256/policy present >/dev/null 2>&1; then
+  fail "scalar policy advance accepted a nonempty persisted tombstone set"
+fi
+test ! -e "$rejected_nonempty_tombstones" || fail "nonempty-tombstone rejection created output"
+
+rejected_empty_anchor_key="$workspace/output-parent/rejected-empty-anchor-key"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_empty_anchor_key" "$workspace/keys/allowed_signers" \
+  1 1 2 0 0 0 "$candidate" sha256/policy >/dev/null 2>&1; then
+  fail "empty-anchor path accepted a persisted policy-key claim"
+fi
+test ! -e "$rejected_empty_anchor_key" || fail "empty-anchor key rejection created output"
+
+rejected_empty_anchor_tombstones="$workspace/output-parent/rejected-empty-anchor-tombstones"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_empty_anchor_tombstones" "$workspace/keys/allowed_signers" \
+  1 1 2 0 0 0 "$candidate" '' none >/dev/null 2>&1; then
+  fail "empty-anchor path accepted a persisted tombstone claim"
+fi
+test ! -e "$rejected_empty_anchor_tombstones" || fail "empty-anchor tombstone rejection created output"
+
+rejected_malformed_anchor="$workspace/output-parent/rejected-malformed-anchor"
+if invoke_signer "$workspace/keys/policy-public.pem" "$rejected_malformed_anchor" "$workspace/keys/allowed_signers" \
+  2 1 2 01 1 2 "$advanced_candidate" sha256/policy none >/dev/null 2>&1; then
+  fail "policy advance accepted a noncanonical anchor sequence"
+fi
+test ! -e "$rejected_malformed_anchor" || fail "malformed-anchor rejection created output"
 
 extra_allowed_signers="$workspace/keys/allowed_signers-extra"
 {

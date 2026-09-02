@@ -64,7 +64,7 @@ inodes, and creates two byte-identical normalized archives before atomically
 publishing `owntransit-VERSION-native.tar.gz`. The archive deliberately
 contains no signatures, policy or trust files.
 
-`sign-candidate.sh` is the offline first-policy conductor. It accepts the exact
+`sign-candidate.sh` is the offline candidate-signing conductor. It accepts the exact
 candidate ledger, explicit and separate release and policy PKCS#8 Ed25519
 keypairs, one explicit OpenSSH Ed25519 distribution/source keypair, an
 independently prepared `allowed_signers` trust file, a clean source checkout
@@ -132,9 +132,30 @@ Do not accept a digest, key, contact address or verification instruction found
 only beside the release assets. After that comparison, `install.sh`
 independently verifies the statement signature, requires the exact two v1
 `allowed_signers` principals to use `distribution-public.key`, and recomputes
-every statement binding. This conductor verifies an initial policy against an
-empty anchor and therefore requires policy sequence `1`; later policy advances
-require the persisted external-anchor ceremony rather than this helper.
+every statement binding. By default this conductor verifies an initial policy
+against an empty anchor and therefore requires policy sequence `1`. For a
+later policy whose persisted tombstone list is empty, supply the three exact
+numeric `--anchor-*` values, the exact `--anchor-policy-key-id`, and
+`--anchor-tombstones none` from the independently persisted previous anchor.
+The conductor then verifies the signed candidate policy as a strict advance,
+requires the same pinned policy key, and rejects sequence replay or weaker
+release or lifecycle floors. A nonempty tombstone list requires a future
+canonical anchor-file ceremony and is deliberately rejected by this scalar
+helper. Anchor claims must come from the separate custody record, not from the
+new candidate, download site, or relay. The three counters and empty-tombstone
+claim come from the prior policy anchor; the policy-key ID comes from the prior
+independently persisted policy public key/package anchor because the scalar
+policy-anchor JSON does not contain that key identity. Derive that identity
+from the already trusted prior key with `releasectl public-key-id`, never from
+the candidate's copy. This helper does not support policy-key rotation.
+
+Fresh endpoints can bootstrap the currently trusted policy against their empty
+local anchor. An upgraded endpoint independently requires the new policy
+sequence to advance, both floors not to weaken, cumulative tombstones not to
+disappear, and the pinned policy signer not to change. During a canary, retaining
+the previous release floor preserves authenticated rollback; raising the floor
+to the candidate sequence deliberately burns that rollback only after the
+operator makes a separate policy decision.
 
 The independently authenticated OpenSSH key authorized as
 `owntransit-release` in `allowed_signers` is the privileged package-bootstrap

@@ -92,6 +92,10 @@ require_text scripts/release/install-macos.sh '/usr/bin/sudo -n -u "#$target_uid
 require_text scripts/release/install-macos.sh 'unrelated user is unexpectedly a reader-group member'
 require_text scripts/release/install-macos.sh 'installation root contains a setuid file'
 require_text scripts/release/install-macos.sh 'manual residue review is required'
+require_text scripts/release/install-macos.sh 'for (field_number = 1; field_number <= NF; field_number++)'
+if grep -Eq 'for \(index[[:space:]]*=' scripts/release/install-macos.sh; then
+  fail 'macOS installer assigns to the awk index builtin'
+fi
 require_text scripts/release/uninstall-macos.sh 'manager-owned current/previous selectors'
 require_text scripts/release/uninstall-macos.sh 'cmp -s "$release_directory/owntransit-real" "$public_frontend"'
 require_text scripts/release/uninstall-macos.sh 'destructive reader-identity purge is intentionally not implemented'
@@ -271,6 +275,23 @@ fi
 
 require_text scripts/release/sign-candidate.sh 'release and policy public key IDs must be different'
 require_text scripts/release/sign-candidate.sh 'the empty-anchor first-release path requires policy sequence 1'
+require_text scripts/release/sign-candidate.sh '--anchor-policy-sequence'
+require_text scripts/release/sign-candidate.sh '--anchor-policy-key-id'
+require_text scripts/release/sign-candidate.sh '--anchor-tombstones none'
+require_text scripts/release/sign-candidate.sh '--anchor-release-floor "$anchor_release_floor"'
+require_text scripts/release/sign-candidate.sh '--anchor-lifecycle-floor "$anchor_lifecycle_floor"'
+require_text scripts/release/sign-candidate.sh 'candidate policy sequence must advance the persisted anchor'
+require_text scripts/release/sign-candidate.sh 'policy public key differs from the persisted anchor'
+require_text scripts/release/sign-candidate.sh 'explicitly empty persisted tombstone list'
+require_text scripts/release/README.md 'This helper does not support policy-key rotation.'
+require_text scripts/release/README.md 'policy-anchor JSON does not contain that key identity'
+for forwarded_anchor in \
+  '--anchor-policy-sequence "$anchor_policy_sequence"' \
+  '--anchor-release-floor "$anchor_release_floor"' \
+  '--anchor-lifecycle-floor "$anchor_lifecycle_floor"'; do
+  test "$(grep -Fc -- "$forwarded_anchor" scripts/release/sign-candidate.sh)" -eq 2 ||
+    fail "signing conductor must forward each numeric policy anchor exactly twice"
+done
 require_text scripts/release/sign-candidate.sh 'output must remain outside the unsigned bundle'
 require_text scripts/release/sign-candidate.sh 'output must remain outside every signing/trust input parent'
 require_text scripts/release/sign-candidate.sh 'every signing/trust input must remain outside the unsigned bundle'

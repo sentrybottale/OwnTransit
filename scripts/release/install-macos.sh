@@ -588,7 +588,7 @@ verify_reader_group_live() {
   test "$membership_result" = 'user is not a member of the group' || fail "client user is unexpectedly an effective member of the reader group"
   client_group_ids=$(/usr/bin/id -G "$client_user") || fail "cannot resolve client user supplementary groups"
   printf '%s\n' "$client_group_ids" | awk -v wanted="$reader_gid" '
-    { for (index = 1; index <= NF; index++) if ($index == wanted) found = 1 }
+    { for (field_number = 1; field_number <= NF; field_number++) if ($field_number == wanted) found = 1 }
     END { exit found ? 1 : 0 }
   ' || fail "client user effective group vector contains the reader GID"
 }

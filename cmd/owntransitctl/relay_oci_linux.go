@@ -372,12 +372,27 @@ func inspectBoundRelayImage(tag, expectedImageID string, run packageCommandRunne
 	if err != nil {
 		return "", fmt.Errorf("package supervisor: inspect relay image: %w", err)
 	}
-	if imageID != expectedImageID {
+	normalizedImageID, err := normalizeRelayImageID(imageID)
+	if err != nil {
+		return "", err
+	}
+	if normalizedImageID != expectedImageID {
 		return "", errors.New("package supervisor: relay image tag is not bound to the authenticated OCI config digest")
 	}
-	digest := strings.TrimPrefix(imageID, "sha256:")
+	return strings.TrimPrefix(normalizedImageID, "sha256:"), nil
+}
+
+// Podman 4.x reports the local image configuration ID as bare lowercase hex,
+// while later releases may prefix the same digest with "sha256:". Accept only
+// those two exact encodings and compare one normalized value to the digest
+// authenticated inside the OCI archive.
+func normalizeRelayImageID(imageID string) (string, error) {
+	digest := imageID
+	if strings.HasPrefix(imageID, "sha256:") {
+		digest = strings.TrimPrefix(imageID, "sha256:")
+	}
 	if !validRelayDigest(digest) {
 		return "", errors.New("package supervisor: Podman returned a noncanonical image ID")
 	}
-	return digest, nil
+	return "sha256:" + digest, nil
 }
