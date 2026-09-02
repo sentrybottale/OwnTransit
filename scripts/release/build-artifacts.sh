@@ -17,7 +17,7 @@ usage: build-artifacts.sh \
   --output ABSOLUTE_NEW_DIRECTORY \
   [--engine container|docker]
 
-Builds the exact nine-artifact OwnTransit v1 matrix twice, compares the
+Builds the exact fourteen-artifact OwnTransit v1 matrix twice, compares the
 unsigned outputs, and atomically creates a deterministic checksum staging tree.
 This command does not sign, publish, or install anything.
 EOF
@@ -177,6 +177,7 @@ run_release_tool() {
 build_relay_oci() {
   relay_binary=$1
   relay_output=$2
+  relay_arch=$3
   case "$relay_binary" in
     "$build_root"/*) ;;
     *) fail "relay binary escaped the build workspace" ;;
@@ -202,7 +203,7 @@ build_relay_oci() {
       --workdir /src \
       "$builder_image" \
       /bin/sh /src/scripts/release/make-relay-oci.sh \
-      "$container_binary" "$container_output" "$release_id" "$version" "$source_commit" "$source_date_epoch" \
+      "$container_binary" "$container_output" "$relay_arch" "$release_id" "$version" "$source_commit" "$source_date_epoch" \
       /src/LICENSE /src/THIRD_PARTY_NOTICES.md
   else
     docker run --rm \
@@ -216,7 +217,7 @@ build_relay_oci() {
       --workdir /src \
       "$builder_image" \
       /bin/sh /src/scripts/release/make-relay-oci.sh \
-      "$container_binary" "$container_output" "$release_id" "$version" "$source_commit" "$source_date_epoch" \
+      "$container_binary" "$container_output" "$relay_arch" "$release_id" "$version" "$source_commit" "$source_date_epoch" \
       /src/LICENSE /src/THIRD_PARTY_NOTICES.md
   fi
 }
@@ -309,7 +310,7 @@ build_export() {
             build_one owntransitctl ./cmd/owntransitctl
             build_one owntransit-provision ./cmd/owntransit-provision
             ;;
-          linux/amd64)
+          linux/amd64|linux/arm64)
             build_one owntransit ./cmd/owntransit
             build_one owntransit-connector ./cmd/owntransit-connector
             build_one owntransit-relay ./cmd/owntransit-relay
@@ -354,12 +355,16 @@ exported_file() {
 
 first_darwin="$build_root/first-darwin"
 second_darwin="$build_root/second-darwin"
-first_linux="$build_root/first-linux"
-second_linux="$build_root/second-linux"
+first_linux_amd64="$build_root/first-linux-amd64"
+second_linux_amd64="$build_root/second-linux-amd64"
+first_linux_arm64="$build_root/first-linux-arm64"
+second_linux_arm64="$build_root/second-linux-arm64"
 build_export darwin arm64 "$first_darwin"
 build_export darwin arm64 "$second_darwin"
-build_export linux amd64 "$first_linux"
-build_export linux amd64 "$second_linux"
+build_export linux amd64 "$first_linux_amd64"
+build_export linux amd64 "$second_linux_amd64"
+build_export linux arm64 "$first_linux_arm64"
+build_export linux arm64 "$second_linux_arm64"
 
 for name in owntransit owntransit-launcher owntransitctl owntransit-provision; do
   first=$(exported_file "$first_darwin" "$name")
@@ -367,9 +372,12 @@ for name in owntransit owntransit-launcher owntransitctl owntransit-provision; d
   cmp -s "$first" "$second" || fail "darwin/arm64 $name is not reproducible"
 done
 for name in owntransit owntransit-connector owntransit-relay owntransitctl owntransit-provision; do
-  first=$(exported_file "$first_linux" "$name")
-  second=$(exported_file "$second_linux" "$name")
+  first=$(exported_file "$first_linux_amd64" "$name")
+  second=$(exported_file "$second_linux_amd64" "$name")
   cmp -s "$first" "$second" || fail "linux/amd64 $name is not reproducible"
+  first=$(exported_file "$first_linux_arm64" "$name")
+  second=$(exported_file "$second_linux_arm64" "$name")
+  cmp -s "$first" "$second" || fail "linux/arm64 $name is not reproducible"
 done
 
 command -v file >/dev/null 2>&1 || fail "file is required for static platform checks"
@@ -379,39 +387,61 @@ printf '%s\n' "$darwin_client_description" | grep -Eq '(^|[[:space:],])arm64([[:
 darwin_launcher_description=$(file -b "$(exported_file "$first_darwin" owntransit-launcher)")
 printf '%s\n' "$darwin_launcher_description" | grep -Fq 'Mach-O 64-bit' || fail "darwin client launcher is not a Mach-O 64-bit executable"
 printf '%s\n' "$darwin_launcher_description" | grep -Eq '(^|[[:space:],])arm64([[:space:],]|$)' || fail "darwin client launcher is not arm64"
-file -b "$(exported_file "$first_linux" owntransit)" | grep -Fq 'ELF 64-bit LSB' || fail "linux client is not an ELF executable"
-file -b "$(exported_file "$first_linux" owntransit)" | grep -Fq 'x86-64' || fail "linux client is not amd64"
+for name in owntransit owntransit-connector owntransit-relay owntransitctl owntransit-provision; do
+  file -b "$(exported_file "$first_linux_amd64" "$name")" | grep -Fq 'ELF 64-bit LSB' || fail "linux/amd64 $name is not an ELF executable"
+  file -b "$(exported_file "$first_linux_amd64" "$name")" | grep -Fq 'x86-64' || fail "linux/amd64 $name has the wrong architecture"
+  file -b "$(exported_file "$first_linux_arm64" "$name")" | grep -Fq 'ELF 64-bit LSB' || fail "linux/arm64 $name is not an ELF executable"
+  file -b "$(exported_file "$first_linux_arm64" "$name")" | grep -Fq 'ARM aarch64' || fail "linux/arm64 $name has the wrong architecture"
+done
 command -v strings >/dev/null 2>&1 || fail "strings is required for the connector target check"
-strings "$(exported_file "$first_linux" owntransit-connector)" | grep -Fq 'tcp4 127.0.0.1:22' || fail "connector does not identify the production SSH target"
-if strings "$(exported_file "$first_linux" owntransit-connector)" | grep -Fq '127.0.0.1:2222'; then
-  fail "connector contains the POC SSH target"
-fi
+for linux_build in "$first_linux_amd64" "$first_linux_arm64"; do
+  strings "$(exported_file "$linux_build" owntransit-connector)" | grep -Fq 'tcp4 127.0.0.1:22' || fail "connector does not identify the production SSH target"
+  if strings "$(exported_file "$linux_build" owntransit-connector)" | grep -Fq '127.0.0.1:2222'; then
+    fail "connector contains the POC SSH target"
+  fi
+done
 
-first_oci_root="$build_root/first-relay-oci"
-second_oci_root="$build_root/second-relay-oci"
-mkdir -p "$first_oci_root" "$second_oci_root"
-first_oci="$first_oci_root/relay.oci.tar"
-second_oci="$second_oci_root/relay.oci.tar"
+first_oci_amd64_root="$build_root/first-relay-oci-amd64"
+second_oci_amd64_root="$build_root/second-relay-oci-amd64"
+first_oci_arm64_root="$build_root/first-relay-oci-arm64"
+second_oci_arm64_root="$build_root/second-relay-oci-arm64"
+mkdir -p "$first_oci_amd64_root" "$second_oci_amd64_root" "$first_oci_arm64_root" "$second_oci_arm64_root"
+first_oci_amd64="$first_oci_amd64_root/relay.oci.tar"
+second_oci_amd64="$second_oci_amd64_root/relay.oci.tar"
+first_oci_arm64="$first_oci_arm64_root/relay.oci.tar"
+second_oci_arm64="$second_oci_arm64_root/relay.oci.tar"
 build_relay_oci \
-  "$(exported_file "$first_linux" owntransit-relay)" \
-  "$first_oci"
+  "$(exported_file "$first_linux_amd64" owntransit-relay)" \
+  "$first_oci_amd64" amd64
 build_relay_oci \
-  "$(exported_file "$second_linux" owntransit-relay)" \
-  "$second_oci"
-cmp -s "$first_oci" "$second_oci" || fail "linux/amd64 relay OCI archive is not reproducible"
+  "$(exported_file "$second_linux_amd64" owntransit-relay)" \
+  "$second_oci_amd64" amd64
+build_relay_oci \
+  "$(exported_file "$first_linux_arm64" owntransit-relay)" \
+  "$first_oci_arm64" arm64
+build_relay_oci \
+  "$(exported_file "$second_linux_arm64" owntransit-relay)" \
+  "$second_oci_arm64" arm64
+cmp -s "$first_oci_amd64" "$second_oci_amd64" || fail "linux/amd64 relay OCI archive is not reproducible"
+cmp -s "$first_oci_arm64" "$second_oci_arm64" || fail "linux/arm64 relay OCI archive is not reproducible"
 
 artifacts="$stage_root/artifacts"
 mkdir -p "$artifacts"
 install -m 0755 "$(exported_file "$first_darwin" owntransit)" "$artifacts/owntransit-darwin-arm64"
 install -m 0755 "$(exported_file "$first_darwin" owntransit-launcher)" "$artifacts/owntransit-launcher-darwin-arm64"
-install -m 0755 "$(exported_file "$first_linux" owntransit)" "$artifacts/owntransit-linux-amd64"
-install -m 0755 "$(exported_file "$first_linux" owntransit-connector)" "$artifacts/owntransit-connector-linux-amd64"
-install -m 0644 "$first_oci" "$artifacts/owntransit-relay-linux-amd64.oci.tar"
+install -m 0755 "$(exported_file "$first_linux_amd64" owntransit)" "$artifacts/owntransit-linux-amd64"
+install -m 0755 "$(exported_file "$first_linux_amd64" owntransit-connector)" "$artifacts/owntransit-connector-linux-amd64"
+install -m 0644 "$first_oci_amd64" "$artifacts/owntransit-relay-linux-amd64.oci.tar"
 install -m 0755 "$(exported_file "$first_darwin" owntransitctl)" "$artifacts/owntransitctl-darwin-arm64"
-install -m 0755 "$(exported_file "$first_linux" owntransitctl)" "$artifacts/owntransitctl-linux-amd64"
+install -m 0755 "$(exported_file "$first_linux_amd64" owntransitctl)" "$artifacts/owntransitctl-linux-amd64"
 install -m 0755 "$(exported_file "$first_darwin" owntransit-provision)" "$artifacts/owntransit-provision-darwin-arm64"
-install -m 0755 "$(exported_file "$first_linux" owntransit-provision)" "$artifacts/owntransit-provision-linux-amd64"
-test "$(find "$artifacts" -type f -print | wc -l | tr -d '[:space:]')" -eq 9 || fail "staging does not contain the exact nine-artifact matrix"
+install -m 0755 "$(exported_file "$first_linux_amd64" owntransit-provision)" "$artifacts/owntransit-provision-linux-amd64"
+install -m 0755 "$(exported_file "$first_linux_arm64" owntransit)" "$artifacts/owntransit-linux-arm64"
+install -m 0755 "$(exported_file "$first_linux_arm64" owntransit-connector)" "$artifacts/owntransit-connector-linux-arm64"
+install -m 0644 "$first_oci_arm64" "$artifacts/owntransit-relay-linux-arm64.oci.tar"
+install -m 0755 "$(exported_file "$first_linux_arm64" owntransitctl)" "$artifacts/owntransitctl-linux-arm64"
+install -m 0755 "$(exported_file "$first_linux_arm64" owntransit-provision)" "$artifacts/owntransit-provision-linux-arm64"
+test "$(find "$artifacts" -type f -print | wc -l | tr -d '[:space:]')" -eq 14 || fail "staging does not contain the exact fourteen-artifact matrix"
 
 "$project_root/scripts/source-manifest.sh" > "$manifest_after"
 cmp -s "$manifest_before" "$manifest_after" || fail "source changed during the release build"

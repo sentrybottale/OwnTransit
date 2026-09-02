@@ -3,9 +3,9 @@
 ## Release and assurance status
 
 OwnTransit 0.1.0 is the candidate release line for Apple-silicon macOS
-(`arm64`) and 64-bit x86 Linux (`amd64`/`x86_64`) within the documented
-SSH-only boundary. Intel macOS is not a supported 0.1.0 target. The tunnel,
-route-capability
+(`arm64`), 64-bit x86 Linux (`amd64`/`x86_64`), and 64-bit ARM Linux
+(`arm64`/`aarch64`) within the documented SSH-only boundary. Intel macOS is
+not a supported 0.1.0 target. The tunnel, route-capability
 profile, guided target-generated enrollment, signed verifier-first lifecycle
 policy, route-rotation issuance, revocation overlays, external rollback anchor,
 exact-record rollback, signed release/policy verification and manager-bound
@@ -20,6 +20,12 @@ independent external security assessment, penetration-test certification or
 universal suitability is claimed here. SSH and host recovery remain operator
 responsibilities; keep them independently available throughout qualification
 and deployment canarying.
+
+Retained `0.1.0-rc.*` package state is not a supported stable-install source.
+Those lifecycle binaries recognize the older exact-nine artifact profile and
+must fail closed on the exact-fourteen stable manifest. Ordinary uninstall is
+intentionally non-purging, and a destructive RC trust-reset is not implemented;
+use a genuinely fresh host for stable qualification.
 
 ## Reporting a vulnerability
 

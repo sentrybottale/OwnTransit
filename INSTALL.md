@@ -1,15 +1,25 @@
 # Install OwnTransit
 
 > [!WARNING]
-> OwnTransit 0.1.0 is currently a candidate for Apple-silicon macOS (`arm64`)
-> and 64-bit x86 Linux (`amd64`/`x86_64`), not an official stable publication.
-> Intel macOS is outside the 0.1.0 support matrix. The repository can build a
+> OwnTransit 0.1.0 is currently a candidate for Apple-silicon macOS (`arm64`),
+> 64-bit x86 Linux (`amd64`/`x86_64`), and 64-bit ARM Linux
+> (`arm64`/`aarch64`), not an official stable publication. Intel macOS is
+> outside the 0.1.0 support matrix. The repository can build a
 > signed, installable candidate handoff, but use it only for qualification unless its
 > exact signed qualification record is independently verified and reports every
 > hard release gate as passed. A Git checkout, unsigned local build, or checksum
 > downloaded beside an archive is not an authenticated package. Independent
 > external security certification is not claimed. Keep an operator-owned
 > alternative access and recovery path throughout qualification and canarying.
+
+OwnTransit `0.1.0-rc.*` packages were qualification artifacts and are not a
+supported in-place upgrade source for stable `0.1.0`. Do not install stable
+`0.1.0` over retained RC package state. The supplied uninstall commands are
+intentionally non-purging: they preserve selectors, rollback anchors, receipts,
+identities, credentials, and recovery state, so they do not turn an RC host
+into a clean stable-install target. Use a genuinely fresh host. A separately
+reviewed destructive RC trust-reset followed by complete re-enrollment is not
+currently implemented.
 
 ## The recipient experience
 
@@ -71,9 +81,11 @@ authenticating the handoff trust and its signed outer `SHA256SUMS`, copy and
 extract it into the release instructions' protected root-owned location. On
 macOS the handoff supports the `client` and `provisioner` roles.
 
-On 64-bit x86 Linux, the authenticated `linux-amd64` native handoff supports
-`client`, `connector`, `relay`, and `provisioner`. Both platforms use the same
-short entry point:
+On Linux, the authenticated architecture-specific `linux-amd64` or
+`linux-arm64` native handoff supports `client`, `connector`, `relay`, and
+`provisioner`. The Linux names correspond to `x86_64`/`amd64` and
+`aarch64`/`arm64` hardware respectively. All three supported
+platform/architecture targets use the same short entry point:
 
 ```sh
 sudo /ABSOLUTE/NATIVE/packaging/scripts/install.sh --bundle /ABSOLUTE/NATIVE --assets /ABSOLUTE/assets --trust /ABSOLUTE/trust --role client --client-user LOCAL_USER

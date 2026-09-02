@@ -146,17 +146,21 @@ if [ "$mode" = full ]; then
     )
   elif command -v container >/dev/null 2>&1; then
     container system start
-    container build --progress plain --platform linux/amd64 --file Containerfile --target test --tag owntransit-test:security-production .
-    container build --progress plain --platform linux/amd64 --file Containerfile --target test-poc --tag owntransit-test:security-poc .
-    container build --progress plain --platform linux/amd64 --file Containerfile --target vet --tag owntransit-vet:security .
-    container build --progress plain --platform linux/amd64 --file Containerfile --target vulncheck --tag owntransit-vulncheck:security .
-    container build --progress plain --platform linux/amd64 --file Containerfile --target dependency-licenses --tag owntransit-dependency-licenses:security .
+    for linux_arch in amd64 arm64; do
+      container build --progress plain --platform "linux/$linux_arch" --file Containerfile --target test --tag "owntransit-test:security-production-$linux_arch" .
+      container build --progress plain --platform "linux/$linux_arch" --file Containerfile --target test-poc --tag "owntransit-test:security-poc-$linux_arch" .
+      container build --progress plain --platform "linux/$linux_arch" --file Containerfile --target vet --tag "owntransit-vet:security-$linux_arch" .
+      container build --progress plain --platform "linux/$linux_arch" --file Containerfile --target vulncheck --tag "owntransit-vulncheck:security-$linux_arch" .
+      container build --progress plain --platform "linux/$linux_arch" --file Containerfile --target dependency-licenses --tag "owntransit-dependency-licenses:security-$linux_arch" .
+    done
   elif command -v docker >/dev/null 2>&1 && docker buildx version >/dev/null 2>&1; then
-    docker buildx build --progress plain --platform linux/amd64 --file Containerfile --target test --load --tag owntransit-test:security-production .
-    docker buildx build --progress plain --platform linux/amd64 --file Containerfile --target test-poc --load --tag owntransit-test:security-poc .
-    docker buildx build --progress plain --platform linux/amd64 --file Containerfile --target vet --load --tag owntransit-vet:security .
-    docker buildx build --progress plain --platform linux/amd64 --file Containerfile --target vulncheck --load --tag owntransit-vulncheck:security .
-    docker buildx build --progress plain --platform linux/amd64 --file Containerfile --target dependency-licenses --load --tag owntransit-dependency-licenses:security .
+    for linux_arch in amd64 arm64; do
+      docker buildx build --progress plain --platform "linux/$linux_arch" --file Containerfile --target test --load --tag "owntransit-test:security-production-$linux_arch" .
+      docker buildx build --progress plain --platform "linux/$linux_arch" --file Containerfile --target test-poc --load --tag "owntransit-test:security-poc-$linux_arch" .
+      docker buildx build --progress plain --platform "linux/$linux_arch" --file Containerfile --target vet --load --tag "owntransit-vet:security-$linux_arch" .
+      docker buildx build --progress plain --platform "linux/$linux_arch" --file Containerfile --target vulncheck --load --tag "owntransit-vulncheck:security-$linux_arch" .
+      docker buildx build --progress plain --platform "linux/$linux_arch" --file Containerfile --target dependency-licenses --load --tag "owntransit-dependency-licenses:security-$linux_arch" .
+    done
   else
     fail "full checks require Go, Apple Container, or Docker Buildx"
   fi

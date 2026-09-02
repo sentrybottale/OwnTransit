@@ -45,8 +45,8 @@ done
 
 test "$(uname -s)" = Linux || fail "this uninstaller supports Linux only"
 case "$(uname -m)" in
-  x86_64|amd64) ;;
-  *) fail "this uninstaller supports amd64 only" ;;
+  x86_64|amd64|aarch64|arm64) ;;
+  *) fail "this uninstaller supports Linux amd64 and arm64 only" ;;
 esac
 test "$(id -u)" -eq 0 || fail "uninstall requires root"
 case "$release_id" in *[!a-z2-7]*|'') fail "release ID must be lowercase unpadded RFC 4648 base32" ;; esac

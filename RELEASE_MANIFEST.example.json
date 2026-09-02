@@ -118,6 +118,62 @@
       "role": "launcher",
       "format": "executable",
       "sbom": "sbom-launcher-darwin-arm64"
+    },
+    {
+      "name": "client-linux-arm64",
+      "file": "artifacts/owntransit-linux-arm64",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 110,
+      "os": "linux",
+      "arch": "arm64",
+      "role": "client",
+      "format": "executable",
+      "sbom": "sbom-client-linux-arm64"
+    },
+    {
+      "name": "connector-linux-arm64",
+      "file": "artifacts/owntransit-connector-linux-arm64",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 111,
+      "os": "linux",
+      "arch": "arm64",
+      "role": "connector",
+      "format": "executable",
+      "ssh_target": "tcp4/127.0.0.1:22",
+      "sbom": "sbom-connector-linux-arm64"
+    },
+    {
+      "name": "relay-linux-arm64",
+      "file": "artifacts/owntransit-relay-linux-arm64.oci.tar",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 112,
+      "os": "linux",
+      "arch": "arm64",
+      "role": "relay",
+      "format": "oci",
+      "sbom": "sbom-relay-linux-arm64"
+    },
+    {
+      "name": "lifecycle-linux-arm64",
+      "file": "artifacts/owntransitctl-linux-arm64",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 113,
+      "os": "linux",
+      "arch": "arm64",
+      "role": "lifecycle",
+      "format": "executable",
+      "sbom": "sbom-lifecycle-linux-arm64"
+    },
+    {
+      "name": "provisioner-linux-arm64",
+      "file": "artifacts/owntransit-provision-linux-arm64",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 114,
+      "os": "linux",
+      "arch": "arm64",
+      "role": "provisioner",
+      "format": "executable",
+      "sbom": "sbom-provisioner-linux-arm64"
     }
   ],
   "evidence": [
@@ -150,10 +206,24 @@
       "kind": "sbom"
     },
     {
+      "name": "sbom-client-linux-arm64",
+      "file": "evidence/owntransit-linux-arm64.spdx.json",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "size": 210,
+      "kind": "sbom"
+    },
+    {
       "name": "sbom-connector-linux-amd64",
       "file": "evidence/owntransit-connector-linux-amd64.spdx.json",
       "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "size": 203,
+      "kind": "sbom"
+    },
+    {
+      "name": "sbom-connector-linux-arm64",
+      "file": "evidence/owntransit-connector-linux-arm64.spdx.json",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "size": 211,
       "kind": "sbom"
     },
     {
@@ -178,6 +248,13 @@
       "kind": "sbom"
     },
     {
+      "name": "sbom-lifecycle-linux-arm64",
+      "file": "evidence/owntransitctl-linux-arm64.spdx.json",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "size": 213,
+      "kind": "sbom"
+    },
+    {
       "name": "sbom-provisioner-darwin-arm64",
       "file": "evidence/owntransit-provision-darwin-arm64.spdx.json",
       "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
@@ -192,10 +269,24 @@
       "kind": "sbom"
     },
     {
+      "name": "sbom-provisioner-linux-arm64",
+      "file": "evidence/owntransit-provision-linux-arm64.spdx.json",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "size": 214,
+      "kind": "sbom"
+    },
+    {
       "name": "sbom-relay-linux-amd64",
       "file": "evidence/owntransit-relay-linux-amd64.oci.tar.spdx.json",
       "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "size": 204,
+      "kind": "sbom"
+    },
+    {
+      "name": "sbom-relay-linux-arm64",
+      "file": "evidence/owntransit-relay-linux-arm64.oci.tar.spdx.json",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "size": 212,
       "kind": "sbom"
     },
     {

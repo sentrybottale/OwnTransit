@@ -981,6 +981,7 @@ var productionBuilds = []struct {
 }{
 	{"darwin", "arm64", []string{"./cmd/owntransit", "./cmd/owntransit-launcher", "./cmd/owntransitctl", "./cmd/owntransit-provision"}},
 	{"linux", "amd64", []string{"./cmd/owntransit", "./cmd/owntransit-connector", "./cmd/owntransit-relay", "./cmd/owntransitctl", "./cmd/owntransit-provision"}},
+	{"linux", "arm64", []string{"./cmd/owntransit", "./cmd/owntransit-connector", "./cmd/owntransit-relay", "./cmd/owntransitctl", "./cmd/owntransit-provision"}},
 }
 
 func dependencyEvidence(goVersion string) ([]release.SPDXPackage, []byte, error) {

@@ -212,6 +212,71 @@ sha256_file() {
   shasum -a 256 "$1" | awk '{print $1}'
 }
 
+inspect_canonical_lifecycle_version() {
+  lifecycle_executable=$1
+  expected_lifecycle_release=$2
+  version_output_name=$3
+  version_output_path="$verification_directory/$version_output_name.version.json"
+  test ! -e "$version_output_path" && test ! -L "$version_output_path" ||
+    fail "lifecycle version inspection output already exists"
+  if ! /usr/bin/env -i \
+    HOME=/var/root \
+    LANG=C \
+    LC_ALL=C \
+    PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+    "$lifecycle_executable" version </dev/null >"$version_output_path" 2>/dev/null; then
+    fail "$version_output_name lifecycle version inspection failed"
+  fi
+  version_output_size=$(wc -c < "$version_output_path" | tr -d '[:space:]')
+  case "$version_output_size" in ''|*[!0-9]*) fail "$version_output_name lifecycle version output size is invalid" ;; esac
+  test "$version_output_size" -gt 0 && test "$version_output_size" -le 1024 ||
+    fail "$version_output_name lifecycle version output is empty or oversized"
+  test "$(wc -l < "$version_output_path" | tr -d '[:space:]')" -eq 1 ||
+    fail "$version_output_name lifecycle version output is not one canonical line"
+  inspected_version=$(awk -F '"' \
+    -v expected_release="$expected_lifecycle_release" '
+      {
+        if (NR != 1 || NF != 41 ||
+            $1 != "{" || $2 != "schema" || $3 != ":" || $4 != "owntransit.build.v1" || $5 != "," ||
+            $6 != "product" || $7 != ":" || $8 != "OwnTransit" || $9 != "," ||
+            $10 != "version" || $11 != ":" || $13 != "," ||
+            $14 != "release_id" || $15 != ":" || $16 != expected_release || $17 != "," ||
+            $18 != "source_commit" || $19 != ":" || $21 != "," ||
+            $22 != "source_dirty" || $23 != ":" || $24 != "false" || $25 != "," ||
+            $26 != "role" || $27 != ":" || $28 != "lifecycle" || $29 != "," ||
+            $30 != "protocol" || $31 != ":" || $33 != "," ||
+            $34 != "goos" || $35 != ":" || $36 != "darwin" || $37 != "," ||
+            $38 != "goarch" || $39 != ":" || $40 != "arm64" || $41 != "}") {
+          invalid = 1
+          next
+        }
+        if ($12 == "" || length($12) > 64 || $12 ~ /[^0-9A-Za-z.+-]/ ||
+            $32 == "" || length($32) > 64 || $32 ~ /[^0-9A-Za-z._\/-]/ ||
+            (length($20) != 40 && length($20) != 64) || $20 ~ /[^0-9a-f]/) {
+          invalid = 1
+          next
+        }
+        version = $12
+      }
+      END {
+        if (NR != 1 || invalid || version == "") exit 1
+        print version
+      }
+    ' "$version_output_path") || fail "$version_output_name lifecycle version output is not canonical OwnTransit build information"
+  printf '%s\n' "$inspected_version"
+}
+
+is_owntransit_010_release_candidate() {
+  case "$1" in
+    0.1.0-rc.*)
+      rc_number=${1#0.1.0-rc.}
+      case "$rc_number" in ''|0|0*|*[!0-9]*) return 1 ;; esac
+      return 0
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 checksums="$bundle/SHA256SUMS"
 require_root_owned_regular "$checksums"
 test "$(sha256_file "$checksums")" = "$checksums_sha256" || fail "SHA256SUMS does not match its independently supplied digest"
@@ -262,9 +327,35 @@ test ! -L "$0" || fail "installer entry point must not be a symlink"
 test "$0" = "$bundled_installer" || fail "installer must run directly from the selected protected bundle"
 require_root_owned_regular "$bundled_installer"
 cmp -s "$0" "$bundled_installer" || fail "running installer is not the checksummed bundle copy"
-test "$(listed_digest BUILD-INPUTS)" = "$(sha256_file "$bundle/BUILD-INPUTS")" || fail "BUILD-INPUTS is not authenticated by SHA256SUMS"
-build_release_id=$(awk -F= '$1 == "release_id" { print $2 }' "$bundle/BUILD-INPUTS")
+build_inputs="$bundle/BUILD-INPUTS"
+test "$(listed_digest BUILD-INPUTS)" = "$(sha256_file "$build_inputs")" || fail "BUILD-INPUTS is not authenticated by SHA256SUMS"
+{
+  IFS= read -r build_version_line || fail "BUILD-INPUTS is incomplete"
+  IFS= read -r build_release_id_line || fail "BUILD-INPUTS is incomplete"
+  IFS= read -r build_release_sequence_line || fail "BUILD-INPUTS is incomplete"
+  IFS= read -r build_source_commit_line || fail "BUILD-INPUTS is incomplete"
+  IFS= read -r build_source_date_epoch_line || fail "BUILD-INPUTS is incomplete"
+  IFS= read -r build_source_manifest_line || fail "BUILD-INPUTS is incomplete"
+  if IFS= read -r build_extra_line; then
+    fail "BUILD-INPUTS contains an unexpected extra line"
+  fi
+} < "$build_inputs"
+case "$build_version_line" in version=*) candidate_version=${build_version_line#version=} ;; *) fail "BUILD-INPUTS version field is invalid" ;; esac
+case "$build_release_id_line" in release_id=*) build_release_id=${build_release_id_line#release_id=} ;; *) fail "BUILD-INPUTS release ID field is invalid" ;; esac
+case "$build_release_sequence_line" in release_sequence=*) build_release_sequence=${build_release_sequence_line#release_sequence=} ;; *) fail "BUILD-INPUTS release sequence field is invalid" ;; esac
+case "$build_source_commit_line" in source_commit=*) build_source_commit=${build_source_commit_line#source_commit=} ;; *) fail "BUILD-INPUTS source commit field is invalid" ;; esac
+case "$build_source_date_epoch_line" in source_date_epoch=*) build_source_date_epoch=${build_source_date_epoch_line#source_date_epoch=} ;; *) fail "BUILD-INPUTS source date field is invalid" ;; esac
+case "$build_source_manifest_line" in source_manifest_sha256=*) build_source_manifest=${build_source_manifest_line#source_manifest_sha256=} ;; *) fail "BUILD-INPUTS source manifest field is invalid" ;; esac
+case "$candidate_version" in ''|*[!A-Za-z0-9._+-]*|[!A-Za-z0-9]*) fail "BUILD-INPUTS version is unsafe" ;; esac
+test "${#candidate_version}" -le 64 || fail "BUILD-INPUTS version is too long"
 test "$build_release_id" = "$release_id" || fail "bundle release ID does not match --release-id"
+case "$build_release_sequence" in ''|0|0*|*[!0-9]*) fail "BUILD-INPUTS release sequence is not canonical positive decimal" ;; esac
+test "${#build_release_sequence}" -le 20 || fail "BUILD-INPUTS release sequence is out of range"
+case "$build_source_commit" in ''|*[!0-9a-f]*) fail "BUILD-INPUTS source commit is invalid" ;; esac
+case "${#build_source_commit}" in 40|64) ;; *) fail "BUILD-INPUTS source commit length is invalid" ;; esac
+case "$build_source_date_epoch" in ''|*[!0-9]*) fail "BUILD-INPUTS source date is invalid" ;; esac
+test "${#build_source_date_epoch}" -le 10 && test "$build_source_date_epoch" -gt 0 || fail "BUILD-INPUTS source date is out of range"
+valid_digest "$build_source_manifest" || fail "BUILD-INPUTS source manifest digest is invalid"
 project_license_path=LICENSE
 third_party_licenses_path=evidence/THIRD_PARTY_LICENSES.txt
 test "$(listed_digest "$project_license_path")" = "$(sha256_file "$bundle/$project_license_path")" || fail "project license is not authenticated by SHA256SUMS"
@@ -777,6 +868,54 @@ prepare_package_mutation_lock() {
 	fi
 	require_package_mutation_lock_file
 }
+
+require_selected_lifecycle_directory() {
+  selected_directory=$1
+  test -d "$selected_directory" && test ! -L "$selected_directory" ||
+    fail "selected lifecycle ancestor is not a regular directory: $selected_directory"
+  test "$(stat -f %u "$selected_directory")" -eq 0 ||
+    fail "selected lifecycle ancestor is not root-owned: $selected_directory"
+  selected_mode=$(macos_mode "$selected_directory") ||
+    fail "cannot inspect selected lifecycle ancestor mode: $selected_directory"
+  case "$selected_mode" in [0-7][0-7][0-7]) ;; *) fail "selected lifecycle ancestor mode is non-canonical: $selected_directory" ;; esac
+  test $((0$selected_mode & 022)) -eq 0 ||
+    fail "selected lifecycle ancestor is group/world writable: $selected_directory"
+  require_no_extended_acl "$selected_directory"
+}
+
+guard_retained_prerelease_install() {
+  selected_current_link="/Library/OwnTransit/roles/$role/current"
+  test -e "$selected_current_link" || test -L "$selected_current_link" || return 0
+
+  for selected_directory in \
+    / /Library /Library/OwnTransit /Library/OwnTransit/roles \
+    "/Library/OwnTransit/roles/$role" "/Library/OwnTransit/roles/$role/releases"; do
+    require_selected_lifecycle_directory "$selected_directory"
+  done
+  test -L "$selected_current_link" || fail "role current selector exists and is not a symlink"
+  selected_target=$(readlink "$selected_current_link")
+  case "$selected_target" in releases/*) selected_release=${selected_target#releases/} ;; *) fail "role current selector has an invalid target" ;; esac
+  case "$selected_release" in *[!a-z2-7]*|'') fail "role current selector has an invalid release ID" ;; esac
+  test "${#selected_release}" -eq 52 || fail "role current selector release ID has the wrong length"
+  case "$selected_release" in *[aq]) ;; *) fail "role current selector release ID is non-canonical" ;; esac
+  test "$selected_release" != aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa || fail "role current selector release ID is zero"
+  test "$selected_target" = "releases/$selected_release" || fail "role current selector target is not canonical"
+
+  selected_release_directory="/Library/OwnTransit/roles/$role/releases/$selected_release"
+  require_selected_lifecycle_directory "$selected_release_directory"
+  selected_lifecycle="$selected_release_directory/owntransitctl"
+  test -f "$selected_lifecycle" && test ! -L "$selected_lifecycle" || fail "selected lifecycle executable is absent or not regular"
+  test "$(stat -f %u "$selected_lifecycle")" -eq 0 && test "$(stat -f %g "$selected_lifecycle")" -eq 0 || fail "selected lifecycle executable is not root:wheel owned"
+  test "$(macos_mode "$selected_lifecycle")" = 700 && test "$(stat -f %l "$selected_lifecycle")" -eq 1 || fail "selected lifecycle executable metadata is invalid"
+  require_no_extended_acl "$selected_lifecycle"
+  selected_version=$(inspect_canonical_lifecycle_version "$selected_lifecycle" "$selected_release" selected)
+
+  if test "$candidate_version" = 0.1.0 && is_owntransit_010_release_candidate "$selected_version"; then
+    fail "selected $role role retains OwnTransit $selected_version state; stable 0.1.0 requires a fresh host. Do not purge this host: preserve the retained role state for recovery"
+  fi
+}
+
+guard_retained_prerelease_install
 
 install_root=/Library/OwnTransit
 roles_root="$install_root/roles"

@@ -115,29 +115,40 @@ func TestInspectBoundRelayImageRejectsNoncanonicalPodmanIDs(t *testing.T) {
 
 func TestParseRelayOCIArchiveReturnsAuthenticatedConfigDigest(t *testing.T) {
 	releaseID := strings.Repeat("b", 51) + "a"
-	archive, expectedID := relayOCIFixture(t, releaseID)
-	actual, err := parseRelayOCIArchive(bytes.NewReader(archive), int64(len(archive)), releaseID)
-	if err != nil || actual != expectedID {
-		t.Fatalf("parse relay OCI = %q, %v; want %q", actual, err, expectedID)
-	}
+	for _, arch := range []string{"amd64", "arm64"} {
+		t.Run(arch, func(t *testing.T) {
+			archive, expectedID := relayOCIFixture(t, releaseID, arch)
+			actual, err := parseRelayOCIArchive(bytes.NewReader(archive), int64(len(archive)), releaseID, arch)
+			if err != nil || actual != expectedID {
+				t.Fatalf("parse relay OCI = %q, %v; want %q", actual, err, expectedID)
+			}
+			wrongArch := "arm64"
+			if arch == wrongArch {
+				wrongArch = "amd64"
+			}
+			if _, err := parseRelayOCIArchive(bytes.NewReader(archive), int64(len(archive)), releaseID, wrongArch); err == nil || !strings.Contains(err.Error(), "selects another image") {
+				t.Fatalf("wrong-architecture relay OCI error = %v", err)
+			}
 
-	mutated := append([]byte(nil), archive...)
-	position := bytes.Index(mutated, []byte("OwnTransit Relay"))
-	if position < 0 {
-		t.Fatal("fixture title absent")
-	}
-	mutated[position] = 'X'
-	if _, err := parseRelayOCIArchive(bytes.NewReader(mutated), int64(len(mutated)), releaseID); err == nil || !strings.Contains(err.Error(), "blob digest") {
-		t.Fatalf("mutated authenticated blob error = %v", err)
+			mutated := append([]byte(nil), archive...)
+			position := bytes.Index(mutated, []byte("OwnTransit Relay"))
+			if position < 0 {
+				t.Fatal("fixture title absent")
+			}
+			mutated[position] = 'X'
+			if _, err := parseRelayOCIArchive(bytes.NewReader(mutated), int64(len(mutated)), releaseID, arch); err == nil || !strings.Contains(err.Error(), "blob digest") {
+				t.Fatalf("mutated authenticated blob error = %v", err)
+			}
+		})
 	}
 }
 
-func relayOCIFixture(t *testing.T, releaseID string) ([]byte, string) {
+func relayOCIFixture(t *testing.T, releaseID, arch string) ([]byte, string) {
 	t.Helper()
 	layer := []byte("deterministic-layer-tar-placeholder")
 	layerDigest := sha256Hex(layer)
 	configuration := relayOCIImageConfig{
-		Architecture: "amd64",
+		Architecture: arch,
 		Config: relayOCIContainerConfig{
 			Command:    []string{"run", "--runtime-root=/runtime", "--anchor-view-root=/anchor", "--reader-gid=65532"},
 			Entrypoint: []string{"/owntransit-relay"},
@@ -162,7 +173,7 @@ func relayOCIFixture(t *testing.T, releaseID string) ([]byte, string) {
 		SchemaVersion: 2,
 		Manifests: []relayOCIIndexDescriptor{{
 			MediaType: relayOCIManifestMediaType, Digest: "sha256:" + manifestDigest, Size: int64(len(manifestBytes)),
-			Platform:    relayOCIPlatform{Architecture: "amd64", OS: "linux"},
+			Platform:    relayOCIPlatform{Architecture: arch, OS: "linux"},
 			Annotations: relayOCIAnnotations{ReferenceName: "owntransit-relay:" + releaseID},
 		}},
 	}

@@ -33,25 +33,35 @@ LICENSE
 RELEASE-MANIFEST.json
 SOURCE-MANIFEST.txt
 artifacts/owntransit-connector-linux-amd64
+artifacts/owntransit-connector-linux-arm64
 artifacts/owntransit-darwin-arm64
 artifacts/owntransit-launcher-darwin-arm64
 artifacts/owntransit-linux-amd64
+artifacts/owntransit-linux-arm64
 artifacts/owntransit-provision-darwin-arm64
 artifacts/owntransit-provision-linux-amd64
+artifacts/owntransit-provision-linux-arm64
 artifacts/owntransit-relay-linux-amd64.oci.tar
+artifacts/owntransit-relay-linux-arm64.oci.tar
 artifacts/owntransitctl-darwin-arm64
 artifacts/owntransitctl-linux-amd64
+artifacts/owntransitctl-linux-arm64
 evidence/PROVENANCE.json
 evidence/THIRD_PARTY_LICENSES.txt
 evidence/owntransit-connector-linux-amd64.spdx.json
+evidence/owntransit-connector-linux-arm64.spdx.json
 evidence/owntransit-darwin-arm64.spdx.json
 evidence/owntransit-launcher-darwin-arm64.spdx.json
 evidence/owntransit-linux-amd64.spdx.json
+evidence/owntransit-linux-arm64.spdx.json
 evidence/owntransit-provision-darwin-arm64.spdx.json
 evidence/owntransit-provision-linux-amd64.spdx.json
+evidence/owntransit-provision-linux-arm64.spdx.json
 evidence/owntransit-relay-linux-amd64.oci.tar.spdx.json
+evidence/owntransit-relay-linux-arm64.oci.tar.spdx.json
 evidence/owntransitctl-darwin-arm64.spdx.json
 evidence/owntransitctl-linux-amd64.spdx.json
+evidence/owntransitctl-linux-arm64.spdx.json
 packaging/launchd/README.md
 packaging/scripts/install.sh
 packaging/scripts/install-linux.sh
@@ -67,7 +77,7 @@ EOF
 
 native_mode() {
   case "$1" in
-    artifacts/owntransit-relay-linux-amd64.oci.tar) printf '%s\n' 0644 ;;
+    artifacts/owntransit-relay-linux-amd64.oci.tar|artifacts/owntransit-relay-linux-arm64.oci.tar) printf '%s\n' 0644 ;;
     artifacts/*|packaging/scripts/*) printf '%s\n' 0755 ;;
     *) printf '%s\n' 0644 ;;
   esac

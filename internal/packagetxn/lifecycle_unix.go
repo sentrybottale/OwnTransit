@@ -678,14 +678,22 @@ func artifactNameForRole(role, goos, goarch string) (string, error) {
 		return "client-darwin-arm64", nil
 	case "client/linux/amd64":
 		return "client-linux-amd64", nil
+	case "client/linux/arm64":
+		return "client-linux-arm64", nil
 	case "connector/linux/amd64":
 		return "connector-linux-amd64", nil
+	case "connector/linux/arm64":
+		return "connector-linux-arm64", nil
 	case "relay/linux/amd64":
 		return "relay-linux-amd64", nil
+	case "relay/linux/arm64":
+		return "relay-linux-arm64", nil
 	case "provisioner/darwin/arm64":
 		return "provisioner-darwin-arm64", nil
 	case "provisioner/linux/amd64":
 		return "provisioner-linux-amd64", nil
+	case "provisioner/linux/arm64":
+		return "provisioner-linux-arm64", nil
 	default:
 		return "", errors.New("packagetxn: role is unsupported on the local platform")
 	}

@@ -219,6 +219,8 @@ for expected_test in \
   hostile-relay-resource-exhaustion \
   linux-amd64-clean-host-lifecycle \
   linux-amd64-relay-exchange \
+  linux-arm64-clean-host-lifecycle \
+  linux-arm64-relay-exchange \
   macos-arm64-clean-host-lifecycle \
   public-history-clean-export \
   public-tree-source-gates \

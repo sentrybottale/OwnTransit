@@ -2,7 +2,7 @@
 
 This directory is intentionally offline and split into three boundaries:
 
-- `build-artifacts.sh` produces the exact nine unsigned v1 artifacts twice,
+- `build-artifacts.sh` produces the exact fourteen unsigned v1 artifacts twice,
   compares them, builds the relay OCI archive without a mutable base image, and
   emits a path-sorted `SHA256SUMS` staging tree with canonical SPDX, license,
   provenance and unsigned manifest evidence.
@@ -223,7 +223,7 @@ hardware-backed signing, two-location recovery, and release/policy key-rotation
 ceremonies are operator security procedures, not defaults hidden in a script.
 
 The staging tree is not a release merely because it has checksums. Before public
-use it needs all nine separately named SBOM records, generated third-party
+use it needs all fourteen separately named SBOM records, generated third-party
 license evidence, the exact Apache-2.0 project LICENSE digest, provenance, an
 exact signed software-release manifest, and clean-host qualification. The
 implemented free Homebrew/source lane is the macOS v1 distribution direction;
@@ -231,6 +231,16 @@ every exact handoff must carry the hardened-activation qualification described
 below. Developer ID package output is disabled until OwnTransit also
 authenticates the final post-signing bytes and version. A checksum supplied by
 the same unauthenticated download is not authentication.
+
+The exact-nine public `0.1.0-rc.*` qualification packages and exact-fourteen
+stable line are separate authenticated matrix editions inside the v1 release
+envelope. An installed RC lifecycle accepts only its exact-nine edition and
+must fail closed on the fourteen-artifact manifest. There is no supported
+RC-to-stable in-place upgrade. Ordinary uninstall is deliberately non-purging
+and therefore does not prepare that host for stable installation; use a
+genuinely fresh host. A destructive RC trust-reset and complete re-enrollment
+ceremony is not implemented, and invoking the candidate lifecycle around the
+selected installed manager is forbidden.
 
 Every native installer copies the checksummed Apache license and generated full
 third-party license evidence into the selected immutable release directory next
@@ -254,7 +264,7 @@ chowning user-originated files does not revoke an already-open write descriptor.
 Do not run the installer with `sudo` directly from a user-owned checkout or
 download.
 
-## Linux amd64 installation boundary (x86_64 hardware)
+## Linux installation boundary (amd64/x86_64 and arm64/aarch64)
 
 The client and provisioner are on-demand executables. Both use their own
 manager-bound signed release/policy transaction, external rollback anchor,
@@ -422,6 +432,8 @@ connector-client-ssh-boundary|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
 hostile-relay-resource-exhaustion|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
 linux-amd64-clean-host-lifecycle|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
 linux-amd64-relay-exchange|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
+linux-arm64-clean-host-lifecycle|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
+linux-arm64-relay-exchange|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
 macos-arm64-clean-host-lifecycle|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
 public-history-clean-export|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
 public-tree-source-gates|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
@@ -458,11 +470,11 @@ verify the SSHSIG against authenticated `allowed_signers`, and independently
 confirm every referenced evidence digest. The signature authenticates what the
 release operator recorded; it cannot prove that a test was performed honestly.
 
-- Each exact Linux handoff must qualify setgid client execution, exact
-  primary-GID selection, directory/file modes, lifecycle/runtime lock
-  exclusion, required `fs.protected_hardlinks=1` enforcement for the traversable
-  provisioner namespace, and service inability to mutate the views on a clean
-  host.
+- Each exact Linux architecture handoff must independently qualify setgid
+  client execution, exact primary-GID selection, directory/file modes,
+  lifecycle/runtime lock exclusion, required `fs.protected_hardlinks=1`
+  enforcement for the traversable provisioner namespace, and service inability
+  to mutate the views on a clean host.
   `nosuid` or policy suppression of setgid execution is a stop for that host.
 - Each exact macOS handoff must qualify the zero-member setgid launcher, exact
   GeneratedUID binding, descriptor-based ACL verifier, equal signed launcher

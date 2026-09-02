@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+# Legacy amd64-only POC helper. The signed release builder emits both Linux
+# architectures; do not use this as a release path.
+
 project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 dist="$project_root/dist"
 mkdir -p "$dist"

@@ -11,7 +11,24 @@ or publish artifacts automatically.
 
 ## [0.1.0]
 
+### Added
+
+- Added Linux arm64/aarch64 client, connector, relay-image, lifecycle, and
+  provisioner artifacts alongside the existing Linux amd64/x86_64 artifacts.
+  The supported matrix is Apple-silicon macOS, Linux amd64, and Linux arm64;
+  Intel macOS remains unsupported.
+- Expanded deterministic staging, manifests, SBOMs, native archives,
+  installers, and hard qualification lanes from nine artifacts to the exact
+  fourteen-artifact matrix.
+
 ### Security
+
+- Made the nine-to-fourteen artifact transition an explicit prerelease
+  boundary. Installed `0.1.0-rc.*` package state is not a supported in-place
+  predecessor for stable `0.1.0`; the old exact-nine lifecycle must fail closed
+  on the stable manifest. Ordinary uninstall deliberately preserves that state,
+  and no destructive RC trust-reset is implemented, so stable qualification
+  requires a genuinely fresh host.
 
 - Replaced the macOS client's public release-selector symlink with a distinct
   single-link `root:_owntransit` mode-`2751` regular launcher. Its bytes must
@@ -77,9 +94,9 @@ or publish artifacts automatically.
   inherited-descriptor cleanup.
 - Added Apple Container as a digest-pinned fallback for deterministic native
   archive qualification on macOS hosts without local GNU tar or Docker.
-- Made pinned container verification execute on actual Linux amd64 rather than
-  the builder architecture, and made privileged helper-process tests portable
-  across native x86_64 and Apple Silicon's x86_64 emulation.
+- Made pinned container verification execute on each actual target Linux
+  architecture rather than the builder architecture, and made privileged
+  helper-process tests portable across native and emulated execution.
 
 ## [0.1.0-rc.7]
 

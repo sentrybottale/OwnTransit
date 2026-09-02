@@ -47,6 +47,8 @@ printf '%s\n' \
   "hostile-relay-resource-exhaustion|PASS|$evidence" \
   "linux-amd64-clean-host-lifecycle|PASS|$evidence" \
   "linux-amd64-relay-exchange|PASS|$evidence" \
+  "linux-arm64-clean-host-lifecycle|PASS|$evidence" \
+  "linux-arm64-relay-exchange|PASS|$evidence" \
   "macos-arm64-clean-host-lifecycle|PASS|$evidence" \
   "public-history-clean-export|PASS|$evidence" \
   "public-tree-source-gates|PASS|$evidence" \
@@ -80,7 +82,7 @@ grep -Fqx 'status=PASS' "$pass_output/QUALIFICATION.txt" || fail "all-passing re
 grep -Fqx "release_id=$release_id" "$pass_output/QUALIFICATION.txt" || fail "record omitted release ID"
 grep -Fqx "source_commit=$source_commit" "$pass_output/QUALIFICATION.txt" || fail "record omitted source commit"
 grep -Fqx "outer_sha256sums_sha256=$(sha256_file "$workspace/assets/SHA256SUMS")" "$pass_output/QUALIFICATION.txt" || fail "record omitted outer inventory digest"
-test "$(grep -c '^test=' "$pass_output/QUALIFICATION.txt")" -eq 8 || fail "record omitted fixed tests"
+test "$(grep -c '^test=' "$pass_output/QUALIFICATION.txt")" -eq 10 || fail "record omitted fixed tests"
 record_digest=$(sha256_file "$pass_output/QUALIFICATION.txt")
 "$project_root/packaging/macos/verify-sshsig.sh" \
   --subject "$pass_output/QUALIFICATION.txt" \

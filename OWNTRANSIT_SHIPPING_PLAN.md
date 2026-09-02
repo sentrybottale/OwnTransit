@@ -53,6 +53,14 @@ byte, including protocol and ALPN values, rendezvous framing, READY marker,
 WebSocket subprotocol, certificate-name formats, route/session encoding, and
 version bytes.
 
+The software-release v1 JSON/signature envelope admits only explicitly
+enumerated artifact-matrix editions. Public `0.1.0-rc.*` packages bind the
+exact-nine edition; stable `0.1.0` binds exact-fourteen. The former is not an
+in-place predecessor of the latter. Its non-purging uninstall preserves the
+selected lifecycle and trust state, so stable qualification uses a genuinely
+fresh host unless a separately reviewed destructive trust-reset ceremony is
+implemented in a future change.
+
 The public route-capability profile is separately identified as
 `owntransit-route-capability/1` and negotiates its own inner ALPN. It never
 silently reinterprets an old exact-pin profile. Any future wire change requires
@@ -101,23 +109,27 @@ An official OwnTransit 0.1.0 handoff contains exactly these logical artifacts:
 |---|---|---|
 | `owntransit` | macOS arm64 | On-demand outbound stdio carrier for an operator-owned OpenSSH ProxyCommand |
 | `owntransit-launcher` | macOS arm64 | Fixed setgid launcher bound to one local UID, GeneratedUID, release and client digest |
-| `owntransit` | Linux amd64 (x86_64 CPU) | The same outbound-only client carrier |
-| `owntransit-connector` | Linux amd64 (x86_64 CPU) | Outbound-only daemon with the fixed loopback SSH target |
-| `owntransit-relay` | Linux amd64 OCI image (x86_64 CPU) | Hostile rendezvous and byte-copy relay; no inner TLS termination |
-| `owntransitctl` | macOS arm64 and Linux amd64 (x86_64 CPU) | Target-local enrollment and lifecycle state |
-| `owntransit-provision` | macOS arm64 and Linux amd64 (x86_64 CPU) | Offline route authority and response creation |
+| `owntransit` | Linux amd64/x86_64 and Linux arm64/aarch64 | The same outbound-only client carrier |
+| `owntransit-connector` | Linux amd64/x86_64 and Linux arm64/aarch64 | Outbound-only daemon with the fixed loopback SSH target |
+| `owntransit-relay` | Separate Linux amd64 and Linux arm64 OCI images | Hostile rendezvous and byte-copy relay; no inner TLS termination |
+| `owntransitctl` | macOS arm64, Linux amd64, and Linux arm64 | Target-local enrollment and lifecycle state |
+| `owntransit-provision` | macOS arm64, Linux amd64, and Linux arm64 | Offline route authority and response creation |
 
-The release manifest records the two clients, the macOS launcher, connector,
-relay, and both platform builds of the two administrative tools as nine
-separate artifact records. Each record binds its bytes, SHA-256 digest, size,
-role, platform, format, and named SBOM evidence. Licenses are independent
-evidence.
+The release manifest records three clients, the macOS launcher, two Linux
+connectors, two architecture-specific Linux relay images, and three platform
+builds of each administrative tool as fourteen separate artifact records. Each
+record binds its bytes, SHA-256 digest, size, role, platform, format, and named
+SBOM evidence. Licenses are independent evidence.
 
 Platform support attaches to exact released bytes only after their native
-package, clean-host, upgrade, rollback and qualification matrices pass. The
-candidate targets Apple-silicon macOS (`arm64`) and 64-bit x86 Linux
-(`amd64`, also called `x86_64`). Intel macOS and every other architecture are
-outside the 0.1.0 scope. Cross-compilation alone is not support evidence.
+package, clean-host, rollback and qualification matrices pass, plus upgrade
+qualification whenever a supported predecessor exists. Initial stable `0.1.0`
+has no supported predecessor, so upgrade is recorded as not applicable; public
+`0.1.0-rc.*` state is not an in-place upgrade source. The candidate targets
+Apple-silicon macOS (`arm64`), 64-bit x86 Linux (`amd64`,
+also called `x86_64`), and 64-bit ARM Linux (`arm64`, also called `aarch64`).
+Intel macOS and every other architecture are outside the 0.1.0 scope.
+Cross-compilation alone is not support evidence.
 
 ## Intended command surface
 
@@ -318,19 +330,22 @@ mounts.
 Every official 0.1.0 handoff must complete these functional release steps for
 one exact source revision and artifact set:
 
-1. build the nine-artifact matrix from the canonical public history and bind
+1. build the fourteen-artifact matrix from the canonical public history and bind
    its source, inputs, digests, SBOMs and licenses;
 2. create and independently verify the actual release-manifest and monotonic
    release-policy signatures used by the installers;
-3. qualify disposable Linux amd64 install/systemd/reboot, reconnect,
-   interruption, upgrade, rollback, uninstall and recovery behavior;
+3. independently qualify disposable Linux amd64 and Linux arm64
+   install/systemd/reboot, reconnect, interruption, rollback, uninstall and
+   recovery behavior through a reviewed composite dossier, treating the
+   installer/reboot JSON as sub-evidence only;
 4. qualify disposable Apple-silicon Directory Services, zero-member setgid
-   launcher, ACL, upgrade/rollback and reboot behavior;
+   launcher, ACL, rollback and reboot behavior;
 5. close or explicitly accept every known Critical or High defect affecting
    those exact bytes; and
-6. create and independently verify a signed qualification record binding the
-   exact source, release identity, outer asset inventory and all hard-gate
-   results without representing missing evidence as PASS.
+6. record initial-stable upgrade as **N/A** because `0.1.0` has no supported
+   predecessor, then create and independently verify a signed qualification
+   record binding the exact source, release identity, outer asset inventory and
+   all hard-gate results without representing missing evidence as PASS.
 
 ## Additional assurance and operator operations
 

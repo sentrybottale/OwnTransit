@@ -179,20 +179,22 @@ persistent root-only `package-mutation.v1.lock` serializes client and
 provisioner apply, rollback, recovery, detach and public-entry publication. The
 provisioner release tree remains `root:wheel` mode `0750`; a distinct digest-matched
 `root:wheel` mode-`0755` copy is the only public provisioner executable. On
-Linux amd64 (x86_64 hardware), the provisioner package tree is mode `0755` behind an
-ordinary selector, so installation and every provisioner package operation
-require `fs.protected_hardlinks=1`. Only Linux has the authenticated legacy
-directory migration from mode `0750` to `0755`. A permanent root-only
-`package-supervisor/platform.v1.lock` covers each complete Linux installer or
-non-purging uninstaller integration window; service-role detach also retains
-the connector or relay supervisor lock through stop, disable and unlink.
+Linux amd64/x86_64 and Linux arm64/aarch64, the provisioner package tree is
+mode `0755` behind an ordinary selector, so installation and every provisioner
+package operation require `fs.protected_hardlinks=1`. Only Linux has the
+authenticated legacy directory migration from mode `0750` to `0755`. A
+permanent root-only `package-supervisor/platform.v1.lock` covers each complete
+Linux installer or non-purging uninstaller integration window; service-role
+detach also retains the connector or relay supervisor lock through stop,
+disable and unlink.
 
 Initial request, guided approval, apply, signed floor/upgrade policy, exact
 rollback, interruption recovery and native package integration are part of the
 0.1.0 candidate implementation. An official stable handoff must qualify the
-exact installed bytes on both target platforms and carry the independently
-verified signed result. The initial workflow authorizes exactly one relay, one
-connector, one route and one client. Adding a later client requires a
+exact installed bytes on all three supported platform/architecture targets and
+carry the independently verified signed result. The initial workflow
+authorizes exactly one relay, one connector, one route and one client. Adding a
+later client requires a
 separately versioned approval-context and signed relay-policy transition and is
 not implemented in 0.1.0. Expiry monitoring, rotation, revocation, retirement,
 issuer custody and clean-room recovery remain operator-run procedures and
@@ -233,3 +235,9 @@ separate inner authorization profile, `owntransit-route-capability/1`, with a
 distinct ALPN and certificate-name format. The earlier exact-pin identity is
 not reinterpreted. Any further profile change still requires explicit
 negotiation, downgrade protection and mixed-version rollback tests.
+
+The release-manifest v1 envelope separately authenticates an exact artifact
+matrix. Public `0.1.0-rc.*` lifecycle binaries accept exact-nine; stable
+`0.1.0` accepts exact-fourteen. RC state is not a supported in-place stable
+predecessor, and ordinary non-purging uninstall does not turn that host into a
+clean installation target.

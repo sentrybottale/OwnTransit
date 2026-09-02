@@ -30,7 +30,38 @@ for installer in scripts/release/install-linux.sh scripts/release/install-macos.
   require_text "$installer" 'test "$0" = "$bundled_installer"'
   require_text "$installer" 'required bundle member is absent from SHA256SUMS'
   require_text "$installer" 'third_party_licenses_path=evidence/THIRD_PARTY_LICENSES.txt'
+  require_text "$installer" 'inspect_canonical_lifecycle_version()'
+  require_text "$installer" '"$lifecycle_executable" version'
+  require_text "$installer" '$28 != "lifecycle"'
+  require_text "$installer" 'candidate_version=${build_version_line#version=}'
+  require_text "$installer" 'test "$candidate_version" = 0.1.0 && is_owntransit_010_release_candidate "$selected_version"'
+  require_text "$installer" 'stable 0.1.0 requires a fresh host. Do not purge this host: preserve the retained role state for recovery'
 done
+if grep -Eq '\$bundle/\$lifecycle_path"[[:space:]]+version' scripts/release/install-linux.sh scripts/release/install-macos.sh; then
+  fail 'installer executes candidate lifecycle code before manager authorization'
+fi
+
+linux_prerelease_guard_line=$(grep -n '^guard_retained_prerelease_install$' scripts/release/install-linux.sh | cut -d: -f1)
+linux_first_persistent_mutation_line=$(grep -nF 'ensure_root_directory /var/lib/owntransit 755' scripts/release/install-linux.sh | cut -d: -f1)
+test -n "$linux_prerelease_guard_line" && test -n "$linux_first_persistent_mutation_line" &&
+  test "$linux_prerelease_guard_line" -lt "$linux_first_persistent_mutation_line" ||
+  fail 'Linux retained-prerelease guard must run before persistent host mutation'
+linux_selected_metadata_line=$(grep -nF 'test "$(stat -c %a "$selected_lifecycle")" = 700' scripts/release/install-linux.sh | cut -d: -f1)
+linux_selected_version_line=$(grep -nF 'selected_version=$(inspect_canonical_lifecycle_version "$selected_lifecycle"' scripts/release/install-linux.sh | cut -d: -f1)
+test -n "$linux_selected_metadata_line" && test -n "$linux_selected_version_line" &&
+  test "$linux_selected_metadata_line" -lt "$linux_selected_version_line" ||
+  fail 'Linux installer must validate selected lifecycle metadata before executing version'
+
+macos_prerelease_guard_line=$(grep -n '^guard_retained_prerelease_install$' scripts/release/install-macos.sh | cut -d: -f1)
+macos_first_persistent_mutation_line=$(grep -nF 'ensure_root_directory /Library 755' scripts/release/install-macos.sh | cut -d: -f1)
+test -n "$macos_prerelease_guard_line" && test -n "$macos_first_persistent_mutation_line" &&
+  test "$macos_prerelease_guard_line" -lt "$macos_first_persistent_mutation_line" ||
+  fail 'macOS retained-prerelease guard must run before persistent host mutation'
+macos_selected_metadata_line=$(grep -nF 'test "$(macos_mode "$selected_lifecycle")" = 700' scripts/release/install-macos.sh | cut -d: -f1)
+macos_selected_version_line=$(grep -nF 'selected_version=$(inspect_canonical_lifecycle_version "$selected_lifecycle"' scripts/release/install-macos.sh | cut -d: -f1)
+test -n "$macos_selected_metadata_line" && test -n "$macos_selected_version_line" &&
+  test "$macos_selected_metadata_line" -lt "$macos_selected_version_line" ||
+  fail 'macOS installer must validate selected lifecycle metadata and ACL before executing version'
 for entrypoint_invariant in \
   'test "$(id -u)" -eq 0 || fail "installation requires root"' \
   'assets must remain outside the native bundle' \
@@ -337,6 +368,9 @@ if grep -Eq '^\[Install\]$|^WantedBy=|--(volume|mount|runtime-root|anchor-view-r
 fi
 require_text Containerfile 'CMD ["run", "--runtime-root=/runtime", "--anchor-view-root=/anchor", "--reader-gid=65532"]'
 require_text deploy/vps/Containerfile.relay 'CMD ["run", "--runtime-root=/runtime", "--anchor-view-root=/anchor", "--reader-gid=65532"]'
+require_text deploy/vps/Containerfile.relay 'Legacy amd64-only POC wrapper; it is not a release packaging path.'
+require_text scripts/build-relay-amd64.sh 'Legacy amd64-only POC helper.'
+require_text scripts/build-native-connector-amd64.sh 'Legacy amd64-only POC helper.'
 require_text scripts/release/make-relay-oci.sh '\"--runtime-root=/runtime\",\"--anchor-view-root=/anchor\",\"--reader-gid=65532\"'
 require_text scripts/release/make-relay-oci.sh 'licenses owntransit-relay'
 require_text scripts/release/make-relay-oci.sh 'licenses/Apache-2.0.txt'
@@ -372,7 +406,12 @@ for artifact in \
   owntransitctl-darwin-arm64 \
   owntransitctl-linux-amd64 \
   owntransit-provision-darwin-arm64 \
-  owntransit-provision-linux-amd64; do
+  owntransit-provision-linux-amd64 \
+  owntransit-linux-arm64 \
+  owntransit-connector-linux-arm64 \
+  owntransit-relay-linux-arm64.oci.tar \
+  owntransitctl-linux-arm64 \
+  owntransit-provision-linux-arm64; do
   require_text scripts/release/build-artifacts.sh "$artifact"
 done
 
@@ -400,6 +439,18 @@ require_text scripts/release/build-artifacts.sh '--mount "type=bind,source=$dest
 require_text scripts/release/build-artifacts.sh 'export GOTOOLCHAIN=local GOWORK=off'
 require_text scripts/release/build-artifacts.sh 'go mod verify'
 require_text scripts/release/build-artifacts.sh 'case "$TARGETOS/$TARGETARCH" in'
+require_text scripts/release/build-artifacts.sh 'linux/amd64|linux/arm64)'
+require_text scripts/release/build-artifacts.sh 'exact fourteen-artifact matrix'
+require_text scripts/release/make-relay-oci.sh 'architecture must be amd64 or arm64'
+require_text scripts/release/make-relay-oci.sh '\"architecture\":\"$architecture\"'
+require_text scripts/release/install.sh 'Linux/aarch64|Linux/arm64)'
+require_text scripts/release/install.sh 'lifecycle_path="artifacts/owntransitctl-$platform-$platform_arch"'
+require_text scripts/release/install-linux.sh 'aarch64|arm64) platform_arch=arm64'
+require_text scripts/release/install-linux.sh 'artifact_name="owntransit-connector-linux-$platform_arch"'
+require_text scripts/release/install-linux.sh 'lifecycle_path="artifacts/owntransitctl-linux-$platform_arch"'
+require_text internal/enrollment/request.go 'binding.OS == "linux" && supportedLinuxArch(binding.Arch)'
+require_text internal/packagetxn/lifecycle_unix.go 'case "connector/linux/arm64":'
+require_text cmd/owntransitctl/relay_oci_linux.go 'relayOCIPlatform{Architecture: expectedArch, OS: "linux"}'
 require_text Containerfile 'COPY scripts/release/releasectl ./scripts/release/releasectl'
 require_text Containerfile 'gofmt -l cmd internal scripts/release/releasectl'
 require_text scripts/release/releasectl/main.go 'case "candidate-verify"'
@@ -443,20 +494,23 @@ require_text scripts/release/sign-candidate.sh 'git -C "$source_root" ls-tree "$
 require_text scripts/tests/sign-candidate.sh 'candidate signing accepted a commit without its exact changelog release heading'
 require_text .github/workflows/release-candidate.yml 'runs-on: macos-15'
 require_text .github/workflows/release-candidate.yml 'test "$(uname -m)" = arm64'
+require_text .github/workflows/release-candidate.yml 'runner: ubuntu-24.04-arm'
+require_text .github/workflows/release-candidate.yml 'arch: arm64'
 require_text .github/workflows/release-candidate.yml 'go-version: 1.26.7'
 require_text .github/workflows/release-candidate.yml 'go test -mod=readonly -race ./...'
 require_text .github/workflows/release-candidate.yml 'go test -mod=readonly -race -tags=owntransit_poc_ssh ./...'
 require_text .github/workflows/release-candidate.yml 'go vet -mod=readonly ./...'
 require_text .github/workflows/release-candidate.yml 'go vet -mod=readonly -tags=owntransit_poc_ssh ./...'
-test "$(grep -Fc 'container build --progress plain --platform linux/amd64' scripts/security-check.sh)" -eq 5 ||
-  fail 'Apple Container full security gates must run the exact supported Linux amd64 platform'
-test "$(grep -Fc 'docker buildx build --progress plain --platform linux/amd64' scripts/security-check.sh)" -eq 5 ||
-  fail 'Docker full security gates must run the exact supported Linux amd64 platform'
-require_text Containerfile 'AS linux-amd64-verify'
-require_text Containerfile 'test "$TARGETOS/$TARGETARCH" = linux/amd64'
-require_text Containerfile 'test "$(go env GOOS)/$(go env GOARCH)" = linux/amd64'
-test "$(grep -Ec '^FROM linux-amd64-verify AS (test|test-poc|vet|vulncheck|dependency-licenses)$' Containerfile)" -eq 5 ||
-  fail 'all five verification stages must execute from the Linux amd64 target-platform source stage'
+require_text scripts/security-check.sh 'for linux_arch in amd64 arm64; do'
+test "$(grep -Fc 'container build --progress plain --platform "linux/$linux_arch"' scripts/security-check.sh)" -eq 5 ||
+  fail 'Apple Container full security gates must run all five stages for each supported Linux architecture'
+test "$(grep -Fc 'docker buildx build --progress plain --platform "linux/$linux_arch"' scripts/security-check.sh)" -eq 5 ||
+  fail 'Docker full security gates must run all five stages for each supported Linux architecture'
+require_text Containerfile 'AS linux-verify'
+require_text Containerfile 'case "$TARGETOS/$TARGETARCH" in linux/amd64|linux/arm64)'
+require_text Containerfile 'test "$(go env GOOS)/$(go env GOARCH)" = "$TARGETOS/$TARGETARCH"'
+test "$(grep -Ec '^FROM linux-verify AS (test|test-poc|vet|vulncheck|dependency-licenses)$' Containerfile)" -eq 5 ||
+  fail 'all five verification stages must execute from the exact supported Linux target-platform source stage'
 require_text scripts/release/sign-candidate.sh 'the empty-anchor first-release path requires policy sequence 1'
 require_text scripts/release/sign-candidate.sh '--anchor-policy-sequence'
 require_text scripts/release/sign-candidate.sh '--anchor-policy-key-id'
@@ -521,15 +575,15 @@ if grep -Fq 'Formula["go@1.26"].opt_bin' packaging/homebrew/owntransit.rb.in; th
   fail 'Homebrew formula must use the current formula path helper'
 fi
 
-require_text scripts/qualify/linux-amd64-vm.sh '--manifest-signature "$manifest_signature"'
-require_text scripts/qualify/linux-amd64-vm.sh '--policy-public-key "$policy_public_key"'
-require_text scripts/qualify/linux-amd64-vm.sh '/usr/libexec/owntransit/roles/connector/current/owntransitctl'
-require_text scripts/qualify/linux-amd64-vm.sh '/usr/libexec/owntransit/roles/connector/current/owntransit-connector'
-require_text scripts/qualify/linux-amd64-vm.sh '-relay-listen 0.0.0.0:9087'
+require_text scripts/qualify/linux-vm-core.sh '--manifest-signature "$manifest_signature"'
+require_text scripts/qualify/linux-vm-core.sh '--policy-public-key "$policy_public_key"'
+require_text scripts/qualify/linux-vm-core.sh '/usr/libexec/owntransit/roles/connector/current/owntransitctl'
+require_text scripts/qualify/linux-vm-core.sh '/usr/libexec/owntransit/roles/connector/current/owntransit-connector'
+require_text scripts/qualify/linux-vm-core.sh '-relay-listen 0.0.0.0:9087'
 require_text scripts/qualify/macos-client-boundary.sh 'role_root="$roles_root/client"'
 require_text scripts/qualify/macos-client-boundary.sh 'public_launcher="$bin_directory/owntransit"'
 require_text scripts/qualify/macos-client-boundary.sh 'test -f "$public_launcher" && test ! -L "$public_launcher"'
-if grep -Fq -- '/usr/libexec/owntransit/bin/' scripts/qualify/linux-amd64-vm.sh ||
+if grep -Fq -- '/usr/libexec/owntransit/bin/' scripts/qualify/linux-vm-core.sh ||
    grep -Fq -- '/Library/OwnTransit/releases/' scripts/qualify/macos-client-boundary.sh packaging/macos/CLIENT_READER_BOUNDARY.md; then
   fail 'qualification material still references a pre-manager shared release path'
 fi
