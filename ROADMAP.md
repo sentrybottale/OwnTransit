@@ -1,8 +1,13 @@
 # OwnTransit roadmap
 
-Status: **v1 release candidate**. The source implementation and public-root
-tooling are present; no production release is published until the external and
-clean-host gates below pass.
+Status: **OwnTransit 0.1.0 release candidate; stable publication is not yet
+evidenced**. The SSH-only implementation and public-source boundary are present,
+and the release tooling can build a signed installable candidate handoff. An
+official stable 0.1.0 handoff still requires the exact authenticated artifact
+set, an independently verified signed qualification record, and PASS results
+for every hard supported-platform gate. Independent review and
+environment-specific canary work are disclosed additional assurance rather
+than missing executable functionality.
 
 ## V1 decision
 
@@ -26,7 +31,7 @@ automatic updates.
 
 ## Phase 0 — public source boundary
 
-State: **automation complete; publication actions pending**
+State: **public-source boundary complete; governance review remains external**
 
 - Keep OwnTransit as the public name without changing authenticated v1 wire
   bytes.
@@ -36,18 +41,19 @@ State: **automation complete; publication actions pending**
   path `github.com/sentrybottale/owntransit`.
 - Create the public repository from a reviewed sanitized snapshot as a new
   root commit. Never publish or graft the private development history.
-- Run publication checks and an independent secret scan against both the
-  snapshot and its new history.
-- Complete professional name clearance, applicable-contract review, targeted
-  patent review, and written assignment of the project and release identities
-  to the publishing entity before making the repository public.
+- Run publication checks against the snapshot and its new history. Record an
+  independent secret scan when available, or disclose that it was not
+  performed.
+- Record professional name, applicable-contract, targeted-patent, ownership and
+  publishing-entity review as project-governance evidence. Repository tooling
+  neither performs nor certifies that work.
 - Preserve the complete private development record as a hashed,
   access-controlled evidence archive; never graft it into or destroy it in
   favor of the clean public history.
 
 ## Phase 1 — runtime and capability closure
 
-State: **implementation complete; release qualification incomplete**
+State: **implementation complete; exact release evidence required per handoff**
 
 - Preserve both independent TLS 1.3 boundaries and the pre-local-dial inner
   authentication gate.
@@ -57,15 +63,15 @@ State: **implementation complete; release qualification incomplete**
 - Preserve the connector's empty positive client list: authorization is the
   exact per-route capability CA plus canonical SAN/epoch validation and bounded
   authenticated tombstones.
-- Finish hostile-relay, cross-wiring, duplicate-join, starvation, exhaustion,
-  cancellation, and long-lived-session qualification.
-- Prove in clean builds that no runtime, environment, DNS, or wire input can
-  change `tcp4 127.0.0.1:22`.
+- Exercise hostile-relay, cross-wiring, duplicate-join, starvation, exhaustion,
+  cancellation and long-lived-session behavior against each exact release.
+- Require clean-build evidence that no runtime, environment, DNS or wire input
+  can change `tcp4 127.0.0.1:22`.
 
 ## Phase 2 — initial enrollment and credential continuity
 
-State: **guided client exchange and signed continuity implemented;
-qualification remains stop-ship**
+State: **guided client exchange and signed continuity implemented; operational
+assurance is ongoing**
 
 Implemented in source:
 
@@ -84,6 +90,11 @@ Implemented in source:
 - durable target/operator sessions, target-first gated comparison, automatic
   hostile-mailbox courier operations, exact response/request-set binding,
   client setup resume/cancel and runtime-bound carrier-only `READY`;
+- authenticated temporary relay exchange-only cold start with no carrier,
+  endpoint runtime, authority material, persistence, or target selection;
+- fail-closed post-cutover resume: expired artifacts remain unusable before
+  apply, while an exact already-Applied response may reconcile its anchored
+  active record and perform a current live READY probe;
 - signed target-bound lifecycle policy, verifier-first overlap validation,
   derived immutable policy generations and post-initial route issuance;
 - cumulative client/SPKI revocation and credential tombstone overlays that
@@ -95,23 +106,24 @@ Implemented in source:
   capabilities and retained response after READY, independent of relay
   cooperation.
 
-Still required before a production v1:
+Additional assurance and operator responsibilities:
 
-- independently review the invitation/phrase/exchange construction and human
-  authentication assumptions;
-- qualify the verifier-first leaf/capability-root rotation, signed floor
+- invite independent review of the invitation/phrase/exchange construction and
+  human-authentication assumptions without claiming that certification for
+  0.1.0;
+- rehearse the verifier-first leaf/capability-root rotation, signed floor
   advancement, revocation overlay, exact rollback and transaction recovery as
   one documented operator ceremony on real hosts;
-- qualify authenticated revocation distribution and retained current/previous
+- rehearse authenticated revocation distribution and retained current/previous
   generation retirement without resurrecting tombstoned credentials;
-- add operational expiry monitoring and prove removed identities fail for new
+- operate expiry monitoring and verify removed identities fail for new
   sessions while existing sessions remain bounded; and
-- two-location issuer/signing custody plus clean-room recovery rehearsal.
+- maintain two-location issuer/signing custody and rehearse clean-room recovery.
 
 ## Phase 3 — executable and release contract
 
 State: **signed formats, deterministic staging and activation integration
-implemented; custody and independent reproduction incomplete**
+implemented; release execution is required per artifact set**
 
 - Preserve offline version/config validation and embedded release ID, source
   revision, OS, architecture, role, protocol, and connector target/profile.
@@ -124,15 +136,16 @@ implemented; custody and independent reproduction incomplete**
   path and digest-addressed relay OCI construction.
 - Provide no network updater, mutable `latest` identifier, or relay-delivered
   instruction channel.
-- Complete independent clean-builder reproduction, public release execution,
-  free macOS distribution qualification and release/policy key-recovery
-  ceremonies. Developer ID/notarization is disabled until OwnTransit also
+- Require the official handoff to execute the signed release/policy path and
+  qualify the no-fee macOS distribution boundary. Independent clean-builder
+  reproduction and release/policy key-recovery rehearsals are additional
+  assurance. Developer ID/notarization remains disabled until OwnTransit also
   authenticates the final package bytes.
 
 ## Phase 4 — native packages and lifecycle
 
-State: **native payload and package lifecycle implemented; clean-host support
-qualification incomplete**
+State: **native payload and package lifecycle implemented; exact clean-host
+evidence required per supported release**
 
 - Signature-verified Homebrew/source-installed macOS arm64 client. Developer ID
   packaging remains disabled and outside the v1 requirement.
@@ -154,15 +167,15 @@ qualification incomplete**
   external anchor must compare-and-swap before the selector becomes
   authoritative; a detached or stale verified decision must never authorize
   installation.
-- Qualify current/previous retention, authenticated rollback, non-purging
+- Exercise current/previous retention, authenticated rollback, non-purging
   uninstall, service/user/image integration and process-restart recovery with
-  only durable inputs.
+  only durable inputs against the exact released packages.
 - Fixed root-owned no-shell ProxyCommand launcher and shell-injection tests. The
   installer never writes OpenSSH configuration.
 
-## Phase 5 — clean-host qualification
+## Phase 5 — release qualification and additional assurance
 
-State: **not complete**
+State: **per-release platform evidence required; external assurance ongoing**
 
 - Qualify native macOS and Linux packages with disposable or operator-supplied
   OpenSSH fixtures; qualification does not transfer SSH ownership to
@@ -178,22 +191,36 @@ State: **not complete**
 - Prove one authenticated macOS install path performs the required privileged
   launcher handoff, and publish one exact authenticated Linux client install
   command. Homebrew source compilation alone is not that qualification.
-- Obtain an independent implementation review and authorized penetration test;
-  close or explicitly accept every Critical/High finding.
+- Invite an independent implementation review and authorized penetration test,
+  and disclose their status accurately. Every known Critical/High finding must
+  be closed or explicitly accepted; absence of an external review is not a
+  claim that such a review passed.
 
-## Phase 6 — v1 release
+## Phase 6 — stable release operation
 
-State: **pending publication and external qualification gates**
+State: **0.1.0 scope defined; stable publication requires exact signed assets,
+an authenticated signed qualification record and all hard-gate PASS results**
 
-- Publish source from the clean public root history, then publish independently
-  signed platform artifacts only after their release gates pass.
-- Run a private canary while an operator-owned, out-of-band SSH and host
+- Publish only the exact authenticated platform artifacts after their hard
+  integrity and supported-platform checks pass.
+- Run an environment canary while an operator-owned, out-of-band SSH and host
   recovery path remains available.
 - Rehearse OwnTransit install, upgrade, rotation, revocation, rollback, and
-  clean-room state recovery before treating it as the only transport path.
-- Promote to v1 only after the documented burn-in and review gates pass.
+  clean-room state recovery before treating it as an environment's only
+  transport path.
+- Attach external review, legal, custody, independent-reproduction and burn-in
+  records to the exact release when available; do not imply that they exist.
 
 ## Later — optional direct path
+
+Before any direct-path work, add later-client enrollment if real deployments
+need more than the single client supported by the 0.1.0 initial-route profile.
+That work needs a new signed approval-context binding for one fresh client
+request plus authenticated route state, and an atomic relay-policy transition
+which appends exactly that client while preserving every existing route and
+pin. It must not reuse the v1 three-live-request digest, route rotation, or an
+expired relay/connector request. Older relays must reject the new lifecycle
+semantics fail-closed.
 
 Direct client-to-connector transport remains research only. It starts only
 after v1 is stable and measured relay bandwidth or availability justifies the

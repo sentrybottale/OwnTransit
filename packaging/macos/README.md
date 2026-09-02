@@ -67,8 +67,11 @@ stapling change the final package after the source artifacts were authenticated,
 so Apple validation alone would make Apple and the packaging machine a trust
 root for the installed bytes. Re-enabling this optional lane requires an
 OwnTransit signature over the final package digest and authenticated
-`BUILD-INPUTS` version, plus a recipient-side verifier. The unsigned mode is a
-local packaging qualification aid only and is never a release artifact.
+`BUILD-INPUTS` version, plus a recipient-side verifier. The retained unsigned
+packaging machinery is non-release scaffolding; client generation fails at the
+reader-identity boundary and provisioner generation fails because a
+payload-only package cannot enter the manager-bound signed release/policy
+transaction.
 
 Apple's paid program is therefore not a v1 dependency. The supported direction
 remains the no-fee source/Homebrew lane plus a separately authenticated,
@@ -79,7 +82,7 @@ package tooling and the unsigned qualification aid do not create OwnTransit
 state, edit SSH configuration, install a client daemon, contact a relay, or
 handle operator SSH material.
 
-## Hardened activation stop gate
+## Hardened activation qualification
 
 The CGO-free Darwin descriptor path now rejects every extended ACL and fails
 closed when the filesystem or syscall ABI cannot prove that result. The client
@@ -88,14 +91,14 @@ setgid launcher; it never gives the selected user's ordinary processes reader
 membership. See `CLIENT_READER_BOUNDARY.md` for the exact UID/GeneratedUID and
 immutable-client binding.
 
-This is still an unresolved release stop gate until the ACL trampoline and
-setgid launcher are exercised after lifecycle activation on a clean disposable
-Apple-silicon Mac. Qualification must prove ordinary-process denial for actual
-runtime and anchor bytes, correct setgid propagation, wrong-UID rejection,
-Directory Services group/GeneratedUID drift rejection, debugger/task-port and
-core-dump isolation, and restart survival. Unsupported filesystems or execution
-policies remain fail-closed stops, not reasons to weaken ownership, ACL, or
-identity checks.
+Every official 0.1.0 handoff must exercise the ACL trampoline and setgid
+launcher after lifecycle activation on a clean Apple-silicon Mac and carry the
+result in its exact qualification record. That evidence must prove
+ordinary-process denial for actual runtime and anchor bytes, correct setgid
+propagation, wrong-UID rejection, Directory Services group/GeneratedUID drift
+rejection, debugger/task-port and core-dump isolation, and restart survival.
+Unsupported filesystems or execution policies remain fail-closed stops, not
+reasons to weaken ownership, ACL, or identity checks.
 
 The native staging `SHA256SUMS` signature uses the separate
 `owntransit-release-v1` SSHSIG namespace. Keep its detached signature outside

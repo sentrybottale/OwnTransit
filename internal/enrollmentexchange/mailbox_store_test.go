@@ -67,11 +67,15 @@ func TestMailboxStoreIsOpaqueBoundedOneWriteAndExactlyIdempotent(t *testing.T) {
 	}
 
 	response := []byte("opaque bound response")
+	expectedResponse := append([]byte(nil), response...)
 	if err := store.PutResponse(target.MailboxID, operator.ResponseWriteCapability, response); err != nil {
 		t.Fatal(err)
 	}
+	for index := range response {
+		response[index] ^= 0xff
+	}
 	got, err := store.ReadResponse(target.MailboxID, target.ResponseReadCapability)
-	if err != nil || !bytes.Equal(got, response) {
+	if err != nil || !bytes.Equal(got, expectedResponse) {
 		t.Fatalf("response read = %q, %v", got, err)
 	}
 	for attempt := 0; attempt < 2; attempt++ {

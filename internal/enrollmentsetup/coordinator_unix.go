@@ -220,6 +220,10 @@ func (client *Client) Stage(invitation []byte, now time.Time) (State, error) {
 	if err != nil {
 		return State{}, err
 	}
+	plan, bootstrap, err = client.bindPlanValidationToRequest(workspace, plan, bootstrap, material)
+	if err != nil {
+		return State{}, err
+	}
 	session, err := client.openOrCreateSession(plan, material.RequestBytes, now)
 	if err != nil {
 		return State{}, err
@@ -237,9 +241,28 @@ func (client *Client) Status(now time.Time) (State, error) {
 	}
 	current, err := client.openCurrent(now, true)
 	if err != nil {
-		return State{}, err
+		current, err = client.openPostApplyCurrent(now)
+		if err != nil {
+			if ready, found, readyErr := client.readyState(); readyErr != nil {
+				return State{}, readyErr
+			} else if found {
+				return stateFromReady(ready)
+			}
+			return State{}, err
+		}
 	}
 	defer current.Close()
+	if ready, err := readReady(current.root); err == nil {
+		if err := client.validateReadyTarget(ready); err != nil {
+			return State{}, err
+		}
+		return stateFromReady(ready)
+	} else if !errors.Is(err, unix.ENOENT) && !errors.Is(err, os.ErrNotExist) {
+		return State{}, err
+	}
+	if current.session.Phase() == enrollmentexchange.PhaseReady {
+		return State{}, errors.New("enrollmentsetup: READY session lacks its authoritative receipt")
+	}
 	if current.session.Phase() == enrollmentexchange.PhaseTranscriptConfirmed || current.session.Phase() == enrollmentexchange.PhaseResponseVerified {
 		if err := client.commitPending(current.workspace, current.plan, current.session, now); err != nil {
 			return State{}, err
@@ -268,7 +291,15 @@ func (client *Client) CompleteReady(ctx context.Context, probe func(context.Cont
 	}
 	current, err := client.openCurrent(now, true)
 	if err != nil {
-		return State{}, err
+		current, err = client.openPostApplyCurrent(now)
+		if err != nil {
+			if ready, found, readyErr := client.readyState(); readyErr != nil {
+				return State{}, readyErr
+			} else if found {
+				return stateFromReady(ready)
+			}
+			return State{}, err
+		}
 	}
 	defer current.Close()
 	if ready, err := readReady(current.root); err == nil {
@@ -282,41 +313,42 @@ func (client *Client) CompleteReady(ctx context.Context, probe func(context.Cont
 	if current.session.Phase() != enrollmentexchange.PhaseApplied {
 		return State{}, errors.New("enrollmentsetup: applied setup is required before READY")
 	}
-	expected := current.session.Generation()
-	var result enrollmenttarget.ApplyResult
+	var receipt readyRecord
 	err = current.session.ReconcileAppliedResponse(func(response []byte) error {
-		var reconcileErr error
-		result, reconcileErr = enrollmenttarget.ReconcileAppliedResponse(client.paths.privateRoot, response, current.session.RequestSHA256())
-		return reconcileErr
+		return enrollmenttarget.WithReconciledAppliedResponse(client.paths.privateRoot, response, current.session.RequestSHA256(), func(result enrollmenttarget.ApplyResult) error {
+			if result.Role != enrollment.RoleClient || result.InstallationID != current.plan.InstallationID ||
+				result.RequestSHA256 != current.session.RequestSHA256() || result.RecordID == "" || !result.OneTimeSecretRemoved {
+				return errors.New("enrollmentsetup: READY proof does not bind the exact applied client response")
+			}
+			expected := current.session.Generation()
+			if err := current.session.CompleteReadyProbe(ctx, probe); err != nil {
+				return err
+			}
+			tombstone, err := current.session.MailboxTombstone()
+			if err != nil {
+				return err
+			}
+			receipt = readyRecord{
+				Schema: readySchema, InvitationSHA256: current.plan.InvitationSHA256,
+				Workspace: workspaceName(current.plan.InvitationSHA256), InstallationID: current.plan.InstallationID,
+				RequestSHA256: current.session.RequestSHA256(), ActiveRecordID: result.RecordID,
+				Runtime:                current.plan.Runtime,
+				ReadySessionGeneration: current.session.Generation(), ValidationUnix: current.plan.VerifiedUnix, ReadyUnix: now.Unix(),
+				MailboxEndpoint: tombstone.Endpoint, MailboxID: tombstone.MailboxID,
+				ResponseReadCapability: tombstone.ResponseReadCapability,
+			}
+			encoded, err := encodeReady(receipt)
+			if err != nil {
+				return err
+			}
+			if err := current.root.EnsureFile(readyFile, encoded, 0o600); err != nil {
+				return err
+			}
+			validationTime := time.Unix(current.plan.VerifiedUnix, 0).UTC()
+			return enrollmentexchange.ReplaceTargetStore(client.exchangePath(current.plan), expected, current.session, validationTime)
+		})
 	})
-	if err != nil || result.Role != enrollment.RoleClient || result.InstallationID != current.plan.InstallationID ||
-		result.RequestSHA256 != current.session.RequestSHA256() || result.RecordID == "" || !result.OneTimeSecretRemoved {
-		return State{}, errors.New("enrollmentsetup: READY proof does not bind the exact applied client response")
-	}
-	if err := current.session.CompleteReadyProbe(ctx, probe); err != nil {
-		return State{}, err
-	}
-	tombstone, err := current.session.MailboxTombstone()
 	if err != nil {
-		return State{}, err
-	}
-	receipt := readyRecord{
-		Schema: readySchema, InvitationSHA256: current.plan.InvitationSHA256,
-		Workspace: workspaceName(current.plan.InvitationSHA256), InstallationID: current.plan.InstallationID,
-		RequestSHA256: current.session.RequestSHA256(), ActiveRecordID: result.RecordID,
-		Runtime:                current.plan.Runtime,
-		ReadySessionGeneration: current.session.Generation(), ValidationUnix: current.plan.VerifiedUnix, ReadyUnix: now.Unix(),
-		MailboxEndpoint: tombstone.Endpoint, MailboxID: tombstone.MailboxID,
-		ResponseReadCapability: tombstone.ResponseReadCapability,
-	}
-	encoded, err := encodeReady(receipt)
-	if err != nil {
-		return State{}, err
-	}
-	if err := current.root.EnsureFile(readyFile, encoded, 0o600); err != nil {
-		return State{}, err
-	}
-	if err := enrollmentexchange.ReplaceTargetStore(client.exchangePath(current.plan), expected, current.session, now); err != nil {
 		return State{}, err
 	}
 	return stateFromReady(receipt)
@@ -543,6 +575,19 @@ func (client *Client) Cancel(now time.Time) (State, error) {
 }
 
 func (client *Client) openCurrent(now time.Time, requireCurrentRuntime bool) (*currentSetup, error) {
+	return client.openCurrentValidated(now, requireCurrentRuntime, false)
+}
+
+// openPostApplyCurrent permits only the already-committed Applied tail
+// to survive expiry of its one-hour enrollment artifacts. Those artifacts are
+// revalidated at the plan's authenticated original verification time, while
+// the currently installed runtime binding must still match exactly. No phase
+// that can confirm, verify, import, or apply enrollment authority is admitted.
+func (client *Client) openPostApplyCurrent(now time.Time) (*currentSetup, error) {
+	return client.openCurrentValidated(now, true, true)
+}
+
+func (client *Client) openCurrentValidated(now time.Time, requireCurrentRuntime, postApplyOnly bool) (*currentSetup, error) {
 	if client == nil {
 		return nil, errors.New("enrollmentsetup: client coordinator is unavailable")
 	}
@@ -567,9 +612,16 @@ func (client *Client) openCurrent(now time.Time, requireCurrentRuntime bool) (*c
 		return fail(err)
 	}
 	current.workspace = workspace
-	plan, _, err := readPlan(workspace, requireCurrentRuntime, client.runtime, now)
+	plan, _, err := readPlan(workspace, requireCurrentRuntime && !postApplyOnly, client.runtime, now)
 	if err != nil {
 		return fail(err)
+	}
+	validationTime := now
+	if postApplyOnly {
+		validationTime = time.Unix(plan.VerifiedUnix, 0).UTC()
+		if now.Before(validationTime) || plan.Runtime != client.runtime {
+			return fail(errors.New("enrollmentsetup: applied setup does not match the current runtime and clock"))
+		}
 	}
 	if selector.InvitationSHA256 != plan.InvitationSHA256 || selector.Workspace != workspaceName(plan.InvitationSHA256) {
 		return fail(errors.New("enrollmentsetup: current selector is cross-wired"))
@@ -579,12 +631,15 @@ func (client *Client) openCurrent(now time.Time, requireCurrentRuntime bool) (*c
 	} else if cancelled {
 		return fail(ErrResetRequired)
 	}
-	session, err := enrollmentexchange.LoadTargetStore(client.exchangePath(plan), now)
+	session, err := enrollmentexchange.LoadTargetStore(client.exchangePath(plan), validationTime)
 	if err != nil {
 		return fail(err)
 	}
 	if session.InvitationSHA256() != plan.InvitationSHA256 {
 		return fail(errors.New("enrollmentsetup: exchange session is cross-wired"))
+	}
+	if postApplyOnly && session.Phase() != enrollmentexchange.PhaseApplied {
+		return fail(errors.New("enrollmentsetup: expired setup is not already applied"))
 	}
 	current.plan, current.session = plan, session
 	return current, nil
@@ -863,6 +918,50 @@ func ensurePendingMaterial(workspace *securefs.Root, plan planRecord, bootstrap 
 	return material, nil
 }
 
+// bindPlanValidationToRequest makes the signed request creation time the one
+// durable historical validation point for every post-apply crash recovery.
+// A crash after selecting an invitation but before creating its request may
+// otherwise leave those two valid timestamps more than the parser skew apart.
+// The validation point may advance exactly once to the request's signed time;
+// it is never inferred from an unsigned resume clock and never moves backward.
+func (client *Client) bindPlanValidationToRequest(workspace *securefs.Root, plan planRecord, retained enrollmentexchange.ClientBootstrap, material enrollment.PendingMaterial) (planRecord, enrollmentexchange.ClientBootstrap, error) {
+	if client == nil || workspace == nil {
+		return planRecord{}, enrollmentexchange.ClientBootstrap{}, errors.New("enrollmentsetup: setup plan binding is unavailable")
+	}
+	if err := validateMaterialPlan(material, plan); err != nil {
+		return planRecord{}, enrollmentexchange.ClientBootstrap{}, err
+	}
+	createdUnix := material.Payload.CreatedUnix
+	if createdUnix < plan.VerifiedUnix || createdUnix >= plan.ExpiresUnix {
+		return planRecord{}, enrollmentexchange.ClientBootstrap{}, errors.New("enrollmentsetup: signed request time cannot bind the selected invitation")
+	}
+	requestTime := time.Unix(createdUnix, 0).UTC()
+	revalidated, err := enrollmentexchange.PrepareClientBootstrap(decodeInvitation(plan), client.runtime, requestTime)
+	if err != nil || !sameClientBootstrap(revalidated, retained) || revalidated.InvitationSHA256 != plan.InvitationSHA256 ||
+		revalidated.ExpiresUnix != plan.ExpiresUnix || revalidated.Runtime != plan.Runtime {
+		return planRecord{}, enrollmentexchange.ClientBootstrap{}, errors.New("enrollmentsetup: signed request time does not revalidate the exact selected invitation")
+	}
+	if createdUnix == plan.VerifiedUnix {
+		return plan, revalidated, nil
+	}
+	plan.VerifiedUnix = createdUnix
+	encoded, err := encodePlan(plan)
+	if err != nil {
+		return planRecord{}, enrollmentexchange.ClientBootstrap{}, err
+	}
+	if err := workspace.ReplaceFile(planFile, encoded, 0o600); err != nil {
+		return planRecord{}, enrollmentexchange.ClientBootstrap{}, err
+	}
+	return plan, revalidated, nil
+}
+
+func sameClientBootstrap(left, right enrollmentexchange.ClientBootstrap) bool {
+	return left.InvitationSHA256 == right.InvitationSHA256 && left.ExpiresUnix == right.ExpiresUnix &&
+		left.Runtime == right.Runtime && left.Trust == right.Trust &&
+		bytes.Equal(left.DeploymentSignerPublicPEM, right.DeploymentSignerPublicPEM) &&
+		left.RouteID == right.RouteID && left.ConnectorInstallationID == right.ConnectorInstallationID
+}
+
 func readPendingMaterial(workspace *securefs.Root, now time.Time) (enrollment.PendingMaterial, error) {
 	encoded, err := workspace.ReadFile(pendingFile, maxPendingSize)
 	if err != nil {
@@ -1015,6 +1114,7 @@ func (client *Client) validateReadyTarget(receipt readyRecord) error {
 		return err
 	}
 	if status.State.Role != "client" || status.State.InstallationID != receipt.InstallationID ||
+		status.State.ActiveRecordID != receipt.ActiveRecordID ||
 		!containsExact(status.State.ConsumedRequestSHA256, receipt.RequestSHA256) {
 		return errors.New("enrollmentsetup: READY receipt differs from the installed client state")
 	}

@@ -9,10 +9,13 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/coder/websocket"
 	"github.com/sentrybottale/owntransit/internal/buildinfo"
 	"github.com/sentrybottale/owntransit/internal/config"
+	"github.com/sentrybottale/owntransit/internal/enrollmentexchange"
 	"github.com/sentrybottale/owntransit/internal/transport"
 )
 
@@ -27,6 +30,22 @@ func TestRelayFinalSelectionFailurePreventsListen(t *testing.T) {
 	}
 	if diagnostics.Len() != 0 {
 		t.Fatalf("failed final check announced a listener: %q", diagnostics.String())
+	}
+}
+
+func TestRelayPortConflictNeverAnnouncesReady(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	var diagnostics bytes.Buffer
+	err = serveRelayHTTP(
+		context.Background(), listener.Addr().String(), http.NotFoundHandler(),
+		&diagnostics, "owntransit-relay: bootstrap exchange ready", nil,
+	)
+	if err == nil || diagnostics.Len() != 0 {
+		t.Fatalf("port conflict err=%v diagnostics=%q", err, diagnostics.String())
 	}
 }
 
@@ -123,6 +142,77 @@ func TestRelayReadOnlyViewsUseHeldRuntime(t *testing.T) {
 	}
 	if output.Len() != 0 || diagnostics.Len() != 0 {
 		t.Fatalf("unexpected streams: stdout=%q stderr=%q", output.String(), diagnostics.String())
+	}
+}
+
+func TestRelayBootstrapExchangeRequiresOneCanonicalAllocationHash(t *testing.T) {
+	allocationHash := strings.Repeat("a", 64)
+	var output bytes.Buffer
+	var diagnostics bytes.Buffer
+	calledWith := ""
+	commands := relayCommands{
+		runExchange: func(value string, _ io.Writer) error {
+			calledWith = value
+			return nil
+		},
+	}
+	if code := executeRelay([]string{"exchange", "-allocation-sha256", allocationHash}, &output, &diagnostics, commands); code != 0 {
+		t.Fatalf("executeRelay(exchange) = %d, diagnostics=%q", code, diagnostics.String())
+	}
+	if calledWith != allocationHash || output.Len() != 0 || diagnostics.Len() != 0 {
+		t.Fatalf("exchange hash=%q stdout=%q stderr=%q", calledWith, output.String(), diagnostics.String())
+	}
+
+	for _, arguments := range [][]string{
+		{"exchange"},
+		{"exchange", "-allocation-sha256", strings.Repeat("A", 64)},
+		{"exchange", "-allocation-sha256", strings.Repeat("a", 63)},
+		{"exchange", "-allocation-sha256", allocationHash, "-allocation-sha256", allocationHash},
+		{"exchange", "-allocation-sha256", allocationHash, "unexpected"},
+	} {
+		output.Reset()
+		diagnostics.Reset()
+		calledWith = ""
+		if code := executeRelay(arguments, &output, &diagnostics, commands); code != 2 || calledWith != "" || output.Len() != 0 {
+			t.Fatalf("invalid exchange arguments=%v code=%d called=%q stdout=%q stderr=%q", arguments, code, calledWith, output.String(), diagnostics.String())
+		}
+	}
+}
+
+func TestBootstrapExchangeHandlerNeverAcceptsCarrierOrAliasedPaths(t *testing.T) {
+	exchange, err := enrollmentexchange.NewContainerExchangeHandler(
+		enrollmentexchange.NewMailboxStore(),
+		strings.Repeat("b", 64),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := bootstrapExchangeHandler(context.Background(), exchange)
+	server := httptest.NewServer(http.HandlerFunc(func(output http.ResponseWriter, request *http.Request) {
+		request.RemoteAddr = "10.88.0.1:43210"
+		handler.ServeHTTP(output, request)
+	}))
+	endpoint := "ws" + strings.TrimPrefix(server.URL, "http") + "/connects/enrollment"
+	connection, _, err := websocket.Dial(context.Background(), endpoint, &websocket.DialOptions{
+		Subprotocols: []string{enrollmentexchange.ExchangeWebSocketSubprotocol},
+	})
+	if err != nil {
+		server.Close()
+		t.Fatalf("bootstrap exchange wrapper rejected its canonical WebSocket: %v", err)
+	}
+	connection.CloseNow()
+	server.Close()
+	for _, target := range []string{
+		"http://relay/connects",
+		"http://relay/connects/",
+		"http://relay/connects/enrollment?alias=1",
+		"http://relay/other",
+	} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, target, nil))
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("bootstrap exchange accepted %q with status %d", target, response.Code)
+		}
 	}
 }
 

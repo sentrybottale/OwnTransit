@@ -402,12 +402,14 @@ install -m 0644 "$manifest_after" "$stage_root/SOURCE-MANIFEST.txt"
 install -m 0644 "$project_root/LICENSE" "$stage_root/LICENSE"
 
 mkdir -p "$stage_root/packaging/scripts" "$stage_root/packaging/systemd" "$stage_root/packaging/launchd"
-for script in install-linux.sh uninstall-linux.sh install-macos.sh uninstall-macos.sh; do
+for script in install.sh install-linux.sh uninstall-linux.sh install-macos.sh uninstall-macos.sh; do
   install -m 0755 "$project_root/scripts/release/$script" "$stage_root/packaging/scripts/$script"
 done
 for unit in owntransit-connector.service owntransit-relay.service; do
   install -m 0644 "$project_root/deploy/systemd/$unit" "$stage_root/packaging/systemd/$unit"
 done
+install -m 0644 "$project_root/deploy/systemd/owntransit-relay-exchange@.service" \
+  "$stage_root/packaging/systemd/owntransit-relay-exchange-template.service"
 install -m 0644 "$project_root/deploy/systemd/README.md" "$stage_root/packaging/systemd/README.md"
 install -m 0644 "$project_root/deploy/launchd/README.md" "$stage_root/packaging/launchd/README.md"
 

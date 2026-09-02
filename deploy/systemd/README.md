@@ -39,6 +39,34 @@ deployment must therefore use the isolated container listen address
 `0.0.0.0:9087`; the host reverse proxy still reaches only
 `127.0.0.1:9087`.
 
+The relay package also installs
+`owntransit-relay-exchange@.service` for the temporary, credential-free first
+route exchange. The native archive authenticates it under the portable member
+name `packaging/systemd/owntransit-relay-exchange-template.service`; the Linux
+installer maps that exact signed payload to the template name. The unit has no
+`[Install]` section, conflicts with the enrolled relay unit, mounts no role
+state or authority material, and accepts only one canonical allocation digest
+as its systemd instance. It is never enabled or started by the installer.
+
+Podman port publication translates the host reverse-proxy connection before it
+reaches the container. Consequently, the packaged relay's exchange handler
+accepts cleartext only from loopback or a canonical RFC1918/ULA bridge source;
+the ordinary non-container handler remains TLS-or-loopback only. Public,
+link-local, unspecified and malformed source addresses remain rejected. This
+private-source exception is container admission plumbing, not enrollment or
+human-identity authority. It is safe only together with the exact official
+`--network=bridge --publish=127.0.0.1:9087:9087/tcp` boundary, and must never
+justify publishing the container port on a non-loopback host address. Both the
+temporary exchange and enrolled relay units select that bridge explicitly;
+host networking and implicit operator-selected networks are not supported.
+
+The container has a fixed 256 MiB hard memory ceiling and a build-packaged
+192 MiB Go soft memory limit. The soft limit leaves explicit headroom for
+non-Go mappings and container accounting; it is not operator-selected relay
+configuration. The exchange parser borrows its bounded WebSocket input only
+during synchronous capability checking, so an unauthenticated maximum response
+does not create a second 4 MiB parser copy before the mailbox rejects it.
+
 Relay bootstrap uses the host publication path for `--runtime-root` but records
 `--runtime-config-root=/runtime`; connector bootstrap uses
 `/var/lib/owntransit/connector/runtime` for both values. These fixed local

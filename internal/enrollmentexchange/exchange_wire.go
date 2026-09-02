@@ -75,7 +75,11 @@ func parseExchangeRequest(encoded []byte) (exchangeRequest, error) {
 		return exchangeRequest{}, ErrMailboxUnavailable
 	}
 	capability := base64.RawURLEncoding.EncodeToString(encoded[12+protocol.IDSize : exchangeRequestHeaderSize])
-	payload := append([]byte(nil), encoded[exchangeRequestHeaderSize:]...)
+	// The payload deliberately borrows the complete message buffer and is valid
+	// only for synchronous dispatch. Clamp its capacity so a caller cannot append
+	// into header-adjacent storage. MailboxStore.put authenticates the action
+	// capability before making the sole durable copy.
+	payload := encoded[exchangeRequestHeaderSize:len(encoded):len(encoded)]
 	if !validExchangePayload(action, payload) {
 		return exchangeRequest{}, ErrMailboxUnavailable
 	}

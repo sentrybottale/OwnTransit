@@ -1,11 +1,14 @@
 # Install OwnTransit
 
 > [!WARNING]
-> This repository contains the v1 release-candidate implementation, but no
-> official signed v1 artifact set has been published from it. The commands
-> below work only after the authenticated native client handoff has installed
-> its protected runtime. Clean-host/reboot qualification and independent
-> review remain release gates; keep another access and recovery path.
+> OwnTransit 0.1.0 is currently a candidate for Apple-silicon macOS and Linux
+> amd64, not an official stable publication. The repository can build a signed,
+> installable candidate handoff, but use it only for qualification unless its
+> exact signed qualification record is independently verified and reports every
+> hard release gate as passed. A Git checkout, unsigned local build, or checksum
+> downloaded beside an archive is not an authenticated package. Independent
+> external security certification is not claimed. Keep an operator-owned
+> alternative access and recovery path throughout qualification and canarying.
 
 ## The recipient experience
 
@@ -54,25 +57,48 @@ digests, SBOMs and license evidence described in
 For Apple-silicon macOS, the no-fee distribution lane is a signed source
 archive and rendered Homebrew formula for the normal unprivileged frontend,
 plus the separately authenticated native handoff that creates the protected
-runtime and fixed launcher. Once the canonical tap has published a qualified
-candidate, the frontend command is:
+runtime and fixed launcher. Once the canonical tap publishes 0.1.0, the
+frontend command is:
 
 ```sh
 brew install sentrybottale/owntransit/owntransit
 ```
 
 Homebrew alone does not activate the protected runtime and must never be run as
-root. The release-specific native handoff is mandatory. On Linux amd64, the
-authenticated package invokes `scripts/release/install-linux.sh` with the
-release-bound client, lifecycle, manifest and policy inputs and one exact
-existing non-root `--client-user`. On macOS arm64 it invokes
-`scripts/release/install-macos.sh` with the equivalent client, launcher and
-identity inputs. Those scripts are auditable package payload logic, not
-downloaders; do not run them directly from a user-writable checkout.
+root. The release-specific native handoff is mandatory. After independently
+authenticating the handoff trust and its signed outer `SHA256SUMS`, copy and
+extract it into the release instructions' protected root-owned location. On
+macOS the handoff supports the `client` and `provisioner` roles.
+
+On Linux amd64, the authenticated native handoff supports `client`,
+`connector`, `relay`, and `provisioner`. Both platforms use the same short
+entry point:
+
+```sh
+sudo /ABSOLUTE/NATIVE/packaging/scripts/install.sh --bundle /ABSOLUTE/NATIVE --assets /ABSOLUTE/assets --trust /ABSOLUTE/trust --role client --client-user LOCAL_USER
+```
+
+Use `--role connector`, `--role relay`, or `--role provisioner` without
+`--client-user` where that role is supported. The command must run as root and
+the native bundle, signed assets, and independently authenticated trust must be
+three separate canonical, root-owned trees that are not group- or
+world-writable. The entry point verifies the outer asset signature again,
+verifies the native checksum signature, derives the exact release ID and
+selected artifact hashes from those authenticated records, and then executes
+the fail-closed platform installer. It does not decide that the supplied trust
+directory is trustworthy: the release instructions must identify those keys
+through an independent channel first.
+
+The protected staging rule is intentional. Do not run any installer directly
+from a user-writable checkout, download, or extraction directory, and do not
+replace the independent trust check with a checksum downloaded beside the
+archive. The entry point never downloads, imports trust, edits SSH, or starts a
+service.
 
 The repository intentionally does not pretend that an unsigned local build is
-an official installation. Until release assets and their authenticated
-instructions exist, use these paths only for disposable qualification.
+an official installation. Connector and relay installation also deliberately
+leave their services disabled; enabling each installed service is a separate,
+explicit operator action after its local enrollment is complete.
 
 Do not use a command from an advertisement, direct message, search result, or
 relay error page. Never use a command that downloads a script and immediately
@@ -208,6 +234,35 @@ rollback authority. An invitation, key, release, or safety code accepted only
 because the relay delivered it is invalid by construction. The administrator's
 offline signer never needs a network connection.
 
+### Fresh-route cutover
+
+A brand-new relay cannot run its authenticated carrier before it has an
+enrolled endpoint identity, but the first client response needs a mailbox. The
+installed relay package therefore includes a temporary, non-enableable
+exchange-only service. It runs the authenticated relay image with one
+relay-visible allocation-credential hash and exposes only the bounded opaque
+`/connects/enrollment` mailbox through the existing reverse proxy. It has no
+carrier, runtime or authority mount, endpoint key, issuer, signer, persistence,
+route lookup, or target selection.
+
+Keep that temporary service running until the client has fetched and durably
+applied its bound response and reports `SETUP SAVED — NOT READY`. Then stop it,
+apply the relay and connector responses, start the enrolled full relay and
+connector, and have the client run:
+
+```sh
+owntransit setup --resume
+```
+
+The resumed command performs the live authenticated carrier proof and reports
+`READY`. Never stop the temporary exchange before the client reaches the
+Applied state; its mailbox is intentionally memory-only. After apply, losing
+the mailbox is harmless and cannot block local cleanup.
+
+OwnTransit 0.1.0 performs this initial ceremony for exactly one relay, one
+connector, one route, and one client. Adding a second client to an existing
+route is not implemented; do not treat route rotation as client enrollment.
+
 ## The hostile-mailbox design
 
 The client creates its OwnTransit private keys on the client machine. They
@@ -249,46 +304,22 @@ forge the signed response, or make a response valid for another target. Any
 substitution must also survive the gated human comparison. Its remaining power
 is denial of service.
 
-## Release status
+## Release and assurance status
 
-The release-candidate source now implements these formerly blocking paths:
+The OwnTransit 0.1.0 candidate provides the SSH-only client, connector, relay,
+offline provisioner, guided enrollment, authenticated package lifecycle, and
+native installer paths described here. The tooling can build a signed
+installable handoff for qualification. An official stable handoff must bind its
+exact signed artifacts, release policy, SBOM and license evidence to an
+independently verified signed supported-platform qualification record whose
+hard gates all pass; this document does not assert that such a record exists.
 
-- `owntransit setup` implements invitation parsing, resumable target-local key
-  generation, request upload, safety-word confirmation, bounded response
-  polling and activation without weakening the existing enrollment checks;
-- the invitation is signed, target-role-bound, release-bound, expiring and
-  safe to parse before any privileged change;
-- request encryption, one-time mailbox capabilities, fixed bounds, expiry,
-  non-listability, replay behavior and malicious-relay cross-wiring have
-  adversarial tests;
-- the target-first ceremony exposes no `YES` shortcut or per-position hint,
-  treats a submitted mismatch as terminal, and cannot activate without both
-  transcript-bound local confirmations;
-- activation uses a separately authenticated, root-owned lifecycle executable
-  rather than executing a user-writable Homebrew binary as root;
-- macOS arm64 and Linux amd64 package payloads verify the signed release and
-  monotonic policy before activation;
-- `owntransit doctor` produces a human result without exposing secrets and
-  distinguishes carrier failure from an OpenSSH failure;
-- support codes come from a fixed reviewed allowlist and contain no paths,
-  invitation-derived text, identifiers, digests or user-controlled data;
-- setup performs the carrier-only probe before printing `READY`; a failed probe
-  cannot print `READY` or claim that SSH login failed;
-- setup delegates the carrier-only proof to the installed root-owned lifecycle
-  copy, durably records runtime-bound `READY`, and retires local one-time
-  mailbox authority even if the relay refuses cleanup; and
-- release/publication tooling builds and compares the nine-artifact matrix,
-  emits signed-manifest/SBOM/license inputs, and exports a staged clean public
-  Git root without inherited history.
-
-The remaining gates are deliberately external or platform-real: actual release
-and policy keys/signatures with recovery custody, disposable Linux systemd and
-reboot qualification, disposable Apple-silicon Directory Services/setgid/ACL
-and reboot qualification, independent clean-builder reproduction, an
-independent public-object secret scan, and independent security/legal review.
-Until those pass, this repository is a release candidate rather than an
-end-user production release and intentionally publishes no private-host
-deployment recipe.
+Independent implementation review, penetration testing, clean-builder
+reproduction, legal review, custody rehearsal, and environment canary results
+are disclosed when available; OwnTransit 0.1.0 does not claim that external
+certification. Those activities improve assurance but are not authorities
+granted to the relay and are not substitutes for the signed installation
+boundary.
 
 ## Product boundary
 
@@ -307,5 +338,5 @@ The detailed command and trust design is in
 lifecycle rules are in [CREDENTIALS.md](CREDENTIALS.md), the automatic hostile
 exchange is specified in
 [ENROLLMENT_EXCHANGE.md](ENROLLMENT_EXCHANGE.md), release mechanics are in
-[scripts/release/README.md](scripts/release/README.md), and unresolved ship
-gates are in [ROADMAP.md](ROADMAP.md).
+[scripts/release/README.md](scripts/release/README.md), and release and
+assurance requirements are in [ROADMAP.md](ROADMAP.md).

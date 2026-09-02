@@ -1,12 +1,16 @@
 # Hostile enrollment exchange
 
-Status: implemented v1 release-candidate protocol. Canonical signed
+Status: implemented v1 protocol for the OwnTransit 0.1.0 release-candidate line.
+Canonical signed
 invitations, independent mailbox capabilities and commitments, padded request
 encryption, exact invitation/request binding, full-transcript hashing,
 target-first word comparison, durable target/operator sessions, response
 cross-binding, the hostile courier/mailbox, resumable client setup and the
-carrier-only `READY` gate are present in source. Clean-host qualification and
-independent cryptographic/application review remain release gates.
+carrier-only `READY` gate are present in source. A signed installable candidate
+handoff can be built, but an official stable handoff must still carry an
+independently verified signed platform qualification record with every hard
+gate passing. Independent cryptographic, application and human-factors
+certification is not claimed.
 
 ## Outcome
 
@@ -15,6 +19,11 @@ target-first, two-way six-word comparison with a known administrator, and wait
 for `READY`.
 OwnTransit should exchange the enrollment request and response automatically
 without giving the public relay any enrollment authority.
+
+The 0.1.0 initial-route profile covers exactly one relay request, one connector
+request and one client request. It does not add a later client to an existing
+route; the signed three-target request-set meaning must not be silently reused
+for that different operation.
 
 This is a convenience layer over the existing target-local enrollment
 construction. It must not change these invariants:
@@ -249,6 +258,23 @@ The exchange is a distinct versioned surface, not a new controller:
 - independent rate and reverse-proxy limits so exchange traffic cannot consume
   the SSH carrier's entire resource budget.
 
+A fresh route uses an authenticated relay image in temporary exchange-only
+mode before any endpoint deployment exists. The command accepts exactly one
+canonical relay-visible allocation-credential SHA-256, binds the fixed
+packaged address, and routes only the exact `/connects/enrollment` request to
+the same bounded handler. It has no carrier service, runtime or authority
+mount, endpoint key, issuer, signer, persistent mailbox, route lookup, or
+target selector. `/connects`, path/query aliases, and every other request are
+rejected.
+
+The exchange-only process must remain up until the first client has fetched
+and durably applied the target-bound response. The expected carrier probe then
+reports `SETUP SAVED — NOT READY`. The operator stops exchange-only mode,
+applies the relay and connector responses, starts the full relay and connector,
+and the client runs `owntransit setup --resume` to perform the live
+authenticated carrier proof. Mailbox loss at that cutover is harmless because
+the response is already retained locally; relay-side cleanup is best-effort.
+
 These rules reduce accidental exposure and third-party abuse. They do not make
 the relay honest. Endpoint cryptography and local state remain authoritative.
 
@@ -280,6 +306,12 @@ state and local tombstones must reject every attempted substitution or replay.
   state publication.
 - Expiration cannot be extended by the relay or by local clock rollback beyond
   the authenticated lifecycle policy.
+- Pending, transcript-confirmed and response-verified sessions cannot advance
+  after their invitation/request expiry. An already committed `Applied — NOT
+  READY` session may revalidate its retained artifacts at the originally
+  recorded verification time solely to reconcile the exact anchored active
+  response and perform a current live carrier proof; this grants no new
+  enrollment authority.
 - Courier compromise exposes only ciphertext and limited mailbox capabilities.
 - Provisioner or issuer compromise remains a route-authority compromise and is
   outside what the exchange can repair.
@@ -287,7 +319,7 @@ state and local tombstones must reject every attempted substitution or replay.
   release authentication, host security and recovery—not by trusting the
   relay.
 
-## Release status and remaining gates
+## Release and assurance status
 
 The in-repository implementation includes strict schemas and bounds, frozen
 phrase vectors, crash-safe state transitions, root-protected transcript
@@ -297,12 +329,15 @@ keys, hostile mailbox replay/cross-wire/restart tests, a complete guided client
 transition test, an authenticated carrier-only READY proof, and deterministic
 local retirement after READY.
 
-The implementation intentionally cannot prove its own human procedure or
-platform behavior. Before production v1, an independent review must challenge
-the phrase construction, phishing assumptions, invitation theft and races,
-self-authenticating-verifier attempts, a malicious relay that knows the words,
-transcript replacement, response cross-wiring, cleanup interruption, and false
-READY reporting. Disposable macOS and Linux hosts must also exercise install,
-resume, cold boot, reconnect, upgrade, rollback and recovery using the actual
-packaged binaries. Until those external gates pass, this remains a
-release-candidate recipient experience rather than a production assertion.
+The implementation intentionally cannot certify its own human procedure or
+platform behavior. Each official artifact handoff must exercise install,
+resume, cold boot, reconnect, upgrade, rollback and recovery on disposable
+supported hosts using the exact packaged binaries. An independent review is
+invited to challenge the phrase construction, phishing assumptions,
+invitation theft and races, self-authenticating-verifier attempts, a malicious
+relay that knows the words, transcript replacement, response cross-wiring,
+cleanup interruption and false READY reporting.
+
+OwnTransit 0.1.0 does not claim that independent cryptographic, application or
+human-factors assessment. That is disclosed additional assurance, not a
+missing setup path or authority granted to the relay.

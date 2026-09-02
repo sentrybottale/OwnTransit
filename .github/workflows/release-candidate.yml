@@ -94,6 +94,19 @@ jobs:
           GOTOOLCHAIN: local
           GOWORK: "off"
         run: ./scripts/security-check.sh --full
+      - name: Exercise the root-only provisioner lifecycle boundary
+        env:
+          GOTOOLCHAIN: local
+          GOWORK: "off"
+        run: |
+          set -eu
+          root_test_binary="$RUNNER_TEMP/owntransit-packagetxn-root.test"
+          cd internal/packagetxn
+          go test -mod=readonly -race -c -o "$root_test_binary" .
+          sudo -n true
+          sudo -n /usr/bin/env -i PATH=/usr/bin:/bin "$root_test_binary" \
+            -test.run '^TestProvisionerPackageLifecycleAppliesAndRollsBackWithoutRuntimeReader$' \
+            -test.count=1
 
   homebrew-formula:
     name: rendered Homebrew formula

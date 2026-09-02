@@ -64,12 +64,14 @@ The source tree implements the initial three-target enrollment transaction:
 6. The endpoints prove the OwnTransit inner TLS carrier and the connector's
    fixed loopback socket separately from any OpenSSH login test.
 
-The source also implements a bounded guided exchange, resumable target state,
-runtime-bound carrier proof and local retirement after `READY`. That makes the
-v1 release candidate complete enough to qualify; it does not make enrollment a
-supported production workflow. Authenticated release artifacts, clean-host
-qualification, complete recovery and the end-to-end rotation ceremony below
-remain release gates.
+The 0.1.0 implementation also includes a bounded guided exchange, resumable
+target state, runtime-bound carrier proof and local retirement after `READY`.
+Initial three-target enrollment and guided client setup are within its
+candidate scope. An official stable handoff still has to authenticate its exact
+release assets and carry an independently verified signed qualification record
+whose hard supported-platform gates pass. Broader recovery and the end-to-end
+operator rotation ceremony below are operational scope, not authority
+delegated to the relay.
 
 ## Route capability identity
 
@@ -129,12 +131,13 @@ rollback generations that retain current denials, and interrupted anchor-first
 transaction recovery. The initial-enrollment approval remains first-sequence
 only; rotation uses its separate post-initial approval path.
 
-Those primitives are **not** yet a supported credential-operations workflow.
-Package/service coordination is manager-held in source, but authenticated
-revocation distribution, expiry monitoring, third-generation retirement,
-operator receipt review, two-location custody and clean-room recovery still
-require integration or clean-host qualification. Do not manually sequence the
-internal commands and describe the result as a qualified rotation or recovery
+OwnTransit 0.1.0 does not promise automated expiry monitoring or a turnkey
+clean-room credential-recovery service. Package/service coordination is
+manager-held in source, while authenticated revocation distribution,
+third-generation retirement, operator receipt review, two-location custody and
+clean-room recovery remain operator procedures that require their own review
+and rehearsal. Do not manually sequence internal commands and describe the
+result as an automated or independently certified rotation or recovery
 ceremony.
 
 ## Custody and recovery

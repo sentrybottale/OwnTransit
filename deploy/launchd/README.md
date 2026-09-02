@@ -16,11 +16,10 @@ filesystem capability and extended-security attributes, rejects every extended
 ACL, and fails closed with
 `securefs.ErrReadOnlyACLVerificationUnavailable` when the filesystem or syscall
 ABI cannot prove the result. The fixed zero-member setgid launcher and
-GeneratedUID binding are also implemented. These are implemented security
-primitives, not a qualified macOS activation path: they still require the
-clean-Apple-silicon lifecycle, ACL, setgid, task-port, restart and policy matrix
-described in `packaging/macos/CLIENT_READER_BOUNDARY.md`. A launchd job is not a
-workaround for that remaining ship gate.
+GeneratedUID binding are also implemented. Every official handoff must carry
+the clean-Apple-silicon lifecycle, ACL, setgid, task-port, restart, and policy
+matrix described in `packaging/macos/CLIENT_READER_BOUNDARY.md` for its exact
+bytes. A launchd job is not a workaround for that qualification invariant.
 
 If a future client mode genuinely requires a background job, its plist needs a
 separate threat model, fixed absolute paths, no environment-selected program or

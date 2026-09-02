@@ -50,6 +50,7 @@ func TestIncompleteSecurityBoundariesRemainPrivate(t *testing.T) {
 		"func LoadOperatorStore",
 		"func LoadTargetStore",
 		"func NewCourier",
+		"func NewContainerExchangeHandler",
 		"func NewExchangeHandler",
 		"func NewMailboxStore",
 		"func NewOperatorSession",

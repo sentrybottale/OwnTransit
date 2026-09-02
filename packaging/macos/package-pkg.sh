@@ -86,10 +86,7 @@ case "$role" in
     fail "client .pkg generation is disabled: a package cannot securely select and revalidate the explicit local --client-user reader identity; use the authenticated install-macos.sh lane"
     ;;
   provisioner)
-    artifact_name=owntransit-provision-darwin-arm64
-    installed_name=owntransit-provision
-    lifecycle_name=
-    package_identifier=com.owntransit.provisioner
+    fail "provisioner .pkg generation is disabled: a payload-only package cannot perform the manager-bound signed release/policy transaction; use the authenticated install-macos.sh lane"
     ;;
   *) fail "role must be provisioner (client package generation is disabled)" ;;
 esac

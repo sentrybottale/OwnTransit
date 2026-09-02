@@ -29,12 +29,14 @@ The checksum-file digest and selected artifact digests must come from an
 independently authenticated release/package. The client role requires one exact
 existing --client-user. This installer never downloads, enrolls, imports trust,
 creates endpoint credentials, edits SSH, enables a service, or starts a service.
-For client, connector, and relay, the signed manifest and signed monotonic
-policy inputs are mandatory. The authenticated candidate owntransitctl performs
-the per-role package transaction; exact reinstall resumes/idempotently verifies
-the same selector. Roles coexist under separate current selectors. The script
-does not bootstrap trust: verify this installer and every supplied public key
-through the documented independent release channel before running it as root.
+For every role, the signed manifest and signed monotonic policy inputs are
+mandatory. The authenticated candidate owntransitctl performs the per-role
+package transaction; exact reinstall resumes/idempotently verifies the same
+selector. Roles coexist under separate current selectors. Provisioner package
+lifecycle creates no runtime reader, service, endpoint state or credential.
+The script does not bootstrap trust: verify this installer and every supplied
+public key through the documented independent release channel before running
+it as root.
 EOF
 }
 
@@ -128,7 +130,7 @@ case "$role" in
   provisioner)
     artifact_name=owntransit-provision-linux-amd64
     installed_name=owntransit-provision
-    needs_lifecycle=no
+    needs_lifecycle=yes
     service_name=
     reader_group=
     ;;
@@ -151,13 +153,9 @@ if test "$needs_lifecycle" = yes; then
   for signed_input in "$manifest_signature" "$release_public_key" "$policy" "$policy_signature" "$policy_public_key"; do
     case "$signed_input" in
       /*) ;;
-      *) fail "runtime roles require every signed release/policy input as an absolute path" ;;
+      *) fail "every role requires each signed release/policy input as an absolute path" ;;
     esac
   done
-elif test -n "$lifecycle_sha256"; then
-  fail "--lifecycle-sha256 is invalid for the provisioner role"
-elif test -n "$manifest_signature$release_public_key$policy$policy_signature$policy_public_key"; then
-  fail "signed lifecycle inputs are valid only for client, connector, and relay"
 fi
 
 case "$bundle" in
@@ -171,7 +169,7 @@ test "$bundle_resolved" = "$bundle" || fail "bundle path must be canonical and c
 for command_name in awk basename cat chmod chown cmp dirname env find grep id install ln mktemp mv readlink rm rmdir sha256sum stat tr uname wc; do
   command -v "$command_name" >/dev/null 2>&1 || fail "required command is unavailable: $command_name"
 done
-if test "$needs_lifecycle" = yes; then
+if test "$needs_lifecycle" = yes && test "$role" != provisioner; then
   for command_name in getent groupadd usermod; do
     command -v "$command_name" >/dev/null 2>&1 || fail "required identity command is unavailable: $command_name"
   done
@@ -304,7 +302,9 @@ if test "$role" = connector; then
   test "$(listed_digest "$unit_bundle_path")" = "$(sha256_file "$bundle/$unit_bundle_path")" || fail "connector unit is not authenticated by SHA256SUMS"
 elif test "$role" = relay; then
   unit_bundle_path=packaging/systemd/owntransit-relay.service
+  exchange_unit_bundle_path=packaging/systemd/owntransit-relay-exchange-template.service
   test "$(listed_digest "$unit_bundle_path")" = "$(sha256_file "$bundle/$unit_bundle_path")" || fail "relay unit is not authenticated by SHA256SUMS"
+  test "$(listed_digest "$exchange_unit_bundle_path")" = "$(sha256_file "$bundle/$exchange_unit_bundle_path")" || fail "relay bootstrap exchange unit is not authenticated by SHA256SUMS"
 fi
 
 ensure_root_directory() {
@@ -340,9 +340,11 @@ ensure_root_directory "$roles_root" 755
 if test "$needs_lifecycle" = yes; then
   ensure_root_directory /var/lib/owntransit 755
   ensure_root_directory /var/lib/owntransit/package-rollback 700
-  ensure_root_directory /var/lib/owntransit/package-supervisor 700
-  workspace="/var/lib/owntransit/$role"
-  ensure_root_directory "$workspace" 755
+  if test "$role" != provisioner; then
+    ensure_root_directory /var/lib/owntransit/package-supervisor 700
+    workspace="/var/lib/owntransit/$role"
+    ensure_root_directory "$workspace" 755
+  fi
 fi
 if test "$role" = client; then
   client_passwd=$(getent passwd "$client_user") || fail "--client-user does not identify an existing account"
@@ -366,27 +368,13 @@ if test -n "$service_name"; then
     runtime_env_path=/etc/owntransit/connector-runtime.env
   else
     runtime_env_path=/etc/owntransit/relay-container.env
+    exchange_unit_path=/etc/systemd/system/owntransit-relay-exchange@.service
   fi
 fi
 if test "$role" = relay; then
   command -v podman >/dev/null 2>&1 || fail "relay installation requires Podman"
   test "$(command -v podman)" = /usr/bin/podman || fail "relay unit requires Podman at /usr/bin/podman"
 fi
-
-ensure_exact_regular() {
-  exact_target=$1
-  exact_source=$2
-  exact_mode=$3
-  if test -e "$exact_target" || test -L "$exact_target"; then
-    test -f "$exact_target" && test ! -L "$exact_target" || fail "installed file is not regular: $exact_target"
-    test "$(stat -c %u "$exact_target")" -eq 0 && test "$(stat -c %g "$exact_target")" -eq 0 || fail "installed file is not root-owned: $exact_target"
-    test "$(stat -c %a "$exact_target")" = "$exact_mode" || fail "installed file has the wrong mode: $exact_target"
-    test "$(stat -c %h "$exact_target")" -eq 1 || fail "installed file has multiple hard links: $exact_target"
-    cmp -s "$exact_source" "$exact_target" || fail "installed file differs from the authenticated bundle: $exact_target"
-  else
-    install -o root -g root -m "$exact_mode" "$exact_source" "$exact_target"
-  fi
-}
 
 ensure_exact_symlink() {
   exact_link=$1
@@ -402,24 +390,19 @@ ensure_exact_symlink() {
   mv -- "$exact_stage" "$exact_link"
 }
 
-if test "$needs_lifecycle" = no; then
-  provisioner_path="$public_bin/owntransit-provision"
-  ensure_exact_regular "$provisioner_path" "$bundle/$artifact_path" 755
-  trap - EXIT HUP INT TERM
-  rm -rf -- "$verification_directory"
-  printf 'installed exact OwnTransit provisioner %s at %s\n' "$release_id" "$provisioner_path"
-  exit 0
+if test "$role" = provisioner; then
+  reader_gid=0
+else
+  if ! getent group "$reader_group" >/dev/null 2>&1; then
+    groupadd --system "$reader_group"
+  fi
+  reader_record=$(getent group "$reader_group") || fail "cannot resolve dedicated runtime reader group"
+  test "$(printf '%s\n' "$reader_record" | wc -l | tr -d '[:space:]')" -eq 1 || fail "runtime reader group is ambiguous"
+  test "$(printf '%s\n' "$reader_record" | awk -F: '{print $1}')" = "$reader_group" || fail "runtime reader group resolved to another name"
+  reader_gid=$(printf '%s\n' "$reader_record" | awk -F: '{print $3}')
+  case "$reader_gid" in ''|*[!0-9]*) fail "runtime reader group has a non-numeric GID" ;; esac
+  test "$reader_gid" -gt 0 || fail "runtime reader group must be non-root"
 fi
-
-if ! getent group "$reader_group" >/dev/null 2>&1; then
-  groupadd --system "$reader_group"
-fi
-reader_record=$(getent group "$reader_group") || fail "cannot resolve dedicated runtime reader group"
-test "$(printf '%s\n' "$reader_record" | wc -l | tr -d '[:space:]')" -eq 1 || fail "runtime reader group is ambiguous"
-test "$(printf '%s\n' "$reader_record" | awk -F: '{print $1}')" = "$reader_group" || fail "runtime reader group resolved to another name"
-reader_gid=$(printf '%s\n' "$reader_record" | awk -F: '{print $3}')
-case "$reader_gid" in ''|*[!0-9]*) fail "runtime reader group has a non-numeric GID" ;; esac
-test "$reader_gid" -gt 0 || fail "runtime reader group must be non-root"
 
 if test "$role" = client; then
   group_members=$(printf '%s\n' "$reader_record" | awk -F: '{print $4}')
@@ -466,7 +449,7 @@ if test "$role" = client; then
     chmod 0600 "$client_identity_stage"
     mv -- "$client_identity_stage" "$client_identity_receipt"
   fi
-else
+elif test "$role" = connector || test "$role" = relay; then
   if ! getent passwd "$service_name" >/dev/null 2>&1; then
     useradd --system --gid "$reader_group" --home-dir /nonexistent --shell /usr/sbin/nologin --no-create-home "$service_name"
   fi
@@ -502,6 +485,16 @@ if test -n "$service_name"; then
     cmp -s "$bundle/$unit_bundle_path" "$unit_path" || fail "installed systemd unit differs from the authenticated v1 unit"
   else
     install -o root -g root -m 0644 "$bundle/$unit_bundle_path" "$unit_path"
+  fi
+  if test "$role" = relay; then
+    if test -e "$exchange_unit_path" || test -L "$exchange_unit_path"; then
+      test -f "$exchange_unit_path" && test ! -L "$exchange_unit_path" || fail "relay bootstrap exchange unit is not a regular file"
+      test "$(stat -c %u "$exchange_unit_path")" -eq 0 && test "$(stat -c %g "$exchange_unit_path")" -eq 0 && test "$(stat -c %a "$exchange_unit_path")" = 644 || fail "relay bootstrap exchange unit metadata is invalid"
+      test "$(stat -c %h "$exchange_unit_path")" -eq 1 || fail "relay bootstrap exchange unit has multiple hard links"
+      cmp -s "$bundle/$exchange_unit_bundle_path" "$exchange_unit_path" || fail "installed relay bootstrap exchange unit differs from the authenticated v1 unit"
+    else
+      install -o root -g root -m 0644 "$bundle/$exchange_unit_bundle_path" "$exchange_unit_path"
+    fi
   fi
   systemctl daemon-reload
 fi
@@ -547,6 +540,8 @@ test "$(readlink "$current_link")" = "releases/$release_id" || fail "package tra
 if test "$role" = client; then
   ensure_exact_symlink "$public_bin/owntransit" "$current_link/owntransit"
   ensure_exact_symlink "$public_bin/owntransit-proxy" "$current_link/owntransit-proxy"
+elif test "$role" = provisioner; then
+  ensure_exact_symlink "$public_bin/owntransit-provision" "$current_link/owntransit-provision"
 elif test "$role" = relay; then
   test -f "$runtime_env_path" && test ! -L "$runtime_env_path" || fail "relay activation did not publish its protected image environment"
   test "$(stat -c %u "$runtime_env_path")" -eq 0 && test "$(stat -c %g "$runtime_env_path")" -eq 0 && test "$(stat -c %a "$runtime_env_path")" = 600 || fail "relay image environment metadata is invalid"
@@ -557,10 +552,13 @@ rm -rf -- "$verification_directory"
 
 printf 'installed OwnTransit role %s release %s under selector %s\n' "$role" "$release_id" "$current_link"
 printf 'installed license evidence: %s/LICENSE and %s/THIRD_PARTY_LICENSES.txt\n' "$current_link" "$current_link"
-printf 'dedicated numeric runtime reader GID: %s\n' "$reader_gid"
-if test -n "$service_name"; then
+if test "$role" = provisioner; then
+  printf '%s\n' 'provisioner package lifecycle created no runtime reader, service, endpoint state, or credential'
+elif test -n "$service_name"; then
+  printf 'dedicated numeric runtime reader GID: %s\n' "$reader_gid"
   printf 'service enablement remains an explicit operator action: %s.service\n' "$service_name"
 else
+  printf 'dedicated numeric runtime reader GID: %s\n' "$reader_gid"
   printf 'native client: %s; SSH proxy: %s\n' "$public_bin/owntransit" "$public_bin/owntransit-proxy"
   printf '%s\n' 'start a new login session before use; existing sessions do not acquire the dedicated group'
 fi

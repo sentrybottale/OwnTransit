@@ -39,7 +39,7 @@ const (
 	maximumBuildInputs       = 4 << 10
 )
 
-var candidateVersion = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-rc\.([1-9][0-9]*)$`)
+var candidateVersion = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.([1-9][0-9]*))?$`)
 
 type metadata struct {
 	bundle, version, releaseID, repository, commit, sourceManifest, goVersion, builderImage string
@@ -208,7 +208,7 @@ func validateCandidateLedger(ledger candidateLedger) error {
 		return errors.New("candidate-verify: candidate ledger has the wrong schema or status")
 	}
 	if len(ledger.Version) == 0 || len(ledger.Version) > maximumCandidateVersion || !candidateVersion.MatchString(ledger.Version) {
-		return errors.New("candidate-verify: candidate ledger has an invalid release-candidate version")
+		return errors.New("candidate-verify: candidate ledger has an invalid release version")
 	}
 	id, err := protocol.ParseID(ledger.ReleaseID)
 	if err != nil || id == (protocol.ID{}) || id.String() != ledger.ReleaseID {
@@ -348,7 +348,7 @@ func candidateInitAt(arguments []string, output io.Writer, workingDirectory stri
 	flags.SetOutput(io.Discard)
 	version, out := "", ""
 	var releaseSequence, policySequence, releaseFloor, lifecycleFloor uint64
-	flags.StringVar(&version, "version", "", "immutable release-candidate version")
+	flags.StringVar(&version, "version", "", "immutable release version")
 	flags.Uint64Var(&releaseSequence, "release-sequence", 0, "monotonic release sequence")
 	flags.Uint64Var(&policySequence, "policy-sequence", 0, "monotonic policy sequence")
 	flags.Uint64Var(&releaseFloor, "release-floor", 0, "minimum release sequence")
@@ -361,7 +361,7 @@ func candidateInitAt(arguments []string, output io.Writer, workingDirectory stri
 		return errors.New("candidate-init: unexpected positional argument")
 	}
 	if len(version) == 0 || len(version) > maximumCandidateVersion || !candidateVersion.MatchString(version) {
-		return errors.New("candidate-init: version must be MAJOR.MINOR.PATCH-rc.N with canonical nonnegative components and a positive N")
+		return errors.New("candidate-init: version must be MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-rc.N with canonical nonnegative components and, when present, a positive N")
 	}
 	if releaseSequence == 0 || policySequence == 0 || releaseFloor == 0 || lifecycleFloor == 0 {
 		return errors.New("candidate-init: release sequence, policy sequence, release floor, and lifecycle floor must be positive")
@@ -705,17 +705,7 @@ func manifestCommand(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	evidence := []release.Evidence{
-		{Name: "package-install-linux", File: "packaging/scripts/install-linux.sh", Kind: "package-payload"},
-		{Name: "package-install-macos", File: "packaging/scripts/install-macos.sh", Kind: "package-payload"},
-		{Name: "package-uninstall-linux", File: "packaging/scripts/uninstall-linux.sh", Kind: "package-payload"},
-		{Name: "package-uninstall-macos", File: "packaging/scripts/uninstall-macos.sh", Kind: "package-payload"},
-		{Name: "project-license", File: "LICENSE", Kind: "project-license"},
-		{Name: "provenance", File: "evidence/PROVENANCE.json", Kind: "provenance"},
-		{Name: "systemd-connector", File: "packaging/systemd/owntransit-connector.service", Kind: "package-payload"},
-		{Name: "systemd-relay", File: "packaging/systemd/owntransit-relay.service", Kind: "package-payload"},
-		{Name: "third-party-licenses", File: "evidence/THIRD_PARTY_LICENSES.txt", Kind: "licenses"},
-	}
+	evidence := manifestPackageEvidence()
 	for _, artifact := range manifest.Artifacts {
 		base := artifact.File[strings.LastIndex(artifact.File, "/")+1:]
 		evidence = append(evidence, release.Evidence{Name: artifact.SBOM, File: "evidence/" + base + ".spdx.json", Kind: "sbom"})
@@ -739,6 +729,22 @@ func manifestCommand(arguments []string) error {
 		return err
 	}
 	return writeNew(filepath.Join(value.bundle, "RELEASE-MANIFEST.json"), encoded, 0o644)
+}
+
+func manifestPackageEvidence() []release.Evidence {
+	return []release.Evidence{
+		{Name: "package-install-entrypoint", File: "packaging/scripts/install.sh", Kind: "package-payload"},
+		{Name: "package-install-linux", File: "packaging/scripts/install-linux.sh", Kind: "package-payload"},
+		{Name: "package-install-macos", File: "packaging/scripts/install-macos.sh", Kind: "package-payload"},
+		{Name: "package-uninstall-linux", File: "packaging/scripts/uninstall-linux.sh", Kind: "package-payload"},
+		{Name: "package-uninstall-macos", File: "packaging/scripts/uninstall-macos.sh", Kind: "package-payload"},
+		{Name: "project-license", File: "LICENSE", Kind: "project-license"},
+		{Name: "provenance", File: "evidence/PROVENANCE.json", Kind: "provenance"},
+		{Name: "systemd-connector", File: "packaging/systemd/owntransit-connector.service", Kind: "package-payload"},
+		{Name: "systemd-relay", File: "packaging/systemd/owntransit-relay.service", Kind: "package-payload"},
+		{Name: "systemd-relay-exchange", File: "packaging/systemd/owntransit-relay-exchange-template.service", Kind: "package-payload"},
+		{Name: "third-party-licenses", File: "evidence/THIRD_PARTY_LICENSES.txt", Kind: "licenses"},
+	}
 }
 
 func signManifestCommand(arguments []string) error {

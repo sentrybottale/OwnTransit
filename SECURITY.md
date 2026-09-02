@@ -1,25 +1,29 @@
 # OwnTransit security policy
 
-## Release status
+## Release and assurance status
 
-OwnTransit has no supported production release. The tunnel, route-capability
-profile, initial target-generated enrollment/apply path, signed verifier-first
-lifecycle policy, route-rotation issuance, revocation overlays, external
-rollback anchor, exact-record rollback and signed release/policy verification
-exist in source. Guided exchange and manager-bound package activation also
-exist in the v1 release candidate. They remain unqualified security and
-operating primitives: authenticated distribution, clean-host lifecycle and
-recovery drills, signer/issuer custody and independent review remain shipment
-gates.
+OwnTransit 0.1.0 is the candidate release line for Apple-silicon macOS and Linux
+amd64 within the documented SSH-only boundary. The tunnel, route-capability
+profile, guided target-generated enrollment, signed verifier-first lifecycle
+policy, route-rotation issuance, revocation overlays, external rollback anchor,
+exact-record rollback, signed release/policy verification and manager-bound
+package activation exist in source. The release tooling can turn one clean
+candidate commit into a signed, installable handoff for qualification.
 
-Do not rely on the current tree as a system's only transport path. SSH and host
-recovery are operator responsibilities and must remain independently available.
+That statement neither authenticates this checkout nor claims that the required
+platform matrices passed. An official stable handoff must bind the exact source,
+signed artifacts and release policy to an independently verified signed
+qualification record in which every hard release gate passes. No such result,
+independent external security assessment, penetration-test certification or
+universal suitability is claimed here. SSH and host recovery remain operator
+responsibilities; keep them independently available throughout qualification
+and deployment canarying.
 
 ## Reporting a vulnerability
 
-When this repository is published on GitHub, use its private security-advisory
-feature. Do not open a public issue for a suspected vulnerability, secret or
-deployment exposure. Include:
+Use the canonical GitHub repository's private security-advisory feature. Do not
+open a public issue for a suspected vulnerability, secret or deployment
+exposure. Include:
 
 - affected revision and component;
 - minimal reproduction or malformed input;
@@ -27,8 +31,9 @@ deployment exposure. Include:
 - whether endpoint, relay or local privileges are required; and
 - any evidence that a credential or real deployment may be affected.
 
-Until the repository has a canonical public owner/contact, keep the report
-private and do not send secrets through ordinary issue trackers.
+If that private channel is unavailable, keep the report private and use only a
+maintainer contact independently verified from the canonical repository. Do not
+send secrets through ordinary issue trackers.
 
 ## Security boundary
 
@@ -89,7 +94,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the component and key boundaries.
 - A distinct offline client-capability root per connector/route; never a global
   capability issuer. One root is normal and a second is accepted only during an
   explicit signed-state rotation overlap.
-- Signed, sequenced and reversible release/config/credential tuples before v1.
+- Signed, sequenced and reversible release/config/credential tuples for 0.1.0.
 
 Initial public trust may be transported tentatively through the invitation,
 but the exact transcript becomes trusted only through an independently
@@ -106,46 +111,79 @@ exact-pin migration profile has stronger issuer-compromise resistance because a
 new leaf also needs a preinstalled SPKI pin. This tradeoff is explicit, scoped
 to one connector/route, and not hidden behind an empty allowlist.
 
-## Current stop-ship classes
+## Release integrity and additional assurance
 
-- end-to-end integration and clean-host qualification of the implemented
-  verifier-first leaf/root rotation, revocation, floor and exact-record
-  rollback primitives;
-- expiry monitoring, authenticated revocation distribution, third-generation
-  retirement and two-location issuer/signing recovery rehearsals;
-- clean-host qualification of the manager-held compare-and-swap spanning
-  signed release verification, external release-policy anchor advancement,
-  package selector publication and service integration;
-- independent review and real-host qualification of the complete trusted
-  bootstrap and guided hostile-mailbox ceremony;
-- authenticated native distribution and qualified connector/client privilege
-  boundaries on every supported platform;
-- interrupted-transaction, disk-full, power-loss and clean-host platform
-  qualification; and
-- independent implementation review and penetration testing.
+Every official 0.1.0 artifact handoff must provide authenticated native
+distribution, an exact release and policy binding, and clean-host evidence for
+the supported platform privilege and exposure boundaries. It must exercise
+the installed path, service integration, reboot/reconnect and fail-closed
+package transaction behavior using the exact released bytes. A known
+unaccepted Critical or High security defect is a release block.
 
-Initial enrollment working in source does not close these gates. In particular,
-the connector's lack of a positive client list increases the importance of
-offline route-issuer custody, bounded revocation state and a rehearsed issuer
-rotation procedure.
+The OpenSSH distribution signer authorized as `owntransit-release` is the
+privileged package-bootstrap authority: it authenticates the outer asset
+inventory and the native checksum inventory containing the installer entry
+point. Because the first privileged program cannot retroactively authenticate
+itself, compromise of that distribution key can authenticate malicious root
+installer code even without the distinct release-manifest or release-policy
+keys. Those keys preserve separate lifecycle and rollback authorities; they do
+not form a threshold signature for package bootstrap. Protected staging must
+use fresh root-created inodes on a local filesystem, never a `chown` of an
+untrusted extraction tree or a FUSE/network/reused writable tree.
 
-## Known implementation limitations
+Client, connector, relay and offline provisioner software use the same
+manager-bound signed release/policy transaction, external rollback anchor,
+immutable release directories and authenticated current selector. The
+provisioner handoff invokes its authenticated role-local `owntransitctl` only
+for package apply, rollback and recovery. Installing or updating that role
+creates no runtime reader, service, target state, endpoint credential or SSH
+material.
 
-The current source has additional fail-closed limitations that must remain
-visible during release work:
+The packaged relay mailbox accepts only the Podman private-bridge peer as
+deployment plumbing. The exact signed units' `--network=bridge` and
+`--publish=127.0.0.1:9087:9087/tcp` settings are the exposure boundary;
+mailbox reachability grants no release trust, enrollment authority, endpoint
+identity or plaintext access. Every exact artifact handoff must qualify an
+actual packaged mailbox round trip through that boundary.
 
-- Endpoint lifecycle activation now uses descriptor-held runtime generations,
+The following work improves assurance and operations but is not represented as
+missing tunnel, client, connector or relay functionality:
+
+- independent implementation review and authorized penetration testing;
+- broader hostile-filesystem, disk-full, power-loss and recovery exercises;
+- independent clean-builder reproduction and external public-history scans;
+- expiry monitoring, authenticated revocation operations and
+  third-generation retirement procedures;
+- two-location issuer/signing custody and clean-room recovery rehearsals; and
+- operator canary, burn-in and environment-specific recovery exercises.
+
+No completion or certification of those external activities is claimed for
+0.1.0. The connector's lack of a positive client list makes offline
+route-issuer custody, bounded revocation state and a rehearsed issuer-rotation
+procedure particularly important operator responsibilities.
+
+## Known limitations in the 0.1.0 candidate scope
+
+The candidate scope retains these fail-closed limitations; release wording must
+not hide them or imply that the platform qualification gates passed:
+
+- Endpoint lifecycle activation relies on descriptor-held runtime generations,
   a final pre-network check, root-published read-only views and a separately
-  rooted exact-state rollback anchor. Those pieces have not passed the native
-  package, privilege, reboot, interruption and hostile-filesystem matrix.
+  rooted exact-state rollback anchor. It does not defend against a compromised
+  platform package manager or host root; each artifact handoff must cover the
+  native package, privilege, reboot and interruption boundary in its evidence.
 - Release bundle and policy verification, external release-policy anchor
   compare-and-swap and selector publication are bound by one manager-held
-  transaction. That boundary has not passed clean-host privilege, interruption
-  and recovery qualification; a detached verified decision remains
-  intentionally unusable as install authorization.
+  transaction. A detached verified decision remains intentionally unusable as
+  install authorization, so each artifact handoff must qualify the installed
+  manager boundary rather than treating detached verification as sufficient.
 - Bootstrap release ID, artifact digest, platform and architecture are
   authenticated operator inputs; `owntransitctl` does not yet measure the
   installed executable and derive those values itself.
+- Initial route enrollment supports exactly one client. Later-client
+  enrollment is not implemented, and route rotation changes authenticated
+  route state for the existing deployment; it is not a substitute for adding
+  another client.
 - Anchor-first endpoint recovery can finish an exact interrupted transition,
   but authenticated garbage collection, third-record retirement and complete
   clean-room recovery policy are not integrated or qualified.

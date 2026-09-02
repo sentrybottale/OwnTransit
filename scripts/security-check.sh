@@ -165,6 +165,8 @@ if [ "$mode" = full ]; then
   ./scripts/qualify/static-check.sh
   ./scripts/qualify/test-signature-tools.sh
   ./scripts/qualify/test-native-archive.sh
+  ./scripts/tests/install-entrypoint.sh
+  ./scripts/tests/qualification-record.sh
   ./scripts/tests/sign-candidate.sh
 fi
 

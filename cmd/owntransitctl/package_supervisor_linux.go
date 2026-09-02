@@ -47,7 +47,7 @@ type packageSupervisor struct {
 }
 
 func runSupervisedPackageMutation(role string, preflight func() error, operation func() (packagetxn.Result, error)) (packagetxn.Result, error) {
-	if role == "client" {
+	if role == "client" || role == "provisioner" {
 		if preflight == nil {
 			return packagetxn.Result{}, errors.New("package supervisor preflight is required")
 		}

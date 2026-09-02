@@ -28,22 +28,24 @@ printf 'OWNTRANSIT_DISPOSABLE_VM=1\n' >/etc/owntransit-qualification-disposable
 ```
 
 Copy the exact release staging tree under a new root-owned, non-writable path
-such as `/opt/owntransit-release`. Keep `SHA256SUMS.sig`, both independently
-trusted release/policy public keys, the release-manifest signature, and the
-signed policy plus its signature under a separate protected trust root; none
-may come from the candidate staging tree. First run the read-only gate:
+such as `/opt/owntransit-release`. Keep the handoff's
+`assets/NATIVE-SHA256SUMS.sig`, release-manifest signature, signed policy and
+policy signature under a separate protected assets root. Keep the independently
+trusted allowed-signers and release/policy public keys under a protected trust
+root; none may come from the candidate staging tree. First run the read-only
+gate:
 
 ```text
 scripts/qualify/linux-amd64-vm.sh preflight \
   --bundle /opt/owntransit-release \
   --checksums-sha256 AUTHENTICATED_64_HEX \
-  --checksums-signature /opt/release-trust/SHA256SUMS.sig \
+  --checksums-signature /opt/release-assets/NATIVE-SHA256SUMS.sig \
   --allowed-signers /opt/release-trust/allowed_signers \
   --signer owntransit-release \
-  --manifest-signature /opt/release-trust/RELEASE-MANIFEST.sig \
+  --manifest-signature /opt/release-assets/RELEASE-MANIFEST.sig \
   --release-public-key /opt/release-trust/release-public.pem \
-  --policy /opt/release-trust/RELEASE-POLICY.json \
-  --policy-signature /opt/release-trust/RELEASE-POLICY.sig \
+  --policy /opt/release-assets/RELEASE-POLICY.json \
+  --policy-signature /opt/release-assets/RELEASE-POLICY.sig \
   --policy-public-key /opt/release-trust/policy-public.pem
 ```
 
@@ -81,6 +83,93 @@ machine IDs, generated identities, certificate material and logs are excluded.
 This qualifies native installer/systemd/reboot mechanics with throwaway local
 state. It does not prove a real relay path, SSH login, recovery, upgrade,
 rollback, power-loss behavior or external security review.
+
+## Linux relay exchange gate
+
+Static unit inspection and native-archive tests do not qualify the temporary
+relay exchange. Release evidence is incomplete until a disposable Linux amd64
+host with systemd and rootful Podman has exercised the signed relay OCI image
+through the installed `owntransit-relay-exchange@.service` template. That gate
+must authenticate the portable archive member, prove the installer reproduced
+it exactly as `/etc/systemd/system/owntransit-relay-exchange@.service`, and run
+`systemd-analyze verify` on the installed template before activation.
+
+The runtime portion must use a throwaway allocation capability and the real
+packaged network path: public WebPKI reverse proxy to host loopback publication,
+then Podman DNAT to the container. It must complete a WebSocket upgrade with the
+exact enrollment subprotocol and at least one create/read-or-write mailbox
+round trip. Merely calling the Go handler directly or reaching an unpackaged
+binary on host loopback is not sufficient, because it does not exercise the
+private bridge-source admission path. Evidence must also show that port 9087 is
+bound only on host IPv4 loopback. Record the exact live output of
+`podman port owntransit-relay-exchange 9087/tcp` and require it to be exactly
+`127.0.0.1:9087`; unit text or a socket observed only inside the container is
+not evidence of the host exposure boundary. Probe the host's non-loopback
+interface address and require connection refusal while the loopback/reverse-
+proxy mailbox round trip succeeds. Evidence must also show that the exchange
+unit has no role-state or authority mounts and the enrolled relay cannot run
+concurrently. The packaged live gate proves the host non-loopback refusal;
+repository handler tests separately prove that public, link-local, unspecified
+and malformed cleartext peer addresses are rejected before mailbox handling.
+
+Finally, stop every exchange instance and run the authenticated relay
+uninstaller. Qualification must prove that the template is removed, no
+exchange instance remains active, and no endpoint state or authority material
+was created by the temporary unit. Until this packaged round trip is recorded,
+the relay bootstrap path remains unqualified even when all local tests pass.
+
+`linux-relay-exchange.sh` is the destructive disposable-host harness for this
+gate. Run it only after the exact relay role from the signed bundle has been
+installed but not enabled, started or enrolled. The relay state root must still
+be empty. Create its dedicated one-use marker only after re-confirming that the
+host is disposable; the harness consumes it before the first package mutation:
+
+```text
+install -o root -g root -m 0644 /dev/null /etc/owntransit-relay-exchange-qualification-disposable
+printf 'OWNTRANSIT_RELAY_EXCHANGE_DISPOSABLE=1\n' >/etc/owntransit-relay-exchange-qualification-disposable
+```
+
+```text
+scripts/qualify/linux-relay-exchange.sh \
+  --bundle /opt/owntransit-release \
+  --checksums-sha256 AUTHENTICATED_64_HEX \
+  --native-checksums-signature /opt/release-assets/NATIVE-SHA256SUMS.sig \
+  --allowed-signers /opt/release-trust/allowed_signers \
+  --manifest-signature /opt/release-assets/RELEASE-MANIFEST.sig \
+  --release-public-key /opt/release-trust/release-public.pem \
+  --policy /opt/release-assets/RELEASE-POLICY.json \
+  --policy-signature /opt/release-assets/RELEASE-POLICY.sig \
+  --policy-public-key /opt/release-trust/policy-public.pem \
+  --exchange-endpoint wss://PUBLIC_RELAY_DNS/connects/enrollment \
+  --non-loopback-ip HOST_PUBLIC_IPV4
+```
+
+`NATIVE-SHA256SUMS.sig` is the signature over the extracted native bundle's
+inner `SHA256SUMS`; the handoff's `trust/SHA256SUMS.sig` instead signs the outer
+asset inventory and is not interchangeable. The native bundle, release assets
+and independently authenticated trust inputs must remain in separate
+root-owned trees whose complete ancestor chains are not group- or
+world-writable.
+
+The DNS name must resolve to exactly that public IPv4 address on the
+qualification host. The harness authenticates and snapshots the executable
+bundle members into fresh root-only inodes, then requires the installed
+`owntransitctl` to replay the exact signed manifest and policy idempotently
+against its package receipt, selector and external anchor. Only after that
+manager-bound proof and marker consumption does it start its generated hash
+instance and allocate a mailbox through the real public WSS reverse-proxy path.
+It stores one opaque response, proves an identical retry is idempotent and a
+conflicting response is rejected, then stops the exact instance and runs the
+authenticated staged relay uninstaller. The endpoint, address and throwaway
+capabilities are not recorded; bounded JSON evidence is written to
+`/var/lib/owntransit-qualification/relay-exchange-evidence.json`.
+
+There is intentionally no public courier command that reads a target response.
+The harness therefore records `target_response_read_qualified:false` rather
+than inventing a private test interface. Target-side response read, verification
+and apply remain part of the full recipient enrollment qualification; this
+harness qualifies every public courier action needed to allocate the mailbox
+and immutably place the opaque response.
 
 ## Local checks
 

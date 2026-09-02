@@ -22,7 +22,7 @@ func encodePackageAnchor(anchor packageAnchor) ([]byte, error) {
 }
 
 func validatePackageAnchor(anchor packageAnchor) error {
-	if anchor.Schema != packageAnchorSchema || !validRole(anchor.Role) || anchor.Role == "provisioner" {
+	if anchor.Schema != packageAnchorSchema || !validRole(anchor.Role) {
 		return errors.New("packagetxn: package anchor identity is invalid")
 	}
 	if anchor.Generation == 0 {

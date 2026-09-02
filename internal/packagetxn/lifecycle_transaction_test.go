@@ -331,6 +331,56 @@ func TestLifecycleRequiresDistinctReleaseAndPolicySigners(t *testing.T) {
 	}
 }
 
+func TestProvisionerPackageLifecycleAppliesAndRollsBackWithoutRuntimeReader(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("requires root to exercise the provisioner reader-GID-zero filesystem boundary; CI runs this test in a dedicated root gate")
+	}
+	manager, base := newLifecycleManagerHarness(t, "provisioner")
+	manager.readerGID = 0
+	releaseKeys, _ := signing.Generate()
+	policyKeys, _ := signing.Generate()
+	policyBytes, policySignature := signedTestPolicy(t, policyKeys, releaseKeys, 1, 1)
+	a := newSignedPackageFixture(t, base, "provisioner-a", 1, releaseKeys, policyBytes, policySignature, policyKeys)
+	b := newSignedPackageFixture(t, base, "provisioner-b", 2, releaseKeys, policyBytes, policySignature, policyKeys)
+
+	manager.runningMeasurement = func() (packageMeasurement, error) { return a.lifecycle, nil }
+	first, err := manager.Apply(a.input)
+	if err != nil || first.Role != "provisioner" || first.Current != a.releaseID || first.Runtime.Role != "provisioner" {
+		t.Fatalf("provisioner apply A = %+v, %v", first, err)
+	}
+	second, err := manager.Apply(b.input)
+	if err != nil || second.Current != b.releaseID || second.Previous != a.releaseID {
+		t.Fatalf("provisioner apply B = %+v, %v", second, err)
+	}
+	manager.runningMeasurement = func() (packageMeasurement, error) { return b.lifecycle, nil }
+	rolledBack, err := manager.Rollback(RollbackInput{ToReleaseID: a.releaseID})
+	if err != nil || rolledBack.Current != a.releaseID || rolledBack.Previous != b.releaseID {
+		t.Fatalf("provisioner rollback = %+v, %v", rolledBack, err)
+	}
+	assertActiveRelease(t, base, "provisioner", a.releaseID)
+	for _, releaseID := range []string{a.releaseID, b.releaseID} {
+		root := filepath.Join(base, "package", "provisioner", releasesDirectory, releaseID)
+		for name, wantMode := range map[string]os.FileMode{"owntransit-provision": 0o755, "owntransitctl": 0o700} {
+			info, statErr := os.Stat(filepath.Join(root, name))
+			if statErr != nil || info.Mode().Perm() != wantMode {
+				t.Fatalf("provisioner release %s file %s = %v, %v", releaseID, name, info, statErr)
+			}
+		}
+	}
+}
+
+func TestProvisionerPackageArtifactNamesArePlatformBound(t *testing.T) {
+	for _, test := range []struct{ goos, goarch, want string }{
+		{"darwin", "arm64", "provisioner-darwin-arm64"},
+		{"linux", "amd64", "provisioner-linux-amd64"},
+	} {
+		got, err := artifactNameForRole("provisioner", test.goos, test.goarch)
+		if err != nil || got != test.want {
+			t.Fatalf("artifactNameForRole(provisioner, %s, %s) = %q, %v", test.goos, test.goarch, got, err)
+		}
+	}
+}
+
 func TestLifecycleRolesCoexistAndExactReinstallIsIdempotent(t *testing.T) {
 	base, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -349,7 +399,7 @@ func TestLifecycleRolesCoexistAndExactReinstallIsIdempotent(t *testing.T) {
 	fixture := newSignedPackageFixture(t, base, "coexisting-roles", 1, releaseKeys, policyBytes, policySignature, policyKeys)
 
 	managers := make(map[string]*Manager)
-	for _, role := range []string{"client", "connector", "relay"} {
+	for _, role := range []string{"client", "connector", "relay", "provisioner"} {
 		manager, err := openLifecycleManager(packageRoot, anchorRoot, role, uint32(os.Geteuid()), uint32(os.Getegid()), false, func(int, bool) error { return nil })
 		if err != nil {
 			t.Fatal(err)
@@ -371,13 +421,28 @@ func TestLifecycleRolesCoexistAndExactReinstallIsIdempotent(t *testing.T) {
 				t.Fatalf("%s notice %s: %v", role, notice, err)
 			}
 		}
+		if role == "provisioner" {
+			for _, name := range []string{"owntransit-provision", "owntransitctl"} {
+				info, err := os.Stat(filepath.Join(packageRoot, role, releasesDirectory, fixture.releaseID, name))
+				if err != nil {
+					t.Fatalf("provisioner package file %s: %v", name, err)
+				}
+				want := os.FileMode(0o755)
+				if name == "owntransitctl" {
+					want = 0o700
+				}
+				if info.Mode().Perm() != want {
+					t.Fatalf("provisioner package file %s mode = %v, want %v", name, info.Mode().Perm(), want)
+				}
+			}
+		}
 	}
 
 	reinstalled, err := managers["client"].Apply(fixture.input)
 	if err != nil || !reinstalled.Idempotent || reinstalled.Installed || reinstalled.Current != fixture.releaseID {
 		t.Fatalf("exact client reinstall = %+v, %v", reinstalled, err)
 	}
-	for _, role := range []string{"client", "connector", "relay"} {
+	for _, role := range []string{"client", "connector", "relay", "provisioner"} {
 		assertActiveRelease(t, base, role, fixture.releaseID)
 	}
 }

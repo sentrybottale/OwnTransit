@@ -73,10 +73,11 @@ published views. It does not defend against root, an administrator granting
 root, kernel compromise, denial of service, or malicious root-level replacement
 followed by deliberate metadata and receipt repair.
 
-## Qualification gate
+## Qualification invariant
 
-This remains a macOS ship gate until exercised after lifecycle activation on a
-clean disposable Apple-silicon Mac:
+Every official 0.1.0 handoff must exercise this boundary after lifecycle
+activation on a clean Apple-silicon Mac and attach the exact result to its
+qualification record:
 
 ```text
 sudo scripts/qualify/macos-client-boundary.sh \
@@ -93,5 +94,8 @@ root-owned release directory that prevents client replacement. It performs no
 successful identity or installation mutation.
 
 The direct `.pkg` lane cannot securely select and revalidate the target local
-identity, so `package-pkg.sh` fails closed for the client role. Provisioner
-packages remain separate. Homebrew is a signed source/build delivery lane only.
+identity, so `package-pkg.sh` fails closed for the client role. It also fails
+closed for the provisioner because a payload-only package cannot perform the
+manager-bound signed release/policy transaction. The authenticated native
+installer keeps the two role selectors separate. Homebrew is a signed
+source/build delivery lane only.

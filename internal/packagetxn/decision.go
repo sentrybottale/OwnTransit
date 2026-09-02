@@ -234,7 +234,10 @@ func primaryInstallProfile(artifact release.Artifact, ownerGID, readerGID uint32
 		if artifact.Format != release.ArtifactFormatExecutable {
 			return "", 0, 0, false, errors.New("packagetxn: provisioner artifact is not executable")
 		}
-		return "owntransit-provision", 0o700, ownerGID, false, nil
+		// The provisioner itself remains an ordinary on-demand executable. The
+		// authenticated owntransitctl copy is installed only to bind future
+		// package apply/rollback/recovery to this role's current selector.
+		return "owntransit-provision", 0o755, ownerGID, true, nil
 	default:
 		return "", 0, 0, false, errors.New("packagetxn: selected release role is unsupported")
 	}
