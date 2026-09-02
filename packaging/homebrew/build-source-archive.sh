@@ -120,6 +120,14 @@ darwin_mode() {
   printf '%o\n' "$((0$darwin_mode_raw & 07777))"
 }
 
+file_mode() {
+  if test "$(uname -s)" = Darwin; then
+    darwin_mode "$1"
+  else
+    stat -c '%a' -- "$1"
+  fi
+}
+
 require_darwin_protected_key_chain() {
   expected_uid=$1
   protected_path=$signing_key
@@ -276,7 +284,7 @@ project_root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
   --signer "$signer" --namespace owntransit-source-v1 >/dev/null
 
 archive="$workspace/owntransit-$version-source.tar.gz"
-git -C "$source_root" archive \
+git -c tar.umask=0022 -C "$source_root" archive \
   --format=tar.gz \
   --prefix="owntransit-$version/" \
   --add-file="$manifest" \
@@ -287,9 +295,40 @@ test -s "$archive" || fail "git archive did not create an archive"
 
 verify_root="$workspace/verify"
 mkdir "$verify_root"
-tar -xzf "$archive" -C "$verify_root"
+tar -xzpf "$archive" -C "$verify_root"
+verified_source="$verify_root/owntransit-$version"
+test -d "$verified_source" && test ! -L "$verified_source" || fail "source archive omitted its canonical root"
+unexpected=$(find "$verified_source" ! -type f ! -type d -print)
+test -z "$unexpected" || fail "source archive contains a symlink or special entry"
+archive_directories="$workspace/archive-directories"
+find "$verified_source" -type d -print > "$archive_directories" ||
+  fail "cannot enumerate source archive directories"
+while IFS= read -r archive_directory; do
+  test "$(file_mode "$archive_directory")" = 755 ||
+    fail "source archive directory mode is not 0755: $archive_directory"
+done < "$archive_directories"
+source_tree="$workspace/source-tree"
+git -C "$source_root" ls-tree -r "$commit" > "$source_tree" ||
+  fail "cannot enumerate source commit modes"
+while IFS="$(printf '\t')" read -r tree_metadata relative; do
+  tree_mode=${tree_metadata%% *}
+  case "$tree_mode" in
+    100644) expected_mode=644 ;;
+    100755) expected_mode=755 ;;
+    *) fail "source commit contains an unsupported entry mode: $tree_mode $relative" ;;
+  esac
+  archived_file="$verified_source/$relative"
+  test -f "$archived_file" && test ! -L "$archived_file" ||
+    fail "source archive omitted a tracked regular file: $relative"
+  test "$(file_mode "$archived_file")" = "$expected_mode" ||
+    fail "source archive changed tracked mode for $relative"
+done < "$source_tree"
+for generated_source_member in SOURCE-MANIFEST.txt SOURCE-MANIFEST.txt.sig; do
+  test "$(file_mode "$verified_source/$generated_source_member")" = 644 ||
+    fail "source archive generated member mode is not 0644: $generated_source_member"
+done
 "$project_root/packaging/homebrew/verify-source-tree.sh" \
-  --source "$verify_root/owntransit-$version" \
+  --source "$verified_source" \
   --allowed-signers "$allowed_signers" \
   --signer "$signer" >/dev/null
 

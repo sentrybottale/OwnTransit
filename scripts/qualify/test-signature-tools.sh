@@ -9,6 +9,16 @@ fail() {
   exit 1
 }
 
+file_mode() {
+  if test "$(uname -s)" = Darwin; then
+    file_mode_raw=$(stat -f %p -- "$1") || return 1
+    case "$file_mode_raw" in ''|*[!0-7]*) return 1 ;; esac
+    printf '%o\n' "$((0$file_mode_raw & 07777))"
+  else
+    stat -c '%a' -- "$1"
+  fi
+}
+
 project_root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 workspace=$(mktemp -d "${TMPDIR:-/tmp}/owntransit-signature-test.XXXXXX") || fail "cannot create test workspace"
 workspace=$(CDPATH= cd -P -- "$workspace" && pwd) || fail "cannot resolve test workspace"
@@ -190,15 +200,18 @@ fi
 
 archive_source="$workspace/archive-source"
 archive_output="$workspace/archive-output"
-mkdir -p "$archive_source/cmd/example" "$archive_source/internal/example" "$archive_output"
+mkdir -p "$archive_source/cmd/example" "$archive_source/internal/example" "$archive_source/tools" "$archive_output"
 printf 'module example.invalid/owntransit\n\ngo 1.26\n' > "$archive_source/go.mod"
 : > "$archive_source/go.sum"
 printf 'package main\nfunc main() {}\n' > "$archive_source/cmd/example/main.go"
 printf 'package example\nconst Value = 1\n' > "$archive_source/internal/example/example.go"
+printf '#!/bin/sh\nexit 0\n' > "$archive_source/tools/example.sh"
+chmod 0755 "$archive_source/tools/example.sh"
 git -C "$archive_source" init -q
 git -C "$archive_source" config user.name OwnTransit-Test
 git -C "$archive_source" config user.email owntransit-test@example.invalid
-git -C "$archive_source" add go.mod go.sum cmd internal
+git -C "$archive_source" config tar.umask 0000
+git -C "$archive_source" add go.mod go.sum cmd internal tools
 git -C "$archive_source" commit -q -m 'qualification source'
 archive_commit=$(git -C "$archive_source" rev-parse --verify HEAD)
 
@@ -226,6 +239,7 @@ expect_source_key_failure() {
     fail "source archive helper published output after rejecting a key"
 }
 
+source_archive_a="$archive_output/owntransit-0.0.0-test-source.tar.gz"
 "$project_root/packaging/homebrew/build-source-archive.sh" \
   --source "$archive_source" \
   --version 0.0.0-test \
@@ -233,9 +247,49 @@ expect_source_key_failure() {
   --signing-key "$workspace/signing-key" \
   --allowed-signers "$workspace/source-allowed" \
   --signer owntransit-source \
-  --output "$archive_output/owntransit-0.0.0-test-source.tar.gz" >/dev/null
-test -s "$archive_output/owntransit-0.0.0-test-source.tar.gz" ||
+  --output "$source_archive_a" >/dev/null
+test -s "$source_archive_a" ||
   fail "source archive signing helper produced no archive"
+
+git -C "$archive_source" config tar.umask 0077
+source_archive_b="$archive_output/owntransit-0.0.0-test-source-repeat.tar.gz"
+"$project_root/packaging/homebrew/build-source-archive.sh" \
+  --source "$archive_source" \
+  --version 0.0.0-test \
+  --commit "$archive_commit" \
+  --signing-key "$workspace/signing-key" \
+  --allowed-signers "$workspace/source-allowed" \
+  --signer owntransit-source \
+  --output "$source_archive_b" >/dev/null
+cmp -s "$source_archive_a" "$source_archive_b" ||
+  fail "source archive bytes changed under conflicting repository tar.umask values"
+
+source_extract="$workspace/source-archive-extract"
+mkdir "$source_extract"
+tar -xzpf "$source_archive_a" -C "$source_extract"
+source_archive_root="$source_extract/owntransit-0.0.0-test"
+for archive_directory in \
+  "$source_archive_root" \
+  "$source_archive_root/cmd" \
+  "$source_archive_root/cmd/example" \
+  "$source_archive_root/internal" \
+  "$source_archive_root/internal/example" \
+  "$source_archive_root/tools"; do
+  test "$(file_mode "$archive_directory")" = 755 ||
+    fail "source archive directory mode is not 0755: $archive_directory"
+done
+for archive_file in \
+  "$source_archive_root/go.mod" \
+  "$source_archive_root/go.sum" \
+  "$source_archive_root/cmd/example/main.go" \
+  "$source_archive_root/internal/example/example.go" \
+  "$source_archive_root/SOURCE-MANIFEST.txt" \
+  "$source_archive_root/SOURCE-MANIFEST.txt.sig"; do
+  test "$(file_mode "$archive_file")" = 644 ||
+    fail "source archive regular member mode is not 0644: $archive_file"
+done
+test "$(file_mode "$source_archive_root/tools/example.sh")" = 755 ||
+  fail "source archive executable member mode is not 0755"
 
 expect_source_key_failure \
   'signing key must be an Ed25519 private key' \

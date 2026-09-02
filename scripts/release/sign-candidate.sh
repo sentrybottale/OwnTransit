@@ -386,14 +386,22 @@ test "${#source_manifest_sha256}" -eq 64 || fail "source manifest digest must co
 # The 0.1.0 stable handoff deliberately burns every RC rollback path. RC5-RC7
 # contain package-boundary behavior that the stable installers must never be
 # permitted to reactivate (including the pre-self-authentication macOS launcher
-# and the legacy Linux provisioner directory profile). Keep this tuple fixed in
-# the offline signing conductor rather than relying on an operator to remember
-# four correlated command-line values during the signing ceremony.
+# and the legacy Linux provisioner directory profile). The privately signed
+# 8/4/8/1 candidate was abandoned before distribution after a packaging
+# correction. Signature issuance consumes its release and policy sequences even
+# when the handoff is not published, so they must never be reused. The corrected
+# issuance advances from the still-official RC7 3/5/1 policy anchor and skips the
+# consumed policy sequence. Keep both tuples fixed in the offline signing
+# conductor rather than relying on an operator to remember correlated values
+# during the signing ceremony.
 if test "$version" = 0.1.0; then
-  test "$release_sequence" = 8 || fail "OwnTransit 0.1.0 requires release sequence 8"
-  test "$policy_sequence" = 4 || fail "OwnTransit 0.1.0 requires policy sequence 4"
-  test "$release_floor" = 8 || fail "OwnTransit 0.1.0 requires release floor 8"
+  test "$release_sequence" = 9 || fail "OwnTransit 0.1.0 requires release sequence 9"
+  test "$policy_sequence" = 5 || fail "OwnTransit 0.1.0 requires policy sequence 5"
+  test "$release_floor" = 9 || fail "OwnTransit 0.1.0 requires release floor 9"
   test "$lifecycle_floor" = 1 || fail "OwnTransit 0.1.0 requires lifecycle floor 1"
+  test "$anchor_policy_sequence" = 3 || fail "OwnTransit 0.1.0 requires RC7 anchor policy sequence 3"
+  test "$anchor_release_floor" = 5 || fail "OwnTransit 0.1.0 requires RC7 anchor release floor 5"
+  test "$anchor_lifecycle_floor" = 1 || fail "OwnTransit 0.1.0 requires RC7 anchor lifecycle floor 1"
 fi
 
 decimal_is_at_most "$release_floor" "$release_sequence" || fail "release floor cannot exceed the candidate release sequence"

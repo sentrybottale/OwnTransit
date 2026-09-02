@@ -481,10 +481,14 @@ if grep -Fq 'source=$temporary,target=/output' scripts/release/archive-native.sh
 fi
 
 require_text scripts/release/sign-candidate.sh 'release and policy public key IDs must be different'
-require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires release sequence 8'
-require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires policy sequence 4'
-require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires release floor 8'
+require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires release sequence 9'
+require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires policy sequence 5'
+require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires release floor 9'
 require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires lifecycle floor 1'
+require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires RC7 anchor policy sequence 3'
+require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires RC7 anchor release floor 5'
+require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires RC7 anchor lifecycle floor 1'
+require_text scripts/release/sign-candidate.sh 'Signature issuance consumes its release and policy sequences even'
 require_text scripts/tests/sign-candidate.sh 'a rejected 0.1.0 stable tuple reached a signing operation'
 require_text scripts/release/build-artifacts.sh 'committed CHANGELOG.md has no exact release heading for $version'
 require_text scripts/release/build-artifacts.sh 'git -C "$checkout_root" archive --format=tar --output="$source_archive" "$source_commit"'

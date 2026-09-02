@@ -81,11 +81,24 @@ unless it reveals a source or artifact change; its status must be disclosed.
   ledger beneath the ignored operator boundary, review its version, fresh
   release ID, sequences, floors, source commit and source date, and never
   regenerate or overwrite it for the same candidate.
+- Treat every release-manifest or release-policy signature operation as
+  consuming its release and policy sequence, even when the resulting handoff
+  remains private and is never tagged, uploaded or distributed. A correction
+  gets a fresh release ID and strictly higher release and policy sequences; do
+  not reclaim or reuse a signed tuple.
 - For the `0.1.0` stable handoff, require the frozen release/policy tuple
-  `8/4/8/1` (release sequence, policy sequence, minimum release sequence,
+  `9/5/9/1` (release sequence, policy sequence, minimum release sequence,
   minimum lifecycle). The signing conductor rejects every other tuple because
   rollback to RC5-RC7 is incompatible with the hardened macOS launcher and
   Linux provisioner package boundary.
+- The private `0.1.0` candidate signed from public commit `9fc7d206` with tuple
+  `8/4/8/1` was abandoned before tagging, upload or distribution when its
+  source-archive packaging required correction. That signature permanently
+  consumed release sequence `8` and policy sequence `4`; it is not a trust
+  anchor and its ledger, signatures or qualification evidence must not be
+  reused. The corrected issuance deliberately advances to `9/5/9/1` from the
+  still-official RC7 policy anchor `3/5/1`. Skipping consumed policy sequence
+  `4` is intentional and does not claim that the abandoned policy was applied.
 
 ## 3. Build and authenticate the candidate
 
@@ -230,6 +243,9 @@ same draft as a prerelease; never let GitHub synthesize a lightweight tag.
   OwnTransit recovery using the signed release.
 - Attach canary and burn-in results to the exact signed release when available;
   do not describe missing evidence as a successful exercise.
-- A source or artifact correction receives a new immutable version, normally
-  the next stable patch after 0.1.0. Assurance records that do not change bytes
-  do not require a new RC or release version.
+- After publication, a source or artifact correction receives a new immutable
+  version, normally the next stable patch. Before publication, an explicitly
+  reviewed stable-candidate correction may retain its intended semantic version
+  only with a fresh release ID, strictly advanced release and policy sequences,
+  a newly frozen tuple, and complete requalification. Assurance records that do
+  not change bytes do not require a new RC or release version.
