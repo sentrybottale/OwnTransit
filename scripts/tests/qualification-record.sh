@@ -13,7 +13,15 @@ fail() {
 }
 
 project_root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
-workspace=$(mktemp -d "${TMPDIR:-/tmp}/owntransit-qualification-record-test.XXXXXX")
+case "$(uname -s)" in
+  Darwin) test_workspace_parent=${TMPDIR:-} ;;
+  Linux) test_workspace_parent=${HOME:-} ;;
+  *) fail "qualification record test requires macOS or Linux" ;;
+esac
+test -n "$test_workspace_parent" || fail "no private test workspace parent is available"
+test -d "$test_workspace_parent" && test ! -L "$test_workspace_parent" ||
+  fail "private test workspace parent must be a non-symlink directory"
+workspace=$(mktemp -d "$test_workspace_parent/.owntransit-qualification-record-test.XXXXXX")
 workspace=$(CDPATH= cd -P -- "$workspace" && pwd) || fail "cannot resolve test workspace"
 cleanup() { rm -rf -- "$workspace"; }
 trap cleanup EXIT HUP INT TERM
