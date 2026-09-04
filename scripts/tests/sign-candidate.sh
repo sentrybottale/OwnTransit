@@ -777,19 +777,19 @@ expect_stable_freeze_rejection() {
 version=0.1.0
 stable_candidate="$workspace/candidate-stable.json"
 printf '%s\n' \
-  "{\"schema\":\"owntransit.release-candidate-ledger.v1\",\"status\":\"qualification-only\",\"version\":\"$version\",\"release_id\":\"$release_id\",\"release_sequence\":9,\"policy_sequence\":5,\"minimum_release_sequence\":9,\"minimum_lifecycle\":1,\"source_commit\":\"$source_commit\",\"source_date_epoch\":$source_date_epoch}" \
+  "{\"schema\":\"owntransit.release-candidate-ledger.v1\",\"status\":\"qualification-only\",\"version\":\"$version\",\"release_id\":\"$release_id\",\"release_sequence\":10,\"policy_sequence\":6,\"minimum_release_sequence\":10,\"minimum_lifecycle\":1,\"source_commit\":\"$source_commit\",\"source_date_epoch\":$source_date_epoch}" \
   > "$stable_candidate"
 chmod 0600 "$stable_candidate"
 
 stable_rejection_sign_calls_before=$(grep -c '^sign-manifest$' "$workspace/fake-releasectl.calls")
 expect_stable_freeze_rejection release-sequence \
-  'OwnTransit 0.1.0 requires release sequence 9' 8 5 9 1
+  'OwnTransit 0.1.0 requires release sequence 10' 9 6 10 1
 expect_stable_freeze_rejection policy-sequence \
-  'OwnTransit 0.1.0 requires policy sequence 5' 9 4 9 1
+  'OwnTransit 0.1.0 requires policy sequence 6' 10 5 10 1
 expect_stable_freeze_rejection release-floor \
-  'OwnTransit 0.1.0 requires release floor 9' 9 5 8 1
+  'OwnTransit 0.1.0 requires release floor 10' 10 6 9 1
 expect_stable_freeze_rejection lifecycle-floor \
-  'OwnTransit 0.1.0 requires lifecycle floor 1' 9 5 9 2
+  'OwnTransit 0.1.0 requires lifecycle floor 1' 10 6 10 2
 
 expect_stable_anchor_rejection() {
   rejection_name=$1
@@ -797,10 +797,10 @@ expect_stable_anchor_rejection() {
   selected_anchor_policy_sequence=$3
   selected_anchor_release_floor=$4
   selected_anchor_lifecycle_floor=$5
-  rewrite_bundle_contract 0.1.0 9 1
+  rewrite_bundle_contract 0.1.0 10 1
   rejection_path="$workspace/output-parent/rejected-stable-$rejection_name"
   if rejection_text=$(invoke_signer "$workspace/keys/policy-public.pem" "$rejection_path" "$workspace/keys/allowed_signers" \
-    5 9 1 "$selected_anchor_policy_sequence" "$selected_anchor_release_floor" "$selected_anchor_lifecycle_floor" \
+    6 10 1 "$selected_anchor_policy_sequence" "$selected_anchor_release_floor" "$selected_anchor_lifecycle_floor" \
     "$stable_candidate" sha256/policy none 2>&1); then
     fail "0.1.0 stable signing accepted the wrong $rejection_name"
   fi
@@ -811,6 +811,8 @@ expect_stable_anchor_rejection() {
 
 expect_stable_anchor_rejection anchor-policy-sequence \
   'OwnTransit 0.1.0 requires RC7 anchor policy sequence 3' 4 5 1
+expect_stable_anchor_rejection burned-private-candidate-anchor \
+  'OwnTransit 0.1.0 requires RC7 anchor policy sequence 3' 5 9 1
 expect_stable_anchor_rejection anchor-release-floor \
   'OwnTransit 0.1.0 requires RC7 anchor release floor 5' 3 6 1
 expect_stable_anchor_rejection anchor-lifecycle-floor \
@@ -818,14 +820,14 @@ expect_stable_anchor_rejection anchor-lifecycle-floor \
 test "$(grep -c '^sign-manifest$' "$workspace/fake-releasectl.calls")" = "$stable_rejection_sign_calls_before" ||
   fail "a rejected 0.1.0 stable tuple reached a signing operation"
 
-rewrite_bundle_contract 0.1.0 9 1
+rewrite_bundle_contract 0.1.0 10 1
 stable_output="$workspace/output-parent/stable-candidate"
 invoke_signer "$workspace/keys/policy-public.pem" "$stable_output" "$workspace/keys/allowed_signers" \
-  5 9 1 3 5 1 "$stable_candidate" sha256/policy none > "$workspace/sign-candidate-stable.out"
+  6 10 1 3 5 1 "$stable_candidate" sha256/policy none > "$workspace/sign-candidate-stable.out"
 grep -Fq "created signed candidate handoff: $stable_output" "$workspace/sign-candidate-stable.out" ||
   fail "exact 0.1.0 stable signing tuple did not produce its atomic handoff"
 test "$(cat "$stable_output/assets/RELEASE-POLICY.json")" = \
-  '{"schema":"fixture-policy","sequence":5,"minimum_release_sequence":9,"minimum_lifecycle":1}' ||
+  '{"schema":"fixture-policy","sequence":6,"minimum_release_sequence":10,"minimum_lifecycle":1}' ||
   fail "0.1.0 stable handoff did not preserve the frozen signed policy tuple"
 
 printf '%s\n' 'sign-candidate full-conductor and fail-closed tests passed'

@@ -388,16 +388,19 @@ test "${#source_manifest_sha256}" -eq 64 || fail "source manifest digest must co
 # permitted to reactivate (including the pre-self-authentication macOS launcher
 # and the legacy Linux provisioner directory profile). The privately signed
 # 8/4/8/1 candidate was abandoned before distribution after a packaging
-# correction. Signature issuance consumes its release and policy sequences even
-# when the handoff is not published, so they must never be reused. The corrected
-# issuance advances from the still-official RC7 3/5/1 policy anchor and skips the
-# consumed policy sequence. Keep both tuples fixed in the offline signing
-# conductor rather than relying on an operator to remember correlated values
+# correction, and the 9/5/9/1 candidate was rejected during private Linux arm64
+# qualification after exposing a supervisor restart deadlock.
+# Signature issuance consumes its release and policy sequences even when a
+# handoff is not published, so neither tuple may be reused. The corrected
+# issuance advances from the still-official RC7 3/5/1 policy anchor and skips
+# both consumed policy sequences. Keep the candidate and anchor tuples fixed in
+# the offline signing conductor rather than relying on an operator to remember
+# correlated values
 # during the signing ceremony.
 if test "$version" = 0.1.0; then
-  test "$release_sequence" = 9 || fail "OwnTransit 0.1.0 requires release sequence 9"
-  test "$policy_sequence" = 5 || fail "OwnTransit 0.1.0 requires policy sequence 5"
-  test "$release_floor" = 9 || fail "OwnTransit 0.1.0 requires release floor 9"
+  test "$release_sequence" = 10 || fail "OwnTransit 0.1.0 requires release sequence 10"
+  test "$policy_sequence" = 6 || fail "OwnTransit 0.1.0 requires policy sequence 6"
+  test "$release_floor" = 10 || fail "OwnTransit 0.1.0 requires release floor 10"
   test "$lifecycle_floor" = 1 || fail "OwnTransit 0.1.0 requires lifecycle floor 1"
   test "$anchor_policy_sequence" = 3 || fail "OwnTransit 0.1.0 requires RC7 anchor policy sequence 3"
   test "$anchor_release_floor" = 5 || fail "OwnTransit 0.1.0 requires RC7 anchor release floor 5"

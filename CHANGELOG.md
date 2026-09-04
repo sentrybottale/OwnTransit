@@ -54,10 +54,11 @@ or publish artifacts automatically.
   root-only advisory lock. Interrupted stages are recoverable only through
   their exact bounded metadata profiles.
 - Froze the corrected `0.1.0` signing ceremony to
-  release/policy/floor/lifecycle tuple `9/5/9/1`, preventing rollback to
+  release/policy/floor/lifecycle tuple `10/6/10/1`, preventing rollback to
   RC5-RC7 package boundaries after the launcher and Linux provisioner
-  migrations. The earlier private `8/4/8/1` issuance was abandoned before
-  distribution and its sequence numbers remain permanently consumed.
+  migrations. The earlier private `8/4/8/1` and `9/5/9/1` issuances were not
+  publicly distributed; `9/5/9/1` was used only for private qualification.
+  Both were abandoned and their sequence numbers remain permanently consumed.
 - Kept the macOS provisioner release tree non-user-traversable as
   `root:wheel` mode `0750` and published a distinct `root:wheel` mode-`0755`
   public provisioner copy with the authenticated digest and a different inode.
@@ -74,6 +75,11 @@ or publish artifacts automatically.
 
 ### Fixed
 
+- Made Linux connector and relay package recovery atomically replace the
+  start-blocking mutation intent with a durable restart-pending record before
+  invoking systemd. Start failure and reboot preserve a recoverable obligation,
+  and clean-host qualification now executes this active recovery path after a
+  cold boot.
 - Made signed source archives independent of ambient Git `tar.umask`, and
   fail-closed unless archive metadata preserves exact mode-`0644` regular
   files, mode-`0755` executables and mode-`0755` directories.

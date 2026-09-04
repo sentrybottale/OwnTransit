@@ -186,7 +186,10 @@ Signature issuance is irreversible release state even before publication.
 Never reuse a release or policy sequence after any signature was created. The
 private `0.1.0` candidate signed from public commit `9fc7d206` at tuple
 `8/4/8/1` was abandoned before tagging, upload or distribution after a
-source-archive packaging correction. Its signatures do not advance public
-trust, but they consume those sequence numbers. The corrected `0.1.0` candidate
-uses a fresh release ID and tuple `9/5/9/1`, verified from the still-official
-RC7 policy anchor `3/5/1`, and requires a complete new qualification record.
+source-archive packaging correction. A second private candidate from public
+commit `cfbd584f` at tuple `9/5/9/1` was rejected after Linux arm64
+qualification exposed a package-supervisor restart deadlock. Neither signature
+set advances public trust, but both consume their sequence numbers. The
+corrected `0.1.0` candidate uses a fresh release ID and tuple `10/6/10/1`,
+verified from the still-official RC7 policy anchor `3/5/1`, and requires a
+complete new qualification record.
