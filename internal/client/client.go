@@ -148,7 +148,18 @@ func (service *Service) Probe(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return inner.Close()
+	return finishProbe(inner)
+}
+
+// finishProbe runs only after the authenticated READY marker. The relay is
+// allowed to abort either carrier during teardown, so an EOF or closed-network
+// result cannot invalidate the completed readiness proof. Other close errors
+// remain visible and every pre-READY failure is handled by connectReady.
+func finishProbe(inner io.Closer) error {
+	if err := inner.Close(); err != nil && !isClosed(err) {
+		return err
+	}
+	return nil
 }
 
 func (service *Service) connectReady(ctx context.Context) (*tls.Conn, error) {
