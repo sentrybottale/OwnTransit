@@ -8,17 +8,42 @@
 > Linux (`arm64`, also called `aarch64`) within the SSH-only boundary described
 > here. Intel macOS is outside the 0.1.0 support matrix. The repository can
 > build a signed, installable candidate handoff, but that handoff is not an
-> official stable release until its exact assets and policy are authenticated,
-> its signed qualification record reports every hard release gate as passed,
-> and that record is independently verified. This checkout does not claim that
-> those platform gates passed or that an independent external security
-> certification exists. Keep an operator-owned alternative access and recovery
-> path throughout qualification and deployment canarying.
+> official stable release until its exact assets and policy are authenticated
+> and its independently verified signed qualification record has
+> `schema=owntransit.qualification.v1`,
+> `gate_set=owntransit-0.1.0-minimal.v1`, and overall `status=PASS`. That status
+> requires zero unresolved Critical/High defects and four bounded PASS results:
+> source/security/publication, release signatures, supported-artifact
+> execution, and a live SSH-and-SCP path through the untrusted relay. This
+> checkout does not claim that such a record exists or that an independent
+> external security certification exists.
+> Keep an operator-owned alternative access and recovery path throughout
+> qualification and deployment canarying.
 
 The public `0.1.0-rc.*` packages were qualification artifacts, not supported
 in-place predecessors of stable `0.1.0`. Their non-purging uninstall preserves
-the old lifecycle and trust state; stable qualification therefore requires a
-genuinely fresh host. No destructive RC trust-reset is currently implemented.
+the old lifecycle and trust state, and the stable installer fails closed on
+that retained role state. No destructive RC trust-reset is currently
+implemented. This compatibility restriction does not require a new machine for
+release qualification: routine releases reuse retained, authenticated hosts and
+make no pristine-host claim. Clean-host/bootstrap testing is periodic
+additional assurance, not a recurring publication gate.
+
+The bounded supported-artifact result executes the exact native binaries,
+authenticates and inspects the relay OCI archives and Darwin launcher, records
+the launcher's expected fail-closed direct-invocation rejection, and performs no
+macOS system mutation. On both Linux architectures it also installs and
+activates the exact signed connector, proves
+enabled-service restart, performs an actual host reboot and direct host
+reacquisition, confirms the connector is running or retrying post-boot, checks
+the exact running binary and systemd confinement, and confirms that OwnTransit
+owns no listener. It does not claim stable macOS client lifecycle activation,
+macOS provisioner package lifecycle, or Linux client, provisioner, or relay
+package lifecycle. The separate live result proves the exact signed Mac
+client and connector over real SSH and SCP while using the pre-existing
+operator-supplied client configuration and SSH key. It performs no macOS system
+mutation and requires those client inputs plus the deployed connector
+configuration and endpoint credentials to remain unchanged.
 
 ## Installed operator experience
 
@@ -31,6 +56,12 @@ path is:
 2. make one short verified call and compare three words in each direction; and
 3. run the exact OpenSSH command supplied separately, or an SSH alias that IT
    already installed.
+
+This describes the shipped workflow, not broader qualification than the signed
+record contains. For 0.1.0, the exact Mac client transport is exercised in the
+live SSH/SCP result, but stable native macOS client lifecycle activation remains
+explicitly unqualified additional assurance because retained RC7 state is not a
+supported stable predecessor. Keep independent access while canarying it.
 
 OwnTransit never edits SSH configuration or handles SSH keys. The detailed
 recipient walkthrough is in [INSTALL.md](INSTALL.md); the machinery below is
@@ -212,7 +243,7 @@ Read [ARCHITECTURE.md](ARCHITECTURE.md), [SECURITY.md](SECURITY.md),
 before evaluating the design. Release integrity requirements and additional
 assurance work are tracked in [ROADMAP.md](ROADMAP.md) and
 [OWNTRANSIT_SHIPPING_PLAN.md](OWNTRANSIT_SHIPPING_PLAN.md). The immutable
-handoff and exit criteria for the required outside assessment are in
+handoff and review criteria for the recommended outside assessment are in
 [SECURITY_REVIEW.md](SECURITY_REVIEW.md). Candidate freeze, versioning,
 signing, tagging and publication order are in
 [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).

@@ -67,8 +67,12 @@ require_text packaging/homebrew/owntransit.rb.in 'assert_predicate pkgshare/"LIC
 require_text packaging/homebrew/owntransit.rb.in 'assert_predicate pkgshare/"THIRD_PARTY_NOTICES.md", :file?'
 require_text packaging/homebrew/owntransit.rb.in 'intentionally does not install owntransitctl'
 require_text packaging/homebrew/owntransit.rb.in '/Library/OwnTransit/roles/client/current/owntransitctl'
-require_text packaging/homebrew/owntransit.rb.in 'signed qualification record reports PASS'
-require_text packaging/homebrew/owntransit.rb.in 'any hard gate is not PASS'
+require_text packaging/homebrew/owntransit.rb.in 'signed qualification record was independently'
+require_text packaging/homebrew/owntransit.rb.in 'schema=owntransit.qualification.v1'
+require_text packaging/homebrew/owntransit.rb.in 'gate_set=owntransit-0.1.0-minimal.v1'
+require_text packaging/homebrew/owntransit.rb.in 'status=PASS'
+require_text packaging/homebrew/owntransit.rb.in 'any fixed result is not PASS'
+require_text packaging/homebrew/owntransit.rb.in 'not stable native macOS client lifecycle activation'
 if grep -Fq './cmd/owntransitctl' packaging/homebrew/owntransit.rb.in ||
    grep -Fq 'bin/"owntransitctl"' packaging/homebrew/owntransit.rb.in; then
   fail 'Homebrew formula must not build, install, or test a Cellar lifecycle executable'

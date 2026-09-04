@@ -152,8 +152,8 @@ policy-anchor JSON does not contain that key identity. Derive that identity
 from the already trusted prior key with `releasectl public-key-id`, never from
 the candidate's copy. This helper does not support policy-key rotation.
 
-The `0.1.0` stable handoff is deliberately frozen to release sequence `10`,
-policy sequence `6`, minimum release sequence `10`, and minimum lifecycle `1`.
+The `0.1.0` stable handoff is deliberately frozen to release sequence `11`,
+policy sequence `7`, minimum release sequence `11`, and minimum lifecycle `1`.
 The signing conductor rejects every other candidate tuple and requires the
 still-official RC7 policy anchor `3/5/1` before any signature operation. This
 floor is mandatory: RC5-RC7 predate the hardened macOS launcher/package
@@ -170,11 +170,15 @@ commit `cfbd584f` was signed with tuple `9/5/9/1`, then rejected after Linux
 arm64 clean-host qualification exposed a package-supervisor restart deadlock.
 It was never tagged or publicly distributed and was used only for private
 qualification, but that signature consumed release sequence `9` and policy
-sequence `5`. The corrected ceremony therefore uses `10/6/10/1` and verifies
-policy sequence `6` as a strict advance from the still-official RC7 anchor
-rather than treating either abandoned policy as official persisted trust.
-Neither abandoned ledger, signature set nor qualification evidence is an input
-to the corrected handoff.
+sequence `5`. A third private candidate from public commit `5ce5245c` was
+signed with tuple `10/6/10/1`, then abandoned when the v0.1.0 release
+qualification scope was simplified before publication. It was never tagged,
+uploaded, or publicly distributed, but that signature consumed release
+sequence `10` and policy sequence `6`. The next ceremony therefore uses
+`11/7/11/1` and verifies policy sequence `7` as a strict advance from the
+still-official RC7 anchor rather than treating any abandoned policy as official
+persisted trust. No abandoned artifact, ledger, signature set, or qualification
+evidence is an input to the next handoff.
 
 Fresh endpoints can bootstrap the currently trusted policy against their empty
 local anchor. An upgraded endpoint independently requires the new policy
@@ -183,7 +187,7 @@ disappear, and the pinned policy signer not to change. During a canary, retainin
 the previous release floor preserves authenticated rollback only when the two
 package layouts are explicitly qualified as rollback-compatible. Raising the
 floor to the candidate sequence deliberately burns that rollback. For `0.1.0`,
-floor `10` is a fixed safety requirement rather than an optional canary choice.
+floor `11` is a fixed safety requirement rather than an optional canary choice.
 
 The independently authenticated OpenSSH key authorized as
 `owntransit-release` in `allowed_signers` is the privileged package-bootstrap
@@ -242,10 +246,11 @@ ceremonies are operator security procedures, not defaults hidden in a script.
 The staging tree is not a release merely because it has checksums. Before public
 use it needs all fourteen separately named SBOM records, generated third-party
 license evidence, the exact Apache-2.0 project LICENSE digest, provenance, an
-exact signed software-release manifest, and clean-host qualification. The
-implemented free Homebrew/source lane is the macOS v1 distribution direction;
-every exact handoff must carry the hardened-activation qualification described
-below. Developer ID package output is disabled until OwnTransit also
+exact signed software-release manifest, independent verification and the four
+bounded acceptance results below. The implemented free Homebrew/source lane is
+the macOS v1 distribution direction. The 0.1.0 bounded platform result does not
+claim candidate macOS client activation; that boundary remains additional
+assurance. Developer ID package output is disabled until OwnTransit also
 authenticates the final post-signing bytes and version. A checksum supplied by
 the same unauthenticated download is not authentication.
 
@@ -254,10 +259,11 @@ stable line are separate authenticated matrix editions inside the v1 release
 envelope. An installed RC lifecycle accepts only its exact-nine edition and
 must fail closed on the fourteen-artifact manifest. There is no supported
 RC-to-stable in-place upgrade. Ordinary uninstall is deliberately non-purging
-and therefore does not prepare that host for stable installation; use a
-genuinely fresh host. A destructive RC trust-reset and complete re-enrollment
-ceremony is not implemented, and invoking the candidate lifecycle around the
-selected installed manager is forbidden.
+and therefore does not prepare that role state for stable installation; use a
+different unused role state for any installation smoke on an existing host. A
+destructive RC trust-reset and complete re-enrollment ceremony is not
+implemented, and invoking the candidate lifecycle around the selected installed
+manager is forbidden.
 
 Every native installer copies the checksummed Apache license and generated full
 third-party license evidence into the selected immutable release directory next
@@ -402,8 +408,10 @@ canonical execution and upgrade remain available while an alias exists.
 It enumerates `/dev/fd` rather than trusting the current resource limit, so a
 high inherited descriptor cannot survive merely because the limit was lowered.
 See `packaging/macos/CLIENT_READER_BOUNDARY.md`. The descriptor-based Darwin ACL
-verifier and launcher are implemented; every exact handoff must carry its
-clean-Mac setgid and Directory Services qualification result.
+verifier and launcher are implemented. Direct execution of the exact launcher
+must fail at its fixed-path/runtime-state boundary in the bounded 0.1.0 result;
+candidate client activation plus the clean-Mac setgid and Directory Services
+matrix remain additional assurance.
 
 After package selection, the installer invokes `package-recover` through the
 newly selected authenticated lifecycle executable. Recovery re-authenticates
@@ -441,26 +449,101 @@ native installer entry point.
 ## Per-handoff qualification and assurance
 
 `sign-qualification-record.sh` creates the post-test record; it does not run a
-test or turn an absent result into a pass. Prepare one canonical results file
-with these exact sorted lines:
+test or turn an absent result into a pass. Arbitrary log hashes are not accepted
+as gate evidence. Prepare one canonical results file with these exact C-sorted
+lines:
 
 ```text
-connector-client-ssh-boundary|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
-hostile-relay-resource-exhaustion|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
-linux-amd64-clean-host-lifecycle|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
-linux-amd64-relay-exchange|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
-linux-arm64-clean-host-lifecycle|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
-linux-arm64-relay-exchange|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
-macos-arm64-clean-host-lifecycle|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
-public-history-clean-export|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
-public-tree-source-gates|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
+live-ssh-scp-path|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
 release-signatures|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
+source-security-publication|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
+supported-artifact-execution|PASS|64_LOWERCASE_HEX_EVIDENCE_SHA256
 ```
 
+The four evidence records mean exactly:
+
+- `live-ssh-scp-path`: the exact signed macOS client traversed the deployed
+  untrusted relay to the exact signed connector, completed a real SSH session,
+  and copied a test object with SCP whose digest matched at both ends. It used
+  the pre-existing operator-supplied client configuration and SSH key, performed
+  no macOS system mutation, and left those client inputs plus the deployed
+  connector configuration and endpoint credentials unchanged;
+- `release-signatures`: a verification invocation independent of signing
+  authenticated the handoff trust statement, outer and native inventories,
+  release manifest, monotonic policy and every referenced byte;
+- `source-security-publication`: the frozen complete public history passed both
+  race and vet profiles plus the required source, security, publication,
+  release and qualification checks; and
+- `supported-artifact-execution`: every exact native ordinary binary was
+  executed and version-checked on existing or operator-provided macOS arm64,
+  Linux amd64 and Linux arm64 hosts; the relay OCI archives and Darwin launcher
+  were authenticated and inspected, including expected direct-launch
+  rejection, without macOS installation or system mutation; and the exact
+  signed connector on both Linux architectures
+  passed install/activation, enabled-service restart, actual host reboot,
+  direct host reacquisition, post-boot running/retrying, running-binary identity,
+  systemd-confinement and no-listener checks. This record does not claim stable
+  native macOS client lifecycle activation, macOS provisioner package
+  lifecycle, Linux client, provisioner, or relay package lifecycle, a pristine
+  host, or exhaustive lifecycle coverage.
+
+The signed record identifies this immutable result vocabulary as
+`gate_set=owntransit-0.1.0-minimal.v1`; later releases may define a different
+versioned set rather than silently changing these meanings.
+
 Each status is exactly `PASS`, `FAIL`, or `NOT-PERFORMED`. `PASS` and `FAIL`
-require the SHA-256 of the exact retained evidence; `NOT-PERFORMED` requires
-`-`. Review those evidence objects, compare the explicit release ID and source
-commit to the authenticated candidate, then run the signer offline:
+require the SHA-256 of the exact canonical record at
+`EVIDENCE_ROOT/GATE_NAME.txt`; `NOT-PERFORMED` requires `-` and requires that
+record to be absent. Every record uses the closed
+`schema=owntransit.qualification-evidence.v1` field order, binds the gate set,
+gate, release ID, source commit, authenticated outer inventory, status and a
+sanitized retained-transcript SHA-256, and contains only fixed gate-specific
+digests, outcomes and explicit non-claims. The canonical placeholder shapes are
+in `scripts/tests/testdata/qualification-evidence/`; replace every placeholder
+with the exact candidate result rather than treating those fixtures as evidence.
+
+The validator cross-checks the source, live endpoint and exact fourteen
+artifact digests against the authenticated outer and extracted-native
+inventories and their actual bytes. The signature record likewise binds the
+actual trust, manifest, policy and inventory files. The supported-artifact
+record keeps per-lane transcript handles, all fourteen artifact results, the
+read-only macOS execution and launcher-rejection results, and each Linux connector
+install/enable/restart/reboot/host-reconnect/binary/systemd/no-listener result.
+It performs no macOS installation or system mutation and records macOS client
+lifecycle, macOS provisioner package lifecycle, Linux client, provisioner, and
+relay package lifecycle, pristine-host qualification and enrollment as
+`NOT-CLAIMED`. Retained authenticated hosts are the normal
+per-release lane; clean-host/bootstrap work is periodic additional assurance,
+not a recurring publication gate. Canonical records contain no hostnames,
+addresses, secrets or raw transcripts.
+
+The live record additionally requires literal
+`macos_arm64_system_mutation=NONE` and PASS results for unchanged client
+configuration, operator SSH key, connector configuration and connector endpoint
+credentials. Use the pre-existing operator-supplied client configuration and
+SSH key; compare sensitive inputs before and after privately, but publish only
+the booleans and sanitized transcript handle, never their bytes or digests.
+
+Before signing, each record can be checked without creating any file or key:
+
+```sh
+scripts/release/validate-qualification-evidence.sh \
+  --file /ABSOLUTE/private/canonical-evidence/GATE_NAME.txt \
+  --gate GATE_NAME --release-id RELEASE_ID --source-commit SOURCE_COMMIT \
+  --outer-sha256sums /ABSOLUTE/assets/SHA256SUMS \
+  --outer-assets-root /ABSOLUTE/assets \
+  --native-sha256sums /ABSOLUTE/extracted-native/SHA256SUMS \
+  --native-root /ABSOLUTE/extracted-native \
+  --trust-root /ABSOLUTE/trust --status PASS_OR_FAIL
+```
+
+Its only success output is `evidence_sha256=...`, the value used in the results
+file. Inventory signatures must be authenticated first; the qualification
+signer performs that authentication again before invoking this validator.
+
+Review the private sanitized transcripts and the four canonical records,
+compare the explicit release ID and source commit to the authenticated
+candidate, then run the signer offline:
 
 ```sh
 scripts/release/sign-qualification-record.sh \
@@ -468,41 +551,55 @@ scripts/release/sign-qualification-record.sh \
   --source-commit SOURCE_COMMIT \
   --outer-checksums /ABSOLUTE/assets/SHA256SUMS \
   --outer-signature /ABSOLUTE/trust/SHA256SUMS.sig \
+  --native-checksums /ABSOLUTE/extracted-native/SHA256SUMS \
+  --trust-root /ABSOLUTE/trust \
   --allowed-signers /ABSOLUTE/trust/allowed_signers \
   --distribution-key /ABSOLUTE/private/distribution \
   --results /ABSOLUTE/private/qualification-results \
+  --evidence-root /ABSOLUTE/private/canonical-evidence \
   --unresolved-critical 0 \
   --unresolved-high 0 \
   --output /ABSOLUTE/qualification
 ```
 
-The output is exactly `QUALIFICATION.txt` and `QUALIFICATION.txt.sig`, signed
-in namespace `owntransit-qualification-v1`. It remains a sibling of `assets/`,
-never a member of the outer inventory whose digest it binds. The script derives
-`status=PASS` only when every fixed v1 test is `PASS` and both unresolved counts
-are zero; every other honest input produces a signed `BLOCKED` record. It emits
-the record SHA-256 as its stable review handle. Before stable promotion, obtain
-that handle through the same pre-existing independent administrator channel,
-verify the SSHSIG against authenticated `allowed_signers`, and independently
-confirm every referenced evidence digest. The signature authenticates what the
-release operator recorded; it cannot prove that a test was performed honestly.
+The output contains `QUALIFICATION.txt`, `QUALIFICATION.txt.sig`, and
+`evidence/` with the validated canonical PASS/FAIL records, signed in namespace
+`owntransit-qualification-v1`. It remains a sibling of `assets/`, never a
+member of the outer inventory whose digest it binds. The script authenticates
+both checksum inventories and the trust statement before accepting evidence,
+then derives
+`status=PASS` only when all four fixed 0.1.0 results are `PASS` and both
+unresolved counts are zero; every other honest input produces a signed
+`BLOCKED` record. It emits the record SHA-256 as its stable review handle.
+Before stable promotion, obtain that handle through the same pre-existing
+independent administrator channel, verify the SSHSIG against authenticated
+`allowed_signers`, require literal `schema=owntransit.qualification.v1`,
+`gate_set=owntransit-0.1.0-minimal.v1`, and overall `status=PASS`, and
+independently confirm every referenced evidence digest. The signature
+authenticates what the release operator recorded; it cannot prove that a test
+was performed honestly.
 
-- Each exact Linux architecture handoff must independently qualify setgid
-  client execution, exact primary-GID selection, directory/file modes,
-  lifecycle/runtime lock exclusion, required `fs.protected_hardlinks=1`
-  enforcement for the traversable provisioner namespace, and service inability
-  to mutate the views on a clean host.
-  `nosuid` or policy suppression of setgid execution is a stop for that host.
-- Each exact macOS handoff must qualify the zero-member setgid launcher, exact
-  GeneratedUID binding, descriptor-based ACL verifier, equal signed launcher
-  digests on distinct protected/public inodes, the role-appropriate distinct
-  public-copy boundaries, the exact persistent root-only global mutation lock with no
-  transaction-stage residue, canonical invocation and
-  retained-hard-link-alias denial, direct protected-launcher/runtime/anchor
-  denial, exact current-selector validation, high inherited-descriptor closure,
-  group-drift rejection,
-  debugger/task-port isolation, interruption-safe authenticated detach, and
-  reboot behavior on a clean Apple-silicon Mac.
+- Every supported host must execute/version-check its exact native ordinary
+  binaries. Verification must authenticate and inspect the relay OCI archives
+  and Darwin launcher, including the launcher's expected fixed-path rejection.
+  The macOS lane is read-only and performs no installation or system mutation.
+  Each Linux architecture must install and activate the exact signed connector,
+  restart its enabled service, undergo an actual host reboot, be reacquired
+  directly, show the connector running or retrying post-boot, verify the exact
+  running binary and systemd confinement, and prove OwnTransit owns no listener.
+  Stable native macOS client lifecycle activation, macOS provisioner package
+  lifecycle, and Linux client, provisioner, and relay package lifecycle are not
+  claimed. Existing-host evidence must identify pre-existing state and must
+  never be relabeled as pristine-host evidence.
+- The deeper Linux setgid, primary-GID, view-ownership, systemd, reboot,
+  interruption, rollback and recovery matrices remain useful assurance. So do
+  the clean-macOS zero-member group, GeneratedUID, ACL, task-port, retained-link,
+  detach and reboot matrices. Their dedicated harnesses remain available, but
+  they are not fixed 0.1.0 qualification-record results.
+- Dual public relay-exchange qualification and exhaustive composite dossiers
+  are likewise additional assurance. The live SSH/SCP result still exercises
+  the real deployed relay data path; it does not claim every mailbox or
+  exhaustion scenario was repeated on both Linux architectures.
 - The two local builds are a deterministic same-builder regression check, not
   independent reproducible-build attestation. Record an independent clean
   builder result when available, or disclose that it was not performed; it is

@@ -35,7 +35,7 @@ for installer in scripts/release/install-linux.sh scripts/release/install-macos.
   require_text "$installer" '$28 != "lifecycle"'
   require_text "$installer" 'candidate_version=${build_version_line#version=}'
   require_text "$installer" 'test "$candidate_version" = 0.1.0 && is_owntransit_010_release_candidate "$selected_version"'
-  require_text "$installer" 'stable 0.1.0 requires a fresh host. Do not purge this host: preserve the retained role state for recovery'
+  require_text "$installer" 'cannot be replaced by stable 0.1.0. Do not purge it: preserve the retained role state for recovery; use a different unused role state or another host for this role'
 done
 if grep -Eq '\$bundle/\$lifecycle_path"[[:space:]]+version' scripts/release/install-linux.sh scripts/release/install-macos.sh; then
   fail 'installer executes candidate lifecycle code before manager authorization'
@@ -483,15 +483,16 @@ if grep -Fq 'source=$temporary,target=/output' scripts/release/archive-native.sh
 fi
 
 require_text scripts/release/sign-candidate.sh 'release and policy public key IDs must be different'
-require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires release sequence 10'
-require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires policy sequence 6'
-require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires release floor 10'
+require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires release sequence 11'
+require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires policy sequence 7'
+require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires release floor 11'
 require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires lifecycle floor 1'
 require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires RC7 anchor policy sequence 3'
 require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires RC7 anchor release floor 5'
 require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires RC7 anchor lifecycle floor 1'
 require_text scripts/release/sign-candidate.sh 'Signature issuance consumes its release and policy sequences even'
 require_text scripts/tests/sign-candidate.sh 'a rejected 0.1.0 stable tuple reached a signing operation'
+require_text scripts/tests/sign-candidate.sh 'burned-private-scope-candidate-anchor'
 require_text scripts/release/build-artifacts.sh 'committed CHANGELOG.md has no exact release heading for $version'
 require_text scripts/release/build-artifacts.sh 'git -C "$checkout_root" archive --format=tar --output="$source_archive" "$source_commit"'
 require_text scripts/release/build-artifacts.sh 'project_root=$source_root'
@@ -568,13 +569,53 @@ fi
 
 require_text scripts/release/sign-qualification-record.sh 'owntransit-qualification-v1'
 require_text scripts/release/sign-qualification-record.sh 'qualification output must remain outside the signed asset inventory'
-require_text scripts/release/sign-qualification-record.sh 'results file does not contain the exact fixed sorted v1 test set'
+require_text scripts/release/sign-qualification-record.sh 'results file does not contain the exact fixed sorted stable 0.1.0 gate set'
+require_text scripts/release/sign-qualification-record.sh 'schema=owntransit.qualification.v1'
+require_text scripts/release/sign-qualification-record.sh 'gate_set=owntransit-0.1.0-minimal.v1'
+require_text scripts/release/sign-qualification-record.sh '--native-checksums'
+require_text scripts/release/sign-qualification-record.sh '--trust-root'
+require_text scripts/release/sign-qualification-record.sh '--evidence-root'
+require_text scripts/release/sign-qualification-record.sh 'native asset inventory authentication failed'
+require_text scripts/release/sign-qualification-record.sh 'handoff trust statement authentication failed'
+require_text scripts/release/sign-qualification-record.sh 'validate-qualification-evidence.sh'
+require_text scripts/release/sign-qualification-record.sh 'validated evidence digest does not match the results file'
+require_text scripts/release/sign-qualification-record.sh 'evidence root contains an unexpected entry'
+require_text scripts/release/sign-qualification-record.sh 'results file contains a non-canonical byte'
+require_text scripts/release/validate-qualification-evidence.sh 'schema owntransit.qualification-evidence.v1'
+require_text scripts/tests/testdata/qualification-evidence/supported-artifact-execution.txt 'artifact_connector_linux_amd64_sha256='
+require_text scripts/tests/testdata/qualification-evidence/supported-artifact-execution.txt 'artifact_connector_linux_arm64_sha256='
+require_text scripts/release/validate-qualification-evidence.sh 'running connector digest does not match the signed connector artifact'
+require_text scripts/release/validate-qualification-evidence.sh 'macos_arm64_client_lifecycle'
+require_text scripts/release/validate-qualification-evidence.sh 'macos_provisioner_package_lifecycle'
+require_text scripts/release/validate-qualification-evidence.sh 'linux_client_package_lifecycle'
+require_text scripts/release/validate-qualification-evidence.sh 'linux_provisioner_package_lifecycle'
+require_text scripts/release/validate-qualification-evidence.sh 'macos_arm64_system_mutation NONE'
+require_text scripts/release/validate-qualification-evidence.sh 'client_configuration_unchanged'
+require_text scripts/release/validate-qualification-evidence.sh 'operator_ssh_key_unchanged'
+require_text scripts/release/validate-qualification-evidence.sh 'connector_configuration_unchanged'
+require_text scripts/release/validate-qualification-evidence.sh 'connector_endpoint_credentials_unchanged'
+require_text scripts/release/validate-qualification-evidence.sh 'linux_relay_package_lifecycle'
+require_text scripts/release/validate-qualification-evidence.sh 'pristine_host'
+require_text scripts/release/validate-qualification-evidence.sh 'enrollment'
+require_text scripts/release/validate-qualification-evidence.sh 'does not match the authenticated inventory'
+require_text scripts/release/validate-qualification-evidence.sh 'contains a non-canonical byte'
+for qualification_gate in \
+  live-ssh-scp-path \
+  release-signatures \
+  source-security-publication \
+  supported-artifact-execution; do
+  require_text scripts/release/sign-qualification-record.sh "$qualification_gate"
+  require_text scripts/tests/qualification-record.sh "$qualification_gate|PASS|"
+done
 require_text scripts/release/sign-qualification-record.sh 'qualification_status=BLOCKED'
 require_text scripts/release/sign-qualification-record.sh 'unresolved_critical'
 require_text scripts/release/sign-qualification-record.sh 'unresolved_high'
 require_text scripts/tests/qualification-record.sh 'qualification record canonical signing and fail-closed tests passed'
-if grep -Eq 'ssh-keygen[[:space:]].*-t' scripts/release/sign-qualification-record.sh; then
-  fail 'qualification-record signer must never generate a signing key'
+require_text scripts/tests/qualification-evidence.sh 'qualification evidence canonical validation and fail-closed tests passed'
+if grep -Eq 'ssh-keygen[[:space:]].*-t' \
+  scripts/release/sign-qualification-record.sh \
+  scripts/release/validate-qualification-evidence.sh; then
+  fail 'qualification record helpers must never generate a signing key'
 fi
 
 if grep -Eq 'chmod.*2750|system.*sudo' packaging/homebrew/owntransit.rb.in; then

@@ -69,9 +69,24 @@ target state, runtime-bound carrier proof and local retirement after `READY`.
 Initial three-target enrollment and guided client setup are within its
 candidate scope. An official stable handoff still has to authenticate its exact
 release assets and carry an independently verified signed qualification record
-whose hard supported-platform gates pass. Broader recovery and the end-to-end
-operator rotation ceremony below are operational scope, not authority
-delegated to the relay.
+containing literal `schema=owntransit.qualification.v1`,
+`gate_set=owntransit-0.1.0-minimal.v1` and `status=PASS`. That overall status
+requires zero unresolved Critical/High findings and four bounded PASS results:
+source/security/publication, release signatures, bounded native/platform smoke,
+and live SSH plus SCP through the untrusted relay. The live check uses the
+pre-existing operator-supplied client configuration and SSH key without macOS
+system mutation and requires those client inputs plus the deployed connector
+configuration and endpoint credentials to remain unchanged. The macOS platform check is
+read-only and performs no system mutation, while both Linux architectures
+install and activate the exact signed connector, prove enabled-service restart, perform a
+real host reboot and direct host reacquisition, confirm the connector is
+running or retrying post-boot, and check exact binary identity, systemd
+confinement and no OwnTransit listener. It does not claim a candidate enrollment
+ceremony, macOS client installation or launcher activation, macOS provisioner
+package lifecycle, Linux client, provisioner, or relay package lifecycle, or
+clean-host state. Broader platform, recovery and end-to-end operator rotation
+ceremonies below are operational assurance, not authority delegated to the
+relay.
 
 ## Route capability identity
 

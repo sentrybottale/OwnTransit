@@ -7,7 +7,7 @@ symlinks, hard links, checksum tampering, an output inside the bundle and a
 noncanonical archive name all fail without publishing output. It is a tooling
 test, not clean-host lifecycle evidence.
 
-## Linux clean-host and reboot gates (amd64 and arm64)
+## Linux clean-host and reboot assurance (amd64 and arm64)
 
 `linux-vm.sh` selects exactly one native entry point from the kernel-reported
 machine: `linux-amd64-vm.sh` for 64-bit x86 (`amd64`/`x86_64`) or
@@ -86,29 +86,43 @@ cycle, absence of both package-supervisor intent and restart records, and that
 the connector owns no TCP listener. JSON evidence is written beneath
 `/var/lib/owntransit-qualification/` and also emitted on stdout. Hostnames,
 machine IDs, generated identities, certificate material and logs are excluded.
-The amd64 and arm64 runs are distinct hard qualification lanes; evidence from
-one architecture cannot satisfy the other.
+The amd64 and arm64 runs are distinct assurance lanes; within that stronger
+claim, evidence from one architecture cannot satisfy the other. These
+disposable-host lanes are not fixed 0.1.0 publication results.
 
 This qualifies native installer/systemd/reboot mechanics with throwaway local
 state. It does not prove a real relay path, SSH login, recovery, upgrade,
 rollback, power-loss behavior or external security review.
 
-The resulting reboot JSON is therefore sub-evidence, not by itself a PASS for
-the broader `linux-{amd64,arm64}-clean-host-lifecycle` result. That result must
-reference a reviewed composite dossier covering every required lifecycle
-dimension. For initial stable `0.1.0`, upgrade is recorded as not applicable:
-there is no supported predecessor, and public `0.1.0-rc.*` state is explicitly
-not an in-place upgrade source.
+The resulting reboot JSON is therefore bounded clean-host assurance, not proof
+of every lifecycle dimension. A broader claim would need a reviewed composite
+dossier. Initial stable `0.1.0` does not make that broader claim: its fixed
+platform result executes/version-checks exact native ordinary binaries,
+authenticates and inspects the relay OCI archives and Darwin launcher, and
+records the launcher's expected fail-closed rejection while performing no
+macOS installation or system mutation. On both Linux architectures it also
+requires exact signed connector
+install/activation, enabled-service restart, actual host reboot, direct host
+reacquisition, post-boot running/retrying, running-binary identity, systemd
+confinement and no-listener checks. It does not
+claim stable native macOS client lifecycle activation, macOS provisioner
+package lifecycle, Linux client, provisioner, or relay package lifecycle, or a
+pristine host. Routine releases reuse retained, authenticated hosts;
+clean-host/bootstrap lanes are periodic additional assurance, not a recurring
+publication gate.
+Public `0.1.0-rc.*` state remains explicitly unsupported as an in-place upgrade
+source.
 
-## Linux relay exchange gate
+## Linux relay exchange assurance
 
 Static unit inspection and native-archive tests do not qualify the temporary
-relay exchange. Release evidence is incomplete until disposable native Linux
-amd64 and Linux arm64 hosts with systemd and rootful Podman have each exercised
-their architecture's signed relay OCI image through the installed
-`owntransit-relay-exchange@.service` template. The harness derives the canonical
-architecture from `uname -m`, selects only the matching signed artifact set,
-and requires Podman's imported image architecture to match before activation.
+relay exchange itself. When a stronger per-architecture exchange claim is
+needed, disposable native Linux amd64 and Linux arm64 hosts with systemd and
+rootful Podman should each exercise their architecture's signed relay OCI image
+through the installed `owntransit-relay-exchange@.service` template. This is
+additional assurance, not a fixed 0.1.0 publication result. The harness derives
+the canonical architecture from `uname -m`, selects only the matching signed
+artifact set, and requires Podman's imported image architecture to match before activation.
 That gate must authenticate the portable archive member, prove the installer
 reproduced it exactly as
 `/etc/systemd/system/owntransit-relay-exchange@.service`, and run
@@ -133,14 +147,15 @@ repository handler tests separately prove that public, link-local, unspecified
 and malformed cleartext peer addresses are rejected before mailbox handling.
 
 Finally, stop every exchange instance and run the authenticated relay
-uninstaller. Qualification must prove that the template is removed, no
+uninstaller. This assurance run must prove that the template is removed, no
 exchange instance remains active, and no endpoint state or authority material
-was created by the temporary unit. Until this packaged round trip is recorded,
-the relay bootstrap path remains unqualified even when all local tests pass.
+was created by the temporary unit. Without this packaged round trip, do not
+claim that the separate relay-exchange harness passed merely because local
+tests or the 0.1.0 live SSH/SCP result passed.
 
 `linux-relay-exchange.sh` is the destructive disposable-host harness for this
-gate. Run it only after the exact relay role from the signed bundle has been
-installed but not enabled, started or enrolled. The relay state root must still
+assurance lane. Run it only after the exact relay role from the signed bundle
+has been installed but not enabled, started or enrolled. The relay state root must still
 be empty. Create its dedicated one-use marker only after re-confirming that the
 host is disposable; the harness consumes it before the first package mutation:
 

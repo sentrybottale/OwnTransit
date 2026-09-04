@@ -911,7 +911,7 @@ guard_retained_prerelease_install() {
   selected_version=$(inspect_canonical_lifecycle_version "$selected_lifecycle" "$selected_release" selected)
 
   if test "$candidate_version" = 0.1.0 && is_owntransit_010_release_candidate "$selected_version"; then
-    fail "selected $role role retains OwnTransit $selected_version state; stable 0.1.0 requires a fresh host. Do not purge this host: preserve the retained role state for recovery"
+    fail "selected $role role retains OwnTransit $selected_version state and cannot be replaced by stable 0.1.0. Do not purge it: preserve the retained role state for recovery; use a different unused role state or another host for this role"
   fi
 }
 

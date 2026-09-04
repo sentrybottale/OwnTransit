@@ -5,9 +5,12 @@
 > 64-bit x86 Linux (`amd64`/`x86_64`), and 64-bit ARM Linux
 > (`arm64`/`aarch64`), not an official stable publication. Intel macOS is
 > outside the 0.1.0 support matrix. The repository can build a
-> signed, installable candidate handoff, but use it only for qualification unless its
-> exact signed qualification record is independently verified and reports every
-> hard release gate as passed. A Git checkout, unsigned local build, or checksum
+> signed, installable candidate handoff, but use it only for qualification
+> unless its exact signed qualification record is independently verified with
+> `schema=owntransit.qualification.v1`,
+> `gate_set=owntransit-0.1.0-minimal.v1`, and overall `status=PASS`. That status
+> requires zero unresolved Critical/High defects and all four bounded release
+> results to pass. A Git checkout, unsigned local build, or checksum
 > downloaded beside an archive is not an authenticated package. Independent
 > external security certification is not claimed. Keep an operator-owned
 > alternative access and recovery path throughout qualification and canarying.
@@ -17,9 +20,24 @@ supported in-place upgrade source for stable `0.1.0`. Do not install stable
 `0.1.0` over retained RC package state. The supplied uninstall commands are
 intentionally non-purging: they preserve selectors, rollback anchors, receipts,
 identities, credentials, and recovery state, so they do not turn an RC host
-into a clean stable-install target. Use a genuinely fresh host. A separately
-reviewed destructive RC trust-reset followed by complete re-enrollment is not
-currently implemented.
+into a stable-install target. Use a different unused role state if exercising
+stable installation on an existing host. A separately reviewed destructive RC
+trust-reset followed by complete re-enrollment is not currently implemented.
+Release qualification requires no new machine and makes no pristine-host
+claim.
+
+For 0.1.0, the bounded Mac result executes and version-checks the exact native
+artifacts, authenticates and inspects the launcher, records its expected
+fail-closed rejection, and performs no system mutation. The separate live
+SSH/SCP path exercises the exact Mac client transport using the pre-existing
+operator-supplied client configuration and SSH key, performs no Mac system
+mutation, and leaves those client inputs plus the deployed connector
+configuration and endpoint credentials unchanged; neither result qualifies
+stable native macOS client lifecycle activation. The Linux
+amd64 and arm64 results do qualify exact signed connector install/activation,
+enabled-service restart, actual host reboot, direct host reacquisition, and the
+connector running or retrying post-boot on existing hosts. Keep
+independent access while canarying every installation.
 
 ## The recipient experience
 
@@ -358,8 +376,26 @@ offline provisioner, guided enrollment, authenticated package lifecycle, and
 native installer paths described here. The tooling can build a signed
 installable handoff for qualification. An official stable handoff must bind its
 exact signed artifacts, release policy, SBOM and license evidence to an
-independently verified signed supported-platform qualification record whose
-hard gates all pass; this document does not assert that such a record exists.
+independently verified signed qualification record with
+`schema=owntransit.qualification.v1`,
+`gate_set=owntransit-0.1.0-minimal.v1`, and overall `status=PASS`. Its four
+bounded results cover source/security/publication, release-signature
+verification, supported-artifact execution on existing hosts, and live SSH plus
+SCP through the untrusted relay using the exact signed client and connector.
+The live path uses the pre-existing operator-supplied client configuration and
+SSH key, performs no macOS system mutation, and leaves those client inputs plus
+the deployed connector configuration and endpoint credentials unchanged.
+The platform result executes the exact native binaries, inspects the relay OCI
+archives and Darwin launcher, records the launcher's expected fail-closed
+rejection, and performs no macOS system mutation. On Linux amd64 and arm64 it
+also proves exact signed
+connector install/activation, enabled-service restart, actual host reboot,
+direct host reacquisition, post-boot running/retrying, binary identity, systemd
+confinement, and absence of an
+OwnTransit listener. It does not claim stable native macOS client lifecycle
+activation, macOS provisioner package lifecycle, Linux client, provisioner, or
+relay package lifecycle, or pristine-host qualification. This document does
+not assert that such a record exists.
 
 Independent implementation review, penetration testing, clean-builder
 reproduction, legal review, custody rehearsal, and environment canary results

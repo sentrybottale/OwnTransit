@@ -42,12 +42,14 @@ independent scan.
 
 | Item | Class | Required disposition |
 |---|---|---|
-| Prospective public tree, both race/vet profiles, pinned vulnerability analysis, release/qualification static checks and signature-helper tests | Hard publish gate | **PASS** for the exact frozen candidate in both required read-only CI jobs |
-| Complete one-root public history and clean-export boundary | Hard publish gate | **PASS**; the private development history is not a candidate |
-| Actual release-manifest and release-policy signatures used by installers | Hard publish gate | **PASS** under independently obtained verifier trust for the exact artifacts |
-| macOS arm64, Linux amd64, and Linux arm64 clean-host lifecycle, interruption, rollback, uninstall and recovery matrices | Hard publish gate | **PASS** independently for all three supported targets and the exact released bytes; installer/reboot JSON alone is only sub-evidence |
-| Signed qualification record binding the candidate commit, release identity, outer asset inventory and exact platform results | Hard publish gate | **PASS** only after independent signature verification and confirmation that every other hard gate is recorded accurately |
-| Every known Critical/High defect | Hard publish gate | Closed or explicitly accepted in the public release risk record |
+| Full source, security, publication and complete public-history checks | Hard publish gate | **PASS** for the exact frozen candidate, including both race/vet profiles, pinned vulnerability analysis, release/qualification static checks and signature-helper tests |
+| Independent verification of the signed handoff, release policy, manifests and inventories | Hard publish gate | **PASS** under independently obtained verifier trust for every exact artifact byte |
+| Supported-artifact execution | Hard publish gate | **PASS** after exact native ordinary binaries are executed/version-checked on existing or operator-provided macOS arm64, Linux amd64 and Linux arm64 hosts; relay OCI archives and the Darwin launcher are authenticated and inspected, including expected direct-launch rejection, with no macOS installation or system mutation; and both exact signed Linux connectors pass install/activation, enabled-service restart, actual host reboot, direct host reacquisition, post-boot running/retrying, binary-identity, systemd-confinement and no-listener checks. This does not claim stable native macOS client lifecycle activation, macOS provisioner package lifecycle, Linux client, provisioner, or relay package lifecycle, or a pristine host |
+| Live SSH and SCP through untrusted transit | Hard publish gate | **PASS** using the exact signed macOS client through the deployed untrusted relay to the exact signed connector, including SCP digest integrity, the pre-existing operator-supplied client configuration and SSH key, no macOS system mutation, and unchanged client configuration, SSH key, connector configuration and connector endpoint credentials |
+| Signed qualification record binding the candidate commit, release identity, outer asset inventory and four exact results | Hard publish gate | **PASS** only after independent signature verification and confirmation of `schema=owntransit.qualification.v1`, `gate_set=owntransit-0.1.0-minimal.v1`, overall `status=PASS`, four accurate PASS results, and zero unresolved Critical/High counts |
+| Every known Critical/High defect | Hard publish gate | Closed; unresolved counts must both be zero |
+| Pristine/factory-clean macOS and per-architecture Linux lifecycle/reboot matrices | Additional assurance | Record exact evidence or disclose **NOT PERFORMED** |
+| Dual public relay-exchange qualification and exhaustive composite dossiers | Additional assurance | Record exact evidence or disclose **NOT PERFORMED** |
 | Independent secret scan of the exported/new public object graph | Additional assurance | Record exact evidence or disclose **NOT PERFORMED** |
 | Independent clean-builder reproduction | Additional assurance | Record exact evidence or disclose **NOT PERFORMED** |
 | Signer/issuer custody and clean-room recovery rehearsal | Operator assurance | Record exact evidence or disclose **NOT PERFORMED** |
@@ -87,7 +89,7 @@ unless it reveals a source or artifact change; its status must be disclosed.
   gets a fresh release ID and strictly higher release and policy sequences; do
   not reclaim or reuse a signed tuple.
 - For the `0.1.0` stable handoff, require the frozen release/policy tuple
-  `10/6/10/1` (release sequence, policy sequence, minimum release sequence,
+  `11/7/11/1` (release sequence, policy sequence, minimum release sequence,
   minimum lifecycle). The signing conductor rejects every other tuple because
   rollback to RC5-RC7 is incompatible with the hardened macOS launcher and
   Linux provisioner package boundary.
@@ -104,9 +106,15 @@ unless it reveals a source or artifact change; its status must be disclosed.
   permanently consumed release sequence `9` and policy sequence `5`; its
   ledger, signatures and failed qualification evidence must not be reused as
   release inputs.
-- The corrected issuance deliberately advances to `10/6/10/1` from the
+- The private `0.1.0` candidate signed from public commit `5ce5245c` with tuple
+  `10/6/10/1` was abandoned when the v0.1.0 release qualification scope was
+  simplified before publication. It was never tagged, uploaded, or publicly
+  distributed, but its signatures permanently consumed release sequence `10`
+  and policy sequence `6`; its artifacts, ledger, signatures, and
+  qualification evidence must not be reused as release inputs.
+- The next issuance deliberately advances to `11/7/11/1` from the
   still-official RC7 policy anchor `3/5/1`. Skipping consumed policy sequences
-  `4` and `5` is intentional and does not claim that either abandoned policy
+  `4`, `5`, and `6` is intentional and does not claim that any abandoned policy
   was applied to the official policy/custody anchor.
 
 ## 3. Build and authenticate the candidate
@@ -116,9 +124,9 @@ unless it reveals a source or artifact change; its status must be disclosed.
   outputs.
 - Treat retained exact-nine `0.1.0-rc.*` package state as an unsupported
   in-place predecessor. Verify stable installation refuses it before mutation;
-  the non-purging uninstaller is not a clean reset. Run stable qualification on
-  a genuinely fresh host and never invoke the candidate lifecycle around the
-  selected installed manager.
+  the non-purging uninstaller is not a clean reset. Use a different unused role
+  state for installation smoke on an existing host and never invoke the
+  candidate lifecycle around the selected installed manager.
 - When available, reproduce the unsigned artifacts on an independent clean
   builder from a fresh clone of the candidate public history and record the
   result as additional assurance. Disclose when it was not performed.
@@ -153,30 +161,50 @@ authorities.
 
 - After completing the tests below, produce one canonical signed qualification
   record that binds the frozen commit, release identity, outer asset inventory,
-  exact platform results and Critical/High disposition. Independently verify
-  that record before promotion. A detached log, unsigned JSON file or statement
+  four exact results and zero unresolved Critical/High counts. Independently
+  verify its `schema=owntransit.qualification.v1`,
+  `gate_set=owntransit-0.1.0-minimal.v1`, overall `status=PASS`, and exact
+  bindings before promotion. A detached log, unsigned JSON file or statement
   in this repository is not qualification evidence. Use
   `scripts/release/sign-qualification-record.sh` with the fixed result set
-  documented in `scripts/release/README.md`; keep its two-file output outside
-  `assets/`, independently authenticate its reported SHA-256 handle, verify the
+  documented in `scripts/release/README.md`. Supply the authenticated extracted
+  native inventory, handoff trust root and four closed-schema canonical evidence
+  records; arbitrary log hashes are not accepted. Keep its qualification output
+  outside `assets/`, independently authenticate its reported SHA-256 handle, verify the
   `owntransit-qualification-v1` SSHSIG, and inspect every evidence digest. The
-  helper signs an honest `BLOCKED` record when any fixed test is not `PASS` or
+  helper signs an honest `BLOCKED` record when any fixed result is not `PASS` or
   either unresolved Critical/High count is nonzero; it does not execute tests.
-- Complete the clean macOS arm64, Linux amd64, and Linux arm64 matrices in
-  `ROADMAP.md`, including cold boot, reconnect, interrupted apply, concurrency,
-  authenticated rollback, non-purging uninstall and clean OwnTransit recovery.
-  Each Linux architecture is a separate hard gate, backed by a reviewed
-  composite dossier rather than the installer/reboot JSON alone. For initial
-  stable `0.1.0`, record upgrade as **N/A**: there is no supported predecessor,
-  and public `0.1.0-rc.*` state is not an in-place upgrade source.
-- Prove the connector remains outbound-only and can dial only literal
-  `tcp4 127.0.0.1:22`; prove the client writes only SSH bytes to stdout.
-- Complete hostile-relay and resource-exhaustion qualification against the
-  exact candidate.
+- Pass the complete source/security/publication/history gate for the frozen
+  public commit, including both race and vet profiles and all required helper
+  and static tests.
+- Independently authenticate the exact handoff trust statement, outer and
+  native inventories, release manifest, policy and every referenced byte.
+- Execute/version-check every exact native ordinary binary on existing or
+  operator-provided macOS arm64, Linux amd64 and Linux arm64 hosts. Authenticate
+  and inspect the relay OCI archives and Darwin launcher, including the
+  launcher's expected direct-path rejection. Perform no macOS installation or
+  system mutation. On both Linux architectures,
+  install and activate the exact signed connector, restart its enabled service,
+  perform an actual host reboot, reacquire the host directly, prove the
+  connector is running or retrying post-boot, verify the exact running binary
+  and systemd confinement, and prove OwnTransit owns no listener. Record
+  pre-existing state honestly. This gate does not claim stable native macOS
+  client lifecycle activation, macOS provisioner package lifecycle, Linux
+  client, provisioner, or relay package lifecycle, or a pristine host.
+- Use the exact signed macOS client through the deployed untrusted relay to the
+  exact signed connector. Complete a real SSH session and an SCP transfer, and
+  compare the transferred object's digest at both ends. Use the pre-existing
+  operator-supplied client configuration and SSH key, perform no macOS system
+  mutation, and confirm those client inputs plus the deployed connector
+  configuration and endpoint credentials remain unchanged.
+- Keep pristine-host lifecycle/reboot matrices, dual relay-exchange labs,
+  exhaustive composite dossiers and broader hostile-relay/resource-exhaustion
+  campaigns as additional assurance. Record them when performed; they are not
+  fixed 0.1.0 qualification-record results.
 - Record whether the independent implementation review and authorized
   penetration test defined by `SECURITY_REVIEW.md` were performed. Do not imply
-  that they passed when absent. Close or explicitly accept every known Critical
-  or High finding without changing the frozen bytes.
+  that they passed when absent. Close every known unresolved Critical or High
+  finding without changing the frozen bytes.
 - Record the owner disposition for professional name, applicable-contract,
   targeted-patent, contributor-assignment and publishing-entity review.
   Repository tooling cannot perform or certify those reviews.

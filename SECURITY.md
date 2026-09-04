@@ -13,9 +13,16 @@ package activation exist in source. The release tooling can turn one clean
 candidate commit into a signed, installable handoff for qualification.
 
 That statement neither authenticates this checkout nor claims that the required
-platform matrices passed. An official stable handoff must bind the exact source,
+release checks passed. An official stable handoff must bind the exact source,
 signed artifacts and release policy to an independently verified signed
-qualification record in which every hard release gate passes. No such result,
+qualification record containing literal
+`schema=owntransit.qualification.v1`,
+`gate_set=owntransit-0.1.0-minimal.v1` and `status=PASS`. That overall status
+requires all four bounded 0.1.0 results to pass and both unresolved finding
+counts to be zero. The results cover the complete source/security/publication
+gate, independent signature and inventory verification, the bounded native
+artifact smoke described below, and real SSH plus SCP through the untrusted
+relay using the exact signed client and connector. No such record,
 independent external security assessment, penetration-test certification or
 universal suitability is claimed here. SSH and host recovery remain operator
 responsibilities; keep them independently available throughout qualification
@@ -24,8 +31,11 @@ and deployment canarying.
 Retained `0.1.0-rc.*` package state is not a supported stable-install source.
 Those lifecycle binaries recognize the older exact-nine artifact profile and
 must fail closed on the exact-fourteen stable manifest. Ordinary uninstall is
-intentionally non-purging, and a destructive RC trust-reset is not implemented;
-use a genuinely fresh host for stable qualification.
+intentionally non-purging, and a destructive RC trust-reset is not implemented.
+Release qualification uses existing or operator-provided hosts and does not
+represent them as pristine; retained RC state still cannot be treated as a
+supported in-place stable installation. The bounded macOS gate therefore stays
+read-only and makes no stable macOS client-install or lifecycle claim.
 
 ## Reporting a vulnerability
 
@@ -131,11 +141,32 @@ to one connector/route, and not hidden behind an empty allowlist.
 ## Release integrity and additional assurance
 
 Every official 0.1.0 artifact handoff must provide authenticated native
-distribution, an exact release and policy binding, and clean-host evidence for
-the supported platform privilege and exposure boundaries. It must exercise
-the installed path, service integration, reboot/reconnect and fail-closed
-package transaction behavior using the exact released bytes. A known
-unaccepted Critical or High security defect is a release block.
+distribution and an exact release and policy binding. A separately executed
+verifier must authenticate every handoff, policy, manifest and inventory byte.
+On matching macOS arm64, Linux amd64 and Linux arm64 hosts, the bounded artifact
+result must execute and version-check every ordinary native executable,
+authenticate and inspect both relay OCI archives and the Darwin launcher,
+record the launcher's expected fail-closed fixed-path rejection, and perform no
+macOS system mutation. On both
+Linux architectures it must install and activate the exact signed connector,
+verify its binary identity and systemd confinement, prove it owns no OwnTransit
+listener, restart the enabled service, perform an actual host reboot, reacquire
+the host directly, and prove the enabled connector is running or retrying
+post-boot. The separate live result must carry a real SSH
+session and integrity-checked SCP transfer through the deployed untrusted relay
+with the exact signed macOS client and connector, using the pre-existing
+operator-supplied client configuration and SSH key. It must perform no macOS
+system mutation and leave those client inputs plus the deployed connector
+configuration and endpoint credentials unchanged. A known unresolved Critical
+or High security defect is a release block.
+
+This is deliberately a bounded first-release claim. It does not prove candidate
+macOS client installation or launcher activation, macOS provisioner package
+lifecycle, Linux client, provisioner, or relay package lifecycle, pristine
+installation, every lifecycle transition, every host policy, or
+portability to an untested environment. The Linux connector reboot result is
+specific to the two exercised existing hosts, not a clean-host or universal
+recovery claim. Those stronger claims require the additional assurance below.
 
 The OpenSSH distribution signer authorized as `owntransit-release` is the
 privileged package-bootstrap authority: it authenticates the outer asset
@@ -181,13 +212,16 @@ The packaged relay mailbox accepts only the Podman private-bridge peer as
 deployment plumbing. The exact signed units' `--network=bridge` and
 `--publish=127.0.0.1:9087:9087/tcp` settings are the exposure boundary;
 mailbox reachability grants no release trust, enrollment authority, endpoint
-identity or plaintext access. Every exact artifact handoff must qualify an
-actual packaged mailbox round trip through that boundary.
+identity or plaintext access. The repository supplies a packaged mailbox
+qualification harness; per-architecture public-relay exchange labs are
+additional assurance rather than a 0.1.0 publication gate.
 
 The following work improves assurance and operations but is not represented as
 missing tunnel, client, connector or relay functionality:
 
 - independent implementation review and authorized penetration testing;
+- pristine or factory-clean macOS and per-architecture Linux lifecycle labs;
+- dual public relay-exchange qualification and exhaustive composite dossiers;
 - broader hostile-filesystem, disk-full, power-loss and recovery exercises;
 - independent clean-builder reproduction and external public-history scans;
 - expiry monitoring, authenticated revocation operations and
@@ -203,18 +237,22 @@ procedure particularly important operator responsibilities.
 ## Known limitations in the 0.1.0 candidate scope
 
 The candidate scope retains these fail-closed limitations; release wording must
-not hide them or imply that the platform qualification gates passed:
+not turn bounded existing-host smoke into a clean-room or exhaustive platform
+qualification claim:
 
 - Endpoint lifecycle activation relies on descriptor-held runtime generations,
   a final pre-network check, root-published read-only views and a separately
   rooted exact-state rollback anchor. It does not defend against a compromised
-  platform package manager or host root; each artifact handoff must cover the
-  native package, privilege, reboot and interruption boundary in its evidence.
+  platform package manager or host root. Clean-host package, privilege, reboot
+  and interruption matrices are additional assurance beyond the 0.1.0 smoke.
 - Release bundle and policy verification, external release-policy anchor
   compare-and-swap and selector publication are bound by one manager-held
   transaction. A detached verified decision remains intentionally unusable as
-  install authorization, so each artifact handoff must qualify the installed
-  manager boundary rather than treating detached verification as sufficient.
+  install authorization. Both Linux connector install/activation/reboot runs
+  exercise the manager boundary; the read-only macOS checks do not. These checks
+  do not claim candidate macOS client installation or launcher activation,
+  macOS provisioner package lifecycle, Linux client, provisioner, or relay
+  package lifecycle, an exhaustive lifecycle, or hostile-filesystem qualification.
 - Bootstrap release ID, artifact digest, platform and architecture are
   authenticated operator inputs; `owntransitctl` does not yet measure the
   installed executable and derive those values itself.
