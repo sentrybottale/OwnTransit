@@ -334,6 +334,8 @@ require_text deploy/systemd/owntransit-connector.service '--reader-gid=${OWNTRAN
 require_text deploy/systemd/owntransit-connector.service 'EnvironmentFile=/etc/owntransit/connector-runtime.env'
 require_text deploy/systemd/owntransit-connector.service 'ExecStart=/usr/libexec/owntransit/roles/connector/current/owntransit-connector run'
 require_text deploy/systemd/owntransit-connector.service 'ConditionPathExists=!/var/lib/owntransit/package-supervisor/connector.intent'
+require_text cmd/owntransitctl/package_supervisor_linux.go 'transitionPackageSupervisorRecord(supervisor.intentRoot, supervisor.role, "intent", "restart")'
+require_text cmd/owntransitctl/package_supervisor_linux.go 'transitionPackageSupervisorRecord(supervisor.intentRoot, supervisor.role, "restart", "intent")'
 require_text deploy/systemd/owntransit-connector.service 'InaccessiblePaths=/var/lib/owntransit/connector/private /var/lib/owntransit/connector/authority'
 require_text deploy/systemd/owntransit-connector.service 'CapabilityBoundingSet='
 require_text deploy/systemd/owntransit-relay.service '--runtime-root=/runtime'

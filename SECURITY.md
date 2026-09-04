@@ -168,6 +168,15 @@ lifecycle action cannot restart a service while its unit is removed. The
 provisioner tree is mode `0755` and package operations fail closed unless
 `fs.protected_hardlinks=1`; the legacy directory mode migration is Linux-only.
 
+For connector and relay mutations, a root-only `<role>.intent` record blocks
+systemd activation until authenticated package mutation and role activation
+finish. The supervisor then atomically renames and directory-syncs the record
+to `<role>.restart` before asking systemd to start the role. That second state
+allows activation but preserves a durable restart obligation until the service
+is verified active. Recovery returns a surviving restart record to the blocked
+intent state and replays the exact idempotent operation. Simultaneous intent
+and restart records are treated as conflicting residue and fail closed.
+
 The packaged relay mailbox accepts only the Podman private-bridge peer as
 deployment plumbing. The exact signed units' `--network=bridge` and
 `--publish=127.0.0.1:9087:9087/tcp` settings are the exposure boundary;

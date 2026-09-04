@@ -81,8 +81,9 @@ scripts/qualify/linux-vm.sh verify-after-reboot
 
 The resume phase requires a changed kernel boot ID. It revalidates artifact and
 unit digests, service identity, systemd confinement, enabled/active state,
-current-boot activation, zero unexpected restarts, and that the connector owns
-no TCP listener. JSON evidence is written beneath
+current-boot activation, zero unexpected restarts, an active package-recovery
+cycle, absence of both package-supervisor intent and restart records, and that
+the connector owns no TCP listener. JSON evidence is written beneath
 `/var/lib/owntransit-qualification/` and also emitted on stdout. Hostnames,
 machine IDs, generated identities, certificate material and logs are excluded.
 The amd64 and arm64 runs are distinct hard qualification lanes; evidence from
