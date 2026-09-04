@@ -308,6 +308,14 @@ operation from restarting the service into a half-detached state. Partial
 detach is an accepted retry state only when every remaining public name is
 still the exact expected object.
 
+Connector and relay package operations use two durable supervisor states. The
+root-only `<role>.intent` state blocks systemd while mutation is incomplete.
+After mutation and activation complete, an atomic rename plus directory sync
+publishes `<role>.restart`, which permits systemd startup while retaining the
+restart obligation. The record is removed only after the service is verified
+active. Recovery moves restart back to intent and replays the authenticated
+idempotent operation; conflicting states fail closed.
+
 Ordinary uninstall is non-purging. Destructive purge and trust reset require a
 separate explicit recovery ceremony.
 

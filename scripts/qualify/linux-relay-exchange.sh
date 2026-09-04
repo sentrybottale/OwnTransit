@@ -389,7 +389,9 @@ systemd-analyze verify "$installed_relay_unit" >/dev/null 2>&1 || fail "installe
 require_root_directory_protected "$relay_state_root" relay-state-root
 test "$(stat -c %g "$relay_state_root")" -eq 0 && test "$(stat -c %a "$relay_state_root")" = 755 || fail "relay state root is not root:root mode 0755"
 test -z "$(find "$relay_state_root" -mindepth 1 -print -quit)" || fail "relay endpoint state already exists; qualification requires a pristine un-enrolled role"
-test ! -e /var/lib/owntransit/package-supervisor/relay.intent && test ! -L /var/lib/owntransit/package-supervisor/relay.intent || fail "a relay package mutation is already active"
+for supervisor_record in relay.intent relay.restart; do
+  test ! -e "/var/lib/owntransit/package-supervisor/$supervisor_record" && test ! -L "/var/lib/owntransit/package-supervisor/$supervisor_record" || fail "a relay package mutation or restart is already active"
+done
 
 if systemctl is-active --quiet owntransit-relay.service; then
   fail "enrolled relay is active; qualification will not disrupt it"
@@ -471,7 +473,9 @@ grep -Fq '"role":"relay"' "$package_apply_result" || fail "manager-bound package
 grep -Fq "\"current_release_id\":\"$release_id\"" "$package_apply_result" || fail "manager-bound package result selected another release"
 grep -Fq '"idempotent":true' "$package_apply_result" || fail "manager-bound package replay was not an exact idempotent verification"
 test "$(sha256_file "$relay_environment")" = "$relay_environment_sha256_before" || fail "idempotent manager verification changed the relay image environment"
-test ! -e /var/lib/owntransit/package-supervisor/relay.intent && test ! -L /var/lib/owntransit/package-supervisor/relay.intent || fail "manager-bound package verification left an active intent"
+for supervisor_record in relay.intent relay.restart; do
+  test ! -e "/var/lib/owntransit/package-supervisor/$supervisor_record" && test ! -L "/var/lib/owntransit/package-supervisor/$supervisor_record" || fail "manager-bound package verification left a supervisor record"
+done
 
 for lifecycle_record in "$installed_receipt" "$installed_selector" "$installed_anchor"; do
   require_root_regular_protected "$lifecycle_record" manager-bound-lifecycle-record

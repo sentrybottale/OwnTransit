@@ -24,7 +24,7 @@ import (
 const (
 	packageSupervisorRoot   = "/var/lib/owntransit/package-supervisor"
 	packageSupervisorSchema = "owntransit.package-supervisor.v1"
-	maxSupervisorIntent     = 4096
+	maxSupervisorRecord     = 4096
 )
 
 type packageServiceController interface {
@@ -88,6 +88,20 @@ func (supervisor packageSupervisor) run(preflight func() error, operation func()
 	if err != nil {
 		return packagetxn.Result{}, err
 	}
+	restart, restartExists, err := readPackageSupervisorRestart(supervisor.intentRoot, supervisor.role)
+	if err != nil {
+		return packagetxn.Result{}, err
+	}
+	if exists && restartExists {
+		return packagetxn.Result{}, errors.New("package supervisor: conflicting intent and restart records")
+	}
+	if restartExists {
+		if err := transitionPackageSupervisorRecord(supervisor.intentRoot, supervisor.role, "restart", "intent"); err != nil {
+			return packagetxn.Result{}, err
+		}
+		intent = restart
+		exists = true
+	}
 	if !exists {
 		active, err := supervisor.service.Active(unit)
 		if err != nil {
@@ -121,6 +135,9 @@ func (supervisor packageSupervisor) run(preflight func() error, operation func()
 		return packagetxn.Result{}, err
 	}
 	if intent.RestartActive {
+		if err := transitionPackageSupervisorRecord(supervisor.intentRoot, supervisor.role, "intent", "restart"); err != nil {
+			return packagetxn.Result{}, err
+		}
 		if err := supervisor.service.Start(unit); err != nil {
 			return packagetxn.Result{}, err
 		}
@@ -131,6 +148,10 @@ func (supervisor packageSupervisor) run(preflight func() error, operation func()
 			}
 			return packagetxn.Result{}, errors.New("package supervisor: role runtime did not become active after restart")
 		}
+		if err := removePackageSupervisorRecord(supervisor.intentRoot, supervisor.role, "restart"); err != nil {
+			return packagetxn.Result{}, err
+		}
+		return result, nil
 	}
 	if err := removePackageSupervisorIntent(supervisor.intentRoot, supervisor.role); err != nil {
 		return packagetxn.Result{}, err
@@ -226,18 +247,36 @@ func runPackageCommand(path string, arguments ...string) (string, error) {
 }
 
 func readPackageSupervisorIntent(root, role string) (packageSupervisorIntent, bool, error) {
+	return readPackageSupervisorRecord(root, role, "intent")
+}
+
+func readPackageSupervisorRestart(root, role string) (packageSupervisorIntent, bool, error) {
+	record, exists, err := readPackageSupervisorRecord(root, role, "restart")
+	if err != nil {
+		return packageSupervisorIntent{}, false, err
+	}
+	if exists && !record.RestartActive {
+		return packageSupervisorIntent{}, false, errors.New("package supervisor: restart record cannot preserve an inactive service")
+	}
+	return record, exists, nil
+}
+
+func readPackageSupervisorRecord(root, role, state string) (packageSupervisorIntent, bool, error) {
+	name, err := packageSupervisorRecordName(role, state)
+	if err != nil {
+		return packageSupervisorIntent{}, false, err
+	}
 	directory, err := openPackageSupervisorRoot(root)
 	if err != nil {
 		return packageSupervisorIntent{}, false, err
 	}
 	defer unix.Close(directory)
-	name := role + ".intent"
 	fd, err := unix.Openat(directory, name, unix.O_RDONLY|unix.O_NONBLOCK|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if errors.Is(err, unix.ENOENT) {
 		return packageSupervisorIntent{}, false, nil
 	}
 	if err != nil {
-		return packageSupervisorIntent{}, false, fmt.Errorf("package supervisor: open intent: %w", err)
+		return packageSupervisorIntent{}, false, fmt.Errorf("package supervisor: open %s record: %w", state, err)
 	}
 	defer unix.Close(fd)
 	contents, err := readExactSupervisorFile(fd)
@@ -246,12 +285,12 @@ func readPackageSupervisorIntent(root, role string) (packageSupervisorIntent, bo
 	}
 	var intent packageSupervisorIntent
 	if err := strictjson.Decode(contents, &intent); err != nil {
-		return packageSupervisorIntent{}, false, fmt.Errorf("package supervisor: decode intent: %w", err)
+		return packageSupervisorIntent{}, false, fmt.Errorf("package supervisor: decode %s record: %w", state, err)
 	}
 	canonical, _ := json.Marshal(intent)
 	canonical = append(canonical, '\n')
 	if !bytes.Equal(contents, canonical) || intent.Schema != packageSupervisorSchema || intent.Role != role {
-		return packageSupervisorIntent{}, false, errors.New("package supervisor: intent is invalid or noncanonical")
+		return packageSupervisorIntent{}, false, fmt.Errorf("package supervisor: %s record is invalid or noncanonical", state)
 	}
 	return intent, true, nil
 }
@@ -307,29 +346,73 @@ func writePackageSupervisorIntent(root string, intent packageSupervisorIntent) e
 }
 
 func removePackageSupervisorIntent(root, role string) error {
+	return removePackageSupervisorRecord(root, role, "intent")
+}
+
+func transitionPackageSupervisorRecord(root, role, fromState, toState string) error {
+	fromName, err := packageSupervisorRecordName(role, fromState)
+	if err != nil {
+		return err
+	}
+	toName, err := packageSupervisorRecordName(role, toState)
+	if err != nil {
+		return err
+	}
+	if fromName == toName {
+		return errors.New("package supervisor: record transition must change state")
+	}
 	directory, err := openPackageSupervisorRoot(root)
 	if err != nil {
 		return err
 	}
 	defer unix.Close(directory)
-	if err := unix.Unlinkat(directory, role+".intent", 0); err != nil {
-		return fmt.Errorf("package supervisor: remove completed intent: %w", err)
+	if err := unix.Renameat2(directory, fromName, directory, toName, unix.RENAME_NOREPLACE); err != nil {
+		return fmt.Errorf("package supervisor: transition %s to %s: %w", fromState, toState, err)
+	}
+	if err := unix.Fsync(directory); err != nil {
+		return fmt.Errorf("package supervisor: sync %s transition: %w", toState, err)
+	}
+	return nil
+}
+
+func removePackageSupervisorRecord(root, role, state string) error {
+	name, err := packageSupervisorRecordName(role, state)
+	if err != nil {
+		return err
+	}
+	directory, err := openPackageSupervisorRoot(root)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(directory)
+	if err := unix.Unlinkat(directory, name, 0); err != nil {
+		return fmt.Errorf("package supervisor: remove completed %s: %w", state, err)
 	}
 	return unix.Fsync(directory)
 }
 
+func packageSupervisorRecordName(role, state string) (string, error) {
+	if role != "connector" && role != "relay" {
+		return "", errors.New("package supervisor: record role is invalid")
+	}
+	if state != "intent" && state != "restart" {
+		return "", errors.New("package supervisor: record state is invalid")
+	}
+	return role + "." + state, nil
+}
+
 func openPackageSupervisorRoot(path string) (int, error) {
 	if !filepath.IsAbs(path) || filepath.Clean(path) != path || path == "/" {
-		return -1, errors.New("package supervisor: intent root is not canonical")
+		return -1, errors.New("package supervisor: state root is not canonical")
 	}
 	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
-		return -1, fmt.Errorf("package supervisor: open intent root: %w", err)
+		return -1, fmt.Errorf("package supervisor: open state root: %w", err)
 	}
 	var stat unix.Stat_t
 	if err := unix.Fstat(fd, &stat); err != nil || stat.Mode&unix.S_IFMT != unix.S_IFDIR || stat.Uid != 0 || stat.Gid != 0 || uint32(stat.Mode)&0o7777 != 0o700 {
 		_ = unix.Close(fd)
-		return -1, errors.New("package supervisor: intent root must be root:root mode 0700")
+		return -1, errors.New("package supervisor: state root must be root:root mode 0700")
 	}
 	return fd, nil
 }
@@ -337,8 +420,8 @@ func openPackageSupervisorRoot(path string) (int, error) {
 func readExactSupervisorFile(fd int) ([]byte, error) {
 	var stat unix.Stat_t
 	if err := unix.Fstat(fd, &stat); err != nil || stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Uid != 0 || stat.Gid != 0 ||
-		uint32(stat.Mode)&0o7777 != 0o600 || stat.Nlink != 1 || stat.Size <= 0 || stat.Size > maxSupervisorIntent {
-		return nil, errors.New("package supervisor: intent file metadata is invalid")
+		uint32(stat.Mode)&0o7777 != 0o600 || stat.Nlink != 1 || stat.Size <= 0 || stat.Size > maxSupervisorRecord {
+		return nil, errors.New("package supervisor: record file metadata is invalid")
 	}
 	contents := make([]byte, stat.Size)
 	offset := 0
@@ -348,7 +431,7 @@ func readExactSupervisorFile(fd int) ([]byte, error) {
 			continue
 		}
 		if err != nil || read == 0 {
-			return nil, errors.New("package supervisor: read intent file")
+			return nil, errors.New("package supervisor: read record file")
 		}
 		offset += read
 	}

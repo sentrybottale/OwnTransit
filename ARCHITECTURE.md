@@ -188,6 +188,16 @@ Linux installer or non-purging uninstaller integration window; service-role
 detach also retains the connector or relay supervisor lock through stop,
 disable and unlink.
 
+Each Linux service-role package mutation is crash-consistent across the
+systemd restart boundary. A root-only `<role>.intent` record blocks service
+activation while package state is changing. Once mutation and role activation
+are complete, the supervisor atomically renames and directory-syncs that record
+to `<role>.restart`; this allows systemd activation while preserving a durable
+restart obligation. Only a verified active service permits removal of the
+restart record. Recovery moves a surviving restart record back to intent,
+replays the authenticated idempotent operation, and completes the same
+transition. Conflicting records fail closed.
+
 Initial request, guided approval, apply, signed floor/upgrade policy, exact
 rollback, interruption recovery and native package integration are part of the
 0.1.0 candidate implementation. An official stable handoff must qualify the

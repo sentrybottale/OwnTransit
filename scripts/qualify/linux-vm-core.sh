@@ -404,6 +404,12 @@ assert_platform_mutation_lock() {
   test "$(stat -c %u "$mutation_lock")" -eq 0 && test "$(stat -c %g "$mutation_lock")" -eq 0 && test "$(stat -c %a "$mutation_lock")" = 600 || fail "platform package-mutation lock is not root:root mode 0600"
   test "$(stat -c %h "$mutation_lock")" -eq 1 && test "$(stat -c %s "$mutation_lock")" -eq 0 || fail "platform package-mutation lock is not empty and single-link"
   /usr/bin/flock -n "$mutation_lock" /usr/bin/true || fail "platform package-mutation lock remained held without a live package operation"
+  for role_name in connector relay; do
+    for record_state in intent restart; do
+      record_path="$mutation_root/$role_name.$record_state"
+      test ! -e "$record_path" && test ! -L "$record_path" || fail "package supervisor left a $role_name $record_state record"
+    done
+  done
 }
 
 extract_json_id() {
@@ -454,12 +460,28 @@ if test "$phase" = verify-after-reboot; then
   assert_service_hardening
   assert_service_running_without_listener
   assert_platform_mutation_lock
+  pre_recovery_main_pid=$main_pid
+  pre_recovery_active_monotonic=$(systemctl_value ActiveEnterTimestampMonotonic)
+  case "$pre_recovery_active_monotonic" in ''|*[!0-9]*) fail "pre-recovery service activation timestamp is invalid" ;; esac
+  test "$pre_recovery_active_monotonic" -gt 0 || fail "service has no pre-recovery activation timestamp"
+  package_recover_json=$(/usr/libexec/owntransit/roles/connector/current/owntransitctl package-recover --role connector)
+  test "$(printf '%s\n' "$package_recover_json" | wc -l | tr -d '[:space:]')" -eq 1 || fail "active package recovery returned multiline output"
+  printf '%s\n' "$package_recover_json" | grep -Fq '"schema":"owntransit.ctl.package-lifecycle.v1"' || fail "active package recovery returned another schema"
+  printf '%s\n' "$package_recover_json" | grep -Fq '"action":"recover"' || fail "active package recovery returned another action"
+  printf '%s\n' "$package_recover_json" | grep -Fq '"role":"connector"' || fail "active package recovery returned another role"
+  printf '%s\n' "$package_recover_json" | grep -Fq "\"current_release_id\":\"$recorded_release_id\"" || fail "active package recovery selected another release"
+  printf '%s\n' "$package_recover_json" | grep -Fq '"resumed":false' || fail "clean active package recovery unexpectedly resumed residue"
+  printf '%s\n' "$package_recover_json" | grep -Fq '"idempotent":true' || fail "active package recovery was not idempotent"
+  assert_service_running_without_listener
+  test "$main_pid" != "$pre_recovery_main_pid" || fail "active package recovery did not replace the connector process"
+  assert_platform_mutation_lock
   restart_count=$(systemctl_value NRestarts)
   case "$restart_count" in ''|*[!0-9]*) fail "service restart count is invalid" ;; esac
   test "$restart_count" -eq 0 || fail "connector restarted unexpectedly after boot"
   active_monotonic=$(systemctl_value ActiveEnterTimestampMonotonic)
   case "$active_monotonic" in ''|*[!0-9]*) fail "service activation timestamp is invalid" ;; esac
   test "$active_monotonic" -gt 0 || fail "service has no current-boot activation timestamp"
+  test "$active_monotonic" -gt "$pre_recovery_active_monotonic" || fail "active package recovery did not produce a later service activation"
   installed_version_json=$(/usr/libexec/owntransit/roles/connector/current/owntransit-connector version)
   printf '%s\n' "$installed_version_json" | grep -Fq "\"release_id\":\"$recorded_release_id\"" || fail "installed release identity changed"
   reboot_status_json=$(/usr/libexec/owntransit/roles/connector/current/owntransitctl status --state-root /var/lib/owntransit/connector/private)
@@ -467,7 +489,7 @@ if test "$phase" = verify-after-reboot; then
   verified_unix=$(date +%s)
   evidence="$qualification_root/reboot-evidence.json"
   test ! -e "$evidence" && test ! -L "$evidence" || fail "final evidence already exists"
-  printf '{"schema":"owntransit.qualify.linux-%s-reboot.v1","result":"pass","platform":"linux","architecture":"%s","release_id":"%s","release_sequence":%s,"checksums_sha256":"%s","connector_sha256":"%s","unit_sha256":"%s","prepared_boot_id":"%s","verified_boot_id":"%s","verified_unix":%s,"unit_enabled":true,"active_state":"active","sub_state":"running","main_pid":%s,"restart_count":%s,"cold_boot_verified":true,"protected_hardlinks":true,"platform_mutation_lock":true,"connector_listener_count":0,"qualification_credentials":"throwaway-local","relay_endpoint":"loopback-refused"}\n' \
+  printf '{"schema":"owntransit.qualify.linux-%s-reboot.v1","result":"pass","platform":"linux","architecture":"%s","release_id":"%s","release_sequence":%s,"checksums_sha256":"%s","connector_sha256":"%s","unit_sha256":"%s","prepared_boot_id":"%s","verified_boot_id":"%s","verified_unix":%s,"unit_enabled":true,"active_state":"active","sub_state":"running","main_pid":%s,"restart_count":%s,"cold_boot_verified":true,"active_package_recovery":true,"protected_hardlinks":true,"platform_mutation_lock":true,"connector_listener_count":0,"qualification_credentials":"throwaway-local","relay_endpoint":"loopback-refused"}\n' \
     "$qualification_arch" "$qualification_arch" "$recorded_release_id" "$recorded_release_sequence" "$recorded_checksums" "$recorded_connector" "$recorded_unit" "$prepared_boot_id" "$boot_id" "$verified_unix" "$main_pid" "$restart_count" > "$evidence"
   chmod 0644 "$evidence"
   cat "$evidence"
