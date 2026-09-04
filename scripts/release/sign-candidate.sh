@@ -43,6 +43,7 @@ usage: sign-candidate.sh \
   [--anchor-lifecycle-floor NONNEGATIVE_INTEGER] \
   [--anchor-policy-key-id KEY_ID] \
   [--anchor-tombstones none] \
+  [--preflight-only] \
   --output ABSOLUTE_NEW_DIRECTORY
 
 Creates one offline, atomically published candidate handoff. The fixed output
@@ -83,6 +84,7 @@ anchor_lifecycle_floor=0
 anchor_policy_key_id=
 anchor_tombstones=
 output=
+preflight_only=0
 
 while test "$#" -gt 0; do
   case "$1" in
@@ -115,6 +117,11 @@ while test "$#" -gt 0; do
         --anchor-tombstones) anchor_tombstones=$value ;;
         --output) output=$value ;;
       esac
+      ;;
+    --preflight-only)
+      test "$preflight_only" -eq 0 || fail "--preflight-only may appear only once"
+      preflight_only=1
+      shift
       ;;
     -h|--help) usage; exit 0 ;;
     *) fail "unknown argument $1" ;;
@@ -220,6 +227,77 @@ directory_metadata() {
   fi
 }
 
+validate_private_key_path() {
+  private_key_path=$1
+  private_key_label=$2
+  expected_uid=$(id -u) || fail "cannot determine current effective UID"
+  case "$expected_uid" in ''|*[!0-9]*) fail "current effective UID is invalid" ;; esac
+
+  if test "$(uname -s)" = Darwin; then
+    private_key_kind=$(stat -f %HT -- "$private_key_path") || fail "cannot inspect $private_key_label"
+    private_key_owner=$(stat -f %u -- "$private_key_path") || fail "cannot inspect $private_key_label owner"
+    private_key_links=$(stat -f %l -- "$private_key_path") || fail "cannot inspect $private_key_label link count"
+    private_key_mode=$(darwin_mode "$private_key_path") || fail "cannot inspect $private_key_label mode"
+  else
+    private_key_metadata=$(stat -c '%F|%u|%h|%a' -- "$private_key_path") || fail "cannot inspect $private_key_label"
+    private_key_kind=${private_key_metadata%%|*}
+    private_key_rest=${private_key_metadata#*|}
+    private_key_owner=${private_key_rest%%|*}
+    private_key_rest=${private_key_rest#*|}
+    private_key_links=${private_key_rest%%|*}
+    private_key_mode=${private_key_rest#*|}
+  fi
+
+  case "$private_key_owner" in ''|*[!0-9]*) fail "$private_key_label owner is invalid" ;; esac
+  case "$private_key_links" in ''|*[!0-9]*) fail "$private_key_label link count is invalid" ;; esac
+  if test "$(uname -s)" = Darwin; then
+    test "$private_key_kind" = "Regular File" || fail "$private_key_label must be an actual regular file"
+  else
+    test "$private_key_kind" = "regular file" || fail "$private_key_label must be an actual regular file"
+  fi
+  test "$private_key_owner" -eq "$expected_uid" || fail "$private_key_label must be owned by the current effective UID"
+  test "$private_key_links" -eq 1 || fail "$private_key_label must have exactly one hard link"
+  case "$private_key_mode" in 400|600) ;; *) fail "$private_key_label mode must be 0400 or 0600" ;; esac
+
+  if test "$(uname -s)" = Darwin; then
+    protected_path=$private_key_path
+    key_entry=1
+    while :; do
+      protected_kind=$(stat -f %HT -- "$protected_path") || fail "cannot stat protected $private_key_label path: $protected_path"
+      if test "$key_entry" -eq 1; then
+        test "$protected_kind" = "Regular File" || fail "$private_key_label must be an actual regular file"
+      else
+        test "$protected_kind" = Directory || fail "$private_key_label protected ancestor is not a directory: $protected_path"
+      fi
+      protected_owner=$(stat -f %u -- "$protected_path") || fail "cannot inspect protected $private_key_label owner: $protected_path"
+      case "$protected_owner" in ''|*[!0-9]*) fail "protected $private_key_label owner is invalid: $protected_path" ;; esac
+      if test "$key_entry" -eq 1; then
+        test "$protected_owner" -eq "$expected_uid" || fail "$private_key_label must be owned by the current effective UID"
+      else
+        test "$protected_owner" -eq 0 || test "$protected_owner" -eq "$expected_uid" ||
+          fail "$private_key_label protected ancestor must be owned by root or the current effective UID: $protected_path"
+      fi
+      acl_listing=$(ls -lde -- "$protected_path") || fail "cannot inspect protected $private_key_label ACL: $protected_path"
+      test "$(printf '%s\n' "$acl_listing" | wc -l | tr -d '[:space:]')" -eq 1 || {
+        if test "$key_entry" -eq 1; then
+          fail "$private_key_label has an extended ACL"
+        fi
+        fail "$private_key_label protected ancestor has an extended ACL: $protected_path"
+      }
+      if test "$key_entry" -ne 1; then
+        protected_mode=$(darwin_mode "$protected_path") || fail "cannot inspect protected $private_key_label mode: $protected_path"
+        case "$protected_mode" in [0-7][0-7][0-7]) ;; *) fail "$private_key_label protected ancestor has special or invalid mode bits: $protected_path" ;; esac
+        protected_permissions=$((0$protected_mode))
+        test $((protected_permissions & 022)) -eq 0 ||
+          fail "$private_key_label protected ancestor is group- or world-writable: $protected_path"
+      fi
+      test "$protected_path" = / && break
+      protected_path=$(dirname -- "$protected_path")
+      key_entry=0
+    done
+  fi
+}
+
 canonical_directory "$bundle" bundle
 canonical_directory "$source_root" source-root
 canonical_file "$candidate_ledger" candidate-ledger
@@ -232,6 +310,10 @@ canonical_file "$distribution_key" distribution-key
 canonical_file "$distribution_public_key" distribution-public-key
 canonical_file "$allowed_signers" allowed-signers
 test -x "$releasectl" || fail "releasectl must be executable"
+
+validate_private_key_path "$release_private_key" "release private key"
+validate_private_key_path "$policy_private_key" "policy private key"
+validate_private_key_path "$distribution_key" "distribution private key"
 
 for signing_or_trust_input in \
   "$release_private_key" "$release_public_key" \
@@ -320,6 +402,14 @@ test -n "$release_key_id" && test -n "$policy_key_id" || fail "public key ID is 
 test "$(printf '%s\n' "$release_key_id" | wc -l | tr -d '[:space:]')" -eq 1 || fail "release public key ID is malformed"
 test "$(printf '%s\n' "$policy_key_id" | wc -l | tr -d '[:space:]')" -eq 1 || fail "policy public key ID is malformed"
 test "$release_key_id" != "$policy_key_id" || fail "release and policy public key IDs must be different"
+release_keypair_output=$("$releasectl" verify-keypair --private-key "$release_private_key" --public-key "$release_public_key") ||
+  fail "release private and public keys do not form one Ed25519 keypair"
+test "$release_keypair_output" = "verified Ed25519 keypair $release_key_id" ||
+  fail "release keypair verification returned unexpected identity"
+policy_keypair_output=$("$releasectl" verify-keypair --private-key "$policy_private_key" --public-key "$policy_public_key") ||
+  fail "policy private and public keys do not form one Ed25519 keypair"
+test "$policy_keypair_output" = "verified Ed25519 keypair $policy_key_id" ||
+  fail "policy keypair verification returned unexpected identity"
 if test "$anchor_policy_sequence" != 0; then
   test "$policy_key_id" = "$anchor_policy_key_id" || fail "policy public key differs from the persisted anchor"
 fi
@@ -353,6 +443,11 @@ derived_distribution_public=
 derived_data=
 expected_release_signer=
 expected_source_signer=
+
+"$project_root/packaging/macos/sign-checksums.sh" \
+  --preflight-only \
+  --signing-key "$distribution_key" >/dev/null ||
+  fail "distribution key custody preflight failed"
 
 build_inputs="$bundle/BUILD-INPUTS"
 canonical_file "$build_inputs" BUILD-INPUTS
@@ -393,17 +488,20 @@ test "${#source_manifest_sha256}" -eq 64 || fail "source manifest digest must co
 # 10/6/10/1 candidate signed from public commit 5ce5245c was abandoned before
 # publication when the v0.1.0 qualification scope was simplified. The private
 # 11/7/11/1 candidate signed from public commit 442a5696 was rejected when live
-# qualification exposed a post-READY doctor teardown false negative.
+# qualification exposed a post-READY doctor teardown false negative. The
+# 12/8/12/1 ceremony from public commit 117e24eb reached release-manifest and
+# policy signature issuance, then failed the distribution-key protected-
+# ancestor ACL check before atomic handoff publication.
 # Signature issuance consumes its release and policy sequences even when a
 # handoff is not published, so none of those tuples may be reused. The next
 # issuance advances from the still-official RC7 3/5/1 policy anchor and skips
-# all four consumed policy sequences. Keep the candidate and anchor tuples
+# all five consumed policy sequences. Keep the candidate and anchor tuples
 # fixed in the offline signing conductor rather than relying on an operator to
 # remember correlated values during the signing ceremony.
 if test "$version" = 0.1.0; then
-  test "$release_sequence" = 12 || fail "OwnTransit 0.1.0 requires release sequence 12"
-  test "$policy_sequence" = 8 || fail "OwnTransit 0.1.0 requires policy sequence 8"
-  test "$release_floor" = 12 || fail "OwnTransit 0.1.0 requires release floor 12"
+  test "$release_sequence" = 13 || fail "OwnTransit 0.1.0 requires release sequence 13"
+  test "$policy_sequence" = 9 || fail "OwnTransit 0.1.0 requires policy sequence 9"
+  test "$release_floor" = 13 || fail "OwnTransit 0.1.0 requires release floor 13"
   test "$lifecycle_floor" = 1 || fail "OwnTransit 0.1.0 requires lifecycle floor 1"
   test "$anchor_policy_sequence" = 3 || fail "OwnTransit 0.1.0 requires RC7 anchor policy sequence 3"
   test "$anchor_release_floor" = 5 || fail "OwnTransit 0.1.0 requires RC7 anchor release floor 5"
@@ -523,15 +621,22 @@ grep -Fq -- "\"sequence\":$release_sequence,\"created_unix\":$source_date_epoch,
 grep -Fq -- "\"source\":{\"repository\":\"https://github.com/sentrybottale/owntransit\",\"commit\":\"$source_commit\",\"dirty\":false,\"source_manifest_sha256\":\"$source_manifest_sha256\"}" "$manifest" || fail "release manifest source identity does not match BUILD-INPUTS"
 grep -Fq -- '"toolchain":{"go_version":"go1.26.7"' "$manifest" || fail "release manifest does not use the pinned Go toolchain"
 
-"$releasectl" sign-manifest --manifest "$manifest" --release-private-key "$release_private_key" --out "$signature" || fail "release manifest signing failed"
-verify_output=$("$releasectl" verify-bundle --bundle "$publish/assets/native" --manifest "$manifest" --signature "$signature" --release-public-key "$trusted_release_public") || fail "signed release bundle verification failed"
-test "$verify_output" = "verified release $release_id sequence $release_sequence key $release_key_id" || fail "release verification returned unexpected identity"
-
 policy="$publish/assets/RELEASE-POLICY.json"
 policy_signature="$publish/assets/RELEASE-POLICY.sig"
 "$releasectl" policy --out "$policy" --release-public-key "$trusted_release_public" \
   --sequence "$policy_sequence" --created-unix "$source_date_epoch" \
   --release-floor "$release_floor" --lifecycle-floor "$lifecycle_floor" || fail "release policy construction failed"
+
+if test "$preflight_only" -eq 1; then
+  printf 'candidate signing preflight passed: version=%s release_id=%s release_sequence=%s policy_sequence=%s\n' \
+    "$version" "$release_id" "$release_sequence" "$policy_sequence"
+  exit 0
+fi
+
+"$releasectl" sign-manifest --manifest "$manifest" --release-private-key "$release_private_key" --out "$signature" || fail "release manifest signing failed"
+verify_output=$("$releasectl" verify-bundle --bundle "$publish/assets/native" --manifest "$manifest" --signature "$signature" --release-public-key "$trusted_release_public") || fail "signed release bundle verification failed"
+test "$verify_output" = "verified release $release_id sequence $release_sequence key $release_key_id" || fail "release verification returned unexpected identity"
+
 "$releasectl" sign-policy --policy "$policy" --policy-private-key "$policy_private_key" --out "$policy_signature" || fail "release policy signing failed"
 "$releasectl" verify-policy --policy "$policy" --signature "$policy_signature" --policy-public-key "$trusted_policy_public" \
   --anchor-policy-sequence "$anchor_policy_sequence" \

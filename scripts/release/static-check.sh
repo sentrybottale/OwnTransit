@@ -483,9 +483,9 @@ if grep -Fq 'source=$temporary,target=/output' scripts/release/archive-native.sh
 fi
 
 require_text scripts/release/sign-candidate.sh 'release and policy public key IDs must be different'
-require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires release sequence 12'
-require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires policy sequence 8'
-require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires release floor 12'
+require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires release sequence 13'
+require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires policy sequence 9'
+require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires release floor 13'
 require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires lifecycle floor 1'
 require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires RC7 anchor policy sequence 3'
 require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires RC7 anchor release floor 5'
@@ -494,6 +494,22 @@ require_text scripts/release/sign-candidate.sh 'Signature issuance consumes its 
 require_text scripts/tests/sign-candidate.sh 'a rejected 0.1.0 stable tuple reached a signing operation'
 require_text scripts/tests/sign-candidate.sh 'burned-private-scope-candidate-anchor'
 require_text scripts/tests/sign-candidate.sh 'burned-private-live-candidate-anchor'
+require_text scripts/tests/sign-candidate.sh 'burned-private-custody-candidate-anchor'
+require_text packaging/macos/sign-checksums.sh '--preflight-only'
+require_text scripts/release/sign-candidate.sh 'distribution key custody preflight failed'
+require_text scripts/release/sign-candidate.sh 'verify-keypair --private-key "$release_private_key"'
+require_text scripts/release/sign-candidate.sh 'verify-keypair --private-key "$policy_private_key"'
+require_text scripts/release/sign-candidate.sh 'candidate signing preflight passed:'
+
+release_keypair_preflight_line=$(grep -nF 'verify-keypair --private-key "$release_private_key"' scripts/release/sign-candidate.sh | head -n 1 | cut -d: -f1)
+policy_keypair_preflight_line=$(grep -nF 'verify-keypair --private-key "$policy_private_key"' scripts/release/sign-candidate.sh | head -n 1 | cut -d: -f1)
+distribution_custody_preflight_line=$(grep -nF 'fail "distribution key custody preflight failed"' scripts/release/sign-candidate.sh | head -n 1 | cut -d: -f1)
+first_candidate_signature_line=$(grep -nF '"$releasectl" sign-manifest' scripts/release/sign-candidate.sh | head -n 1 | cut -d: -f1)
+for preflight_line in "$release_keypair_preflight_line" "$policy_keypair_preflight_line" "$distribution_custody_preflight_line"; do
+  test -n "$preflight_line" && test -n "$first_candidate_signature_line" &&
+    test "$preflight_line" -lt "$first_candidate_signature_line" ||
+    fail 'candidate key preflight must run before the first sequence-consuming signature'
+done
 require_text scripts/release/build-artifacts.sh 'committed CHANGELOG.md has no exact release heading for $version'
 require_text scripts/release/build-artifacts.sh 'git -C "$checkout_root" archive --format=tar --output="$source_archive" "$source_commit"'
 require_text scripts/release/build-artifacts.sh 'project_root=$source_root'

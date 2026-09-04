@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -89,7 +90,7 @@ func main() {
 
 func run(arguments []string, output io.Writer) error {
 	if len(arguments) == 0 {
-		return errors.New("command required: candidate-init, candidate-verify, public-key-id, evidence, manifest, sign-manifest, verify-bundle, policy, sign-policy, or verify-policy")
+		return errors.New("command required: candidate-init, candidate-verify, public-key-id, verify-keypair, evidence, manifest, sign-manifest, verify-bundle, policy, sign-policy, or verify-policy")
 	}
 	switch arguments[0] {
 	case "candidate-init":
@@ -98,6 +99,8 @@ func run(arguments []string, output io.Writer) error {
 		return candidateVerifyCommand(arguments[1:], output)
 	case "public-key-id":
 		return publicKeyIDCommand(arguments[1:], output)
+	case "verify-keypair":
+		return verifyKeyPairCommand(arguments[1:], output)
 	case "evidence":
 		return evidenceCommand(arguments[1:])
 	case "manifest":
@@ -332,6 +335,46 @@ func publicKeyIDCommand(arguments []string, output io.Writer) error {
 		return fmt.Errorf("public-key-id: %w", err)
 	}
 	_, err = fmt.Fprintln(output, signing.KeyID(key))
+	return err
+}
+
+func verifyKeyPairCommand(arguments []string, output io.Writer) error {
+	flags := flag.NewFlagSet("verify-keypair", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	privatePath, publicPath := "", ""
+	flags.StringVar(&privatePath, "private-key", "", "PKCS#8 Ed25519 private key")
+	flags.StringVar(&publicPath, "public-key", "", "Ed25519 public key")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || privatePath == "" || publicPath == "" {
+		return errors.New("private-key and public-key are required")
+	}
+
+	privateBytes, err := readBounded(privatePath, 64<<10, true)
+	if err != nil {
+		return err
+	}
+	defer wipe(privateBytes)
+	privateKey, err := signing.ParsePrivate(privateBytes)
+	if err != nil {
+		return err
+	}
+	defer wipe(privateKey)
+
+	publicBytes, err := readBounded(publicPath, 64<<10, false)
+	if err != nil {
+		return err
+	}
+	publicKey, err := signing.ParsePublic(publicBytes)
+	if err != nil {
+		return err
+	}
+	derivedPublic, ok := privateKey.Public().(ed25519.PublicKey)
+	if !ok || !bytes.Equal(derivedPublic, publicKey) {
+		return errors.New("private and public Ed25519 keys do not match")
+	}
+	_, err = fmt.Fprintf(output, "verified Ed25519 keypair %s\n", signing.KeyID(publicKey))
 	return err
 }
 

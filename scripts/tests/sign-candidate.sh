@@ -259,6 +259,17 @@ case "$command_name" in
       *) printf '%s\n' sha256/same ;;
     esac
     ;;
+  verify-keypair)
+    private_key=$(argument --private-key "$@")
+    public_key=$(argument --public-key "$@")
+    key_pair=$(printf '%s|%s' "$(sed -n '1p' "$private_key")" "$(sed -n '1p' "$public_key")")
+    case "$key_pair" in
+      release-private\|release-public) key_id=sha256/release ;;
+      policy-private\|policy-public) key_id=sha256/policy ;;
+      *) exit 1 ;;
+    esac
+    printf 'verified Ed25519 keypair %s\n' "$key_id"
+    ;;
   sign-manifest|sign-policy)
     out=$(argument --out "$@")
     printf '%s\n' "$command_name-signature" > "$out"
@@ -320,6 +331,7 @@ invoke_signer() {
   selected_anchor_tombstones=${12:-}
   selected_source_root=${13:-$workspace/source}
   selected_source_commit=${14:-$source_commit}
+  selected_preflight_only=${15:-0}
   set -- "$signer" \
     --bundle "$bundle" \
     --candidate "$selected_candidate" \
@@ -347,6 +359,9 @@ invoke_signer() {
   if test -n "$selected_anchor_tombstones"; then
     set -- "$@" --anchor-tombstones "$selected_anchor_tombstones"
   fi
+  if test "$selected_preflight_only" -eq 1; then
+    set -- "$@" --preflight-only
+  fi
   "$@"
 }
 
@@ -370,6 +385,19 @@ printf '%s\n' "$changelog_rejection" | grep -Fq "committed CHANGELOG.md has no e
   fail "missing changelog release heading was rejected for the wrong reason: $changelog_rejection"
 test ! -e "$workspace/output-parent/rejected-changelog" || fail "missing changelog release heading created output"
 
+preflight_output="$workspace/output-parent/preflight-candidate"
+invoke_signer "$workspace/keys/policy-public.pem" "$preflight_output" "$workspace/keys/allowed_signers" \
+  1 1 2 0 0 0 "$candidate" '' '' "$workspace/source" "$source_commit" 1 \
+  > "$workspace/sign-candidate-preflight.out"
+grep -Fq 'candidate signing preflight passed:' "$workspace/sign-candidate-preflight.out" ||
+  fail "candidate preflight did not report success"
+test ! -e "$preflight_output" || fail "candidate preflight published an output handoff"
+if grep -Eq '^sign-(manifest|policy)$' "$workspace/fake-releasectl.calls"; then
+  fail "candidate preflight reached a sequence-consuming signature operation"
+fi
+: > "$workspace/fake-releasectl.calls"
+: > "$workspace/fake-releasectl.policy-anchors"
+
 invoke_signer "$workspace/keys/policy-public.pem" "$output" > "$workspace/sign-candidate.out"
 grep -Fq "created signed candidate handoff: $output" "$workspace/sign-candidate.out" || fail "positive conductor did not report its atomic output"
 grep -Fq "release_id=$release_id" "$workspace/sign-candidate.out" || fail "positive conductor reported the wrong release ID"
@@ -377,12 +405,14 @@ expected_releasectl_calls="$workspace/expected-releasectl.calls"
 printf '%s\n' \
   public-key-id \
   public-key-id \
+  verify-keypair \
+  verify-keypair \
   public-key-id \
   public-key-id \
   candidate-verify \
+  policy \
   sign-manifest \
   verify-bundle \
-  policy \
   sign-policy \
   verify-policy \
   verify-bundle \
@@ -392,6 +422,40 @@ cmp -s "$expected_releasectl_calls" "$workspace/fake-releasectl.calls" || fail "
 printf '%s\n' 'policy=1 anchor=0/0/0' 'policy=1 anchor=0/0/0' > "$workspace/expected-policy-anchors"
 cmp -s "$workspace/expected-policy-anchors" "$workspace/fake-releasectl.policy-anchors" ||
   fail "initial conductor did not verify policy twice against the exact empty anchor"
+
+sign_calls_before=$(grep -Ec '^sign-(manifest|policy)$' "$workspace/fake-releasectl.calls")
+ln "$distribution_key" "$workspace/keys/distribution-hardlink"
+if hardlink_rejection=$(invoke_signer "$workspace/keys/policy-public.pem" \
+  "$workspace/output-parent/rejected-distribution-hardlink" 2>&1); then
+  fail "candidate signing accepted a multiply linked distribution private key"
+fi
+printf '%s\n' "$hardlink_rejection" | grep -Fq 'distribution private key must have exactly one hard link' ||
+  fail "multiply linked distribution key was rejected for the wrong reason: $hardlink_rejection"
+rm "$workspace/keys/distribution-hardlink"
+test "$(grep -Ec '^sign-(manifest|policy)$' "$workspace/fake-releasectl.calls")" -eq "$sign_calls_before" ||
+  fail "distribution key custody rejection reached a sequence-consuming signature operation"
+
+printf '%s\n' mismatch-private > "$workspace/keys/release-private.pem"
+if release_pair_rejection=$(invoke_signer "$workspace/keys/policy-public.pem" \
+  "$workspace/output-parent/rejected-release-keypair" 2>&1); then
+  fail "candidate signing accepted a mismatched release keypair"
+fi
+printf '%s\n' "$release_pair_rejection" | grep -Fq 'release private and public keys do not form one Ed25519 keypair' ||
+  fail "mismatched release keypair was rejected for the wrong reason: $release_pair_rejection"
+printf '%s\n' release-private > "$workspace/keys/release-private.pem"
+test "$(grep -Ec '^sign-(manifest|policy)$' "$workspace/fake-releasectl.calls")" -eq "$sign_calls_before" ||
+  fail "release keypair rejection reached a sequence-consuming signature operation"
+
+printf '%s\n' mismatch-private > "$workspace/keys/policy-private.pem"
+if policy_pair_rejection=$(invoke_signer "$workspace/keys/policy-public.pem" \
+  "$workspace/output-parent/rejected-policy-keypair" 2>&1); then
+  fail "candidate signing accepted a mismatched policy keypair"
+fi
+printf '%s\n' "$policy_pair_rejection" | grep -Fq 'policy private and public keys do not form one Ed25519 keypair' ||
+  fail "mismatched policy keypair was rejected for the wrong reason: $policy_pair_rejection"
+printf '%s\n' policy-private > "$workspace/keys/policy-private.pem"
+test "$(grep -Ec '^sign-(manifest|policy)$' "$workspace/fake-releasectl.calls")" -eq "$sign_calls_before" ||
+  fail "policy keypair rejection reached a sequence-consuming signature operation"
 
 chmod 1644 "$bundle/LICENSE"
 special_mode_output="$workspace/output-parent/rejected-special-mode"
@@ -777,19 +841,19 @@ expect_stable_freeze_rejection() {
 version=0.1.0
 stable_candidate="$workspace/candidate-stable.json"
 printf '%s\n' \
-  "{\"schema\":\"owntransit.release-candidate-ledger.v1\",\"status\":\"qualification-only\",\"version\":\"$version\",\"release_id\":\"$release_id\",\"release_sequence\":12,\"policy_sequence\":8,\"minimum_release_sequence\":12,\"minimum_lifecycle\":1,\"source_commit\":\"$source_commit\",\"source_date_epoch\":$source_date_epoch}" \
+  "{\"schema\":\"owntransit.release-candidate-ledger.v1\",\"status\":\"qualification-only\",\"version\":\"$version\",\"release_id\":\"$release_id\",\"release_sequence\":13,\"policy_sequence\":9,\"minimum_release_sequence\":13,\"minimum_lifecycle\":1,\"source_commit\":\"$source_commit\",\"source_date_epoch\":$source_date_epoch}" \
   > "$stable_candidate"
 chmod 0600 "$stable_candidate"
 
 stable_rejection_sign_calls_before=$(grep -c '^sign-manifest$' "$workspace/fake-releasectl.calls")
 expect_stable_freeze_rejection release-sequence \
-  'OwnTransit 0.1.0 requires release sequence 12' 11 8 12 1
+  'OwnTransit 0.1.0 requires release sequence 13' 12 9 13 1
 expect_stable_freeze_rejection policy-sequence \
-  'OwnTransit 0.1.0 requires policy sequence 8' 12 7 12 1
+  'OwnTransit 0.1.0 requires policy sequence 9' 13 8 13 1
 expect_stable_freeze_rejection release-floor \
-  'OwnTransit 0.1.0 requires release floor 12' 12 8 11 1
+  'OwnTransit 0.1.0 requires release floor 13' 13 9 12 1
 expect_stable_freeze_rejection lifecycle-floor \
-  'OwnTransit 0.1.0 requires lifecycle floor 1' 12 8 12 2
+  'OwnTransit 0.1.0 requires lifecycle floor 1' 13 9 13 2
 
 expect_stable_anchor_rejection() {
   rejection_name=$1
@@ -797,10 +861,10 @@ expect_stable_anchor_rejection() {
   selected_anchor_policy_sequence=$3
   selected_anchor_release_floor=$4
   selected_anchor_lifecycle_floor=$5
-  rewrite_bundle_contract 0.1.0 12 1
+  rewrite_bundle_contract 0.1.0 13 1
   rejection_path="$workspace/output-parent/rejected-stable-$rejection_name"
   if rejection_text=$(invoke_signer "$workspace/keys/policy-public.pem" "$rejection_path" "$workspace/keys/allowed_signers" \
-    8 12 1 "$selected_anchor_policy_sequence" "$selected_anchor_release_floor" "$selected_anchor_lifecycle_floor" \
+    9 13 1 "$selected_anchor_policy_sequence" "$selected_anchor_release_floor" "$selected_anchor_lifecycle_floor" \
     "$stable_candidate" sha256/policy none 2>&1); then
     fail "0.1.0 stable signing accepted the wrong $rejection_name"
   fi
@@ -817,6 +881,8 @@ expect_stable_anchor_rejection burned-private-scope-candidate-anchor \
   'OwnTransit 0.1.0 requires RC7 anchor policy sequence 3' 6 10 1
 expect_stable_anchor_rejection burned-private-live-candidate-anchor \
   'OwnTransit 0.1.0 requires RC7 anchor policy sequence 3' 7 11 1
+expect_stable_anchor_rejection burned-private-custody-candidate-anchor \
+  'OwnTransit 0.1.0 requires RC7 anchor policy sequence 3' 8 12 1
 expect_stable_anchor_rejection anchor-release-floor \
   'OwnTransit 0.1.0 requires RC7 anchor release floor 5' 3 6 1
 expect_stable_anchor_rejection anchor-lifecycle-floor \
@@ -824,14 +890,14 @@ expect_stable_anchor_rejection anchor-lifecycle-floor \
 test "$(grep -c '^sign-manifest$' "$workspace/fake-releasectl.calls")" = "$stable_rejection_sign_calls_before" ||
   fail "a rejected 0.1.0 stable tuple reached a signing operation"
 
-rewrite_bundle_contract 0.1.0 12 1
+rewrite_bundle_contract 0.1.0 13 1
 stable_output="$workspace/output-parent/stable-candidate"
 invoke_signer "$workspace/keys/policy-public.pem" "$stable_output" "$workspace/keys/allowed_signers" \
-  8 12 1 3 5 1 "$stable_candidate" sha256/policy none > "$workspace/sign-candidate-stable.out"
+  9 13 1 3 5 1 "$stable_candidate" sha256/policy none > "$workspace/sign-candidate-stable.out"
 grep -Fq "created signed candidate handoff: $stable_output" "$workspace/sign-candidate-stable.out" ||
   fail "exact 0.1.0 stable signing tuple did not produce its atomic handoff"
 test "$(cat "$stable_output/assets/RELEASE-POLICY.json")" = \
-  '{"schema":"fixture-policy","sequence":8,"minimum_release_sequence":12,"minimum_lifecycle":1}' ||
+  '{"schema":"fixture-policy","sequence":9,"minimum_release_sequence":13,"minimum_lifecycle":1}' ||
   fail "0.1.0 stable handoff did not preserve the frozen signed policy tuple"
 
 printf '%s\n' 'sign-candidate full-conductor and fail-closed tests passed'

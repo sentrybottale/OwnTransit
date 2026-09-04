@@ -17,7 +17,10 @@ This directory is intentionally offline and split into three boundaries:
   Uninstall removes only enumerated program paths and preserves all state.
 - `releasectl` constructs and verifies canonical SPDX 2.3 SBOMs, third-party
   license texts, the exact Apache-2.0 project LICENSE digest, build provenance,
-  signed release manifests and signed monotonic release policy. It has no
+  signed release manifests and signed monotonic release policy. Its
+  non-signing `verify-keypair` command proves each PKCS#8 Ed25519 private key
+  matches the intended public authority before a ceremony consumes a sequence.
+  It has no
   network updater, mutable `latest` input, publication path or deployment-key
   command. The release signer and release-policy signer remain independent of
   the endpoint deployment signer.
@@ -74,6 +77,9 @@ independently prepared `allowed_signers` trust file, a clean source checkout
 and an explicit native bundle. It never generates keys. Before atomic output
 publication it:
 
+- validates all three private-key paths and protected ancestors, proves the
+  release and policy private/public pairs, and runs the distribution signer's
+  exact no-signature custody preflight before any signature is created;
 - verifies the candidate ledger against `BUILD-INPUTS`, policy floors, and the
   exact clean Git HEAD commit and commit timestamp in the source root;
 - rejects reuse of one release/policy key ID;
@@ -85,6 +91,15 @@ publication it:
 - creates and separately SSHSIG-signs one canonical trust statement which
   binds the release/source identity, all three public-authority files, the
   exact `allowed_signers` bytes, and the outer asset inventory digest.
+
+Run the complete command once with `--preflight-only` before the irreversible
+ceremony. It validates the frozen source, candidate ledger, bundle, tuple,
+private-key custody, all three keypair bindings, trust inputs, manifest inputs
+and policy construction, then removes its temporary workspace without creating
+a signature or publishing the requested output directory. Run the identical
+command again without `--preflight-only` only after that preflight succeeds.
+Normal signing repeats every preflight check so changed inputs still fail
+closed.
 
 The result has this fixed handoff shape:
 
@@ -152,8 +167,8 @@ policy-anchor JSON does not contain that key identity. Derive that identity
 from the already trusted prior key with `releasectl public-key-id`, never from
 the candidate's copy. This helper does not support policy-key rotation.
 
-The `0.1.0` stable handoff is deliberately frozen to release sequence `12`,
-policy sequence `8`, minimum release sequence `12`, and minimum lifecycle `1`.
+The `0.1.0` stable handoff is deliberately frozen to release sequence `13`,
+policy sequence `9`, minimum release sequence `13`, and minimum lifecycle `1`.
 The signing conductor rejects every other candidate tuple and requires the
 still-official RC7 policy anchor `3/5/1` before any signature operation. This
 floor is mandatory: RC5-RC7 predate the hardened macOS launcher/package
@@ -178,11 +193,15 @@ sequence `10` and policy sequence `6`. A fourth private candidate from public
 commit `442a5696` was signed with tuple `11/7/11/1`, then rejected when live
 qualification exposed a post-READY doctor teardown false negative. It was
 never tagged, uploaded, or publicly distributed, but that signature consumed
-release sequence `11` and policy sequence `7`. The next ceremony therefore
-uses `12/8/12/1` and verifies policy sequence `8` as a strict advance from the
-still-official RC7 anchor rather than treating any abandoned policy as
-official persisted trust. No abandoned artifact, ledger, signature set, or
-qualification evidence is an input to the next handoff.
+release sequence `11` and policy sequence `7`. A fifth private attempt from
+public commit `117e24eb` issued the release-manifest and policy signatures for
+tuple `12/8/12/1`, then failed the protected-ancestor ACL preflight before
+atomic handoff publication. That attempt consumed release sequence `12` and
+policy sequence `8`. The next ceremony therefore uses `13/9/13/1` and verifies
+policy sequence `9` as a strict advance from the still-official RC7 anchor
+rather than treating any abandoned policy as official persisted trust. No
+abandoned artifact, ledger, signature set, or qualification evidence is an
+input to the next handoff.
 
 Fresh endpoints can bootstrap the currently trusted policy against their empty
 local anchor. An upgraded endpoint independently requires the new policy
@@ -191,7 +210,7 @@ disappear, and the pinned policy signer not to change. During a canary, retainin
 the previous release floor preserves authenticated rollback only when the two
 package layouts are explicitly qualified as rollback-compatible. Raising the
 floor to the candidate sequence deliberately burns that rollback. For `0.1.0`,
-floor `12` is a fixed safety requirement rather than an optional canary choice.
+floor `13` is a fixed safety requirement rather than an optional canary choice.
 
 The independently authenticated OpenSSH key authorized as
 `owntransit-release` in `allowed_signers` is the privileged package-bootstrap

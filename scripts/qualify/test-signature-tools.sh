@@ -42,6 +42,24 @@ printf 'owntransit-source %s %s\n' "$key_type" "$key_data" > "$workspace/source-
 mkdir "$workspace/staging" "$workspace/evidence"
 printf '%s\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  artifacts/example' > "$workspace/staging/SHA256SUMS"
 
+preflight_output=$("$project_root/packaging/macos/sign-checksums.sh" \
+  --preflight-only \
+  --signing-key "$workspace/signing-key")
+test -z "$preflight_output" || fail "checksum signing preflight produced output"
+test -z "$(find "$workspace" -name '*.sig' -print)" ||
+  fail "checksum signing preflight created a signature"
+
+expect_checksum_preflight_failure() {
+  expected_message=$1
+  rejected_key=$2
+  if rejection_output=$("$project_root/packaging/macos/sign-checksums.sh" \
+    --preflight-only --signing-key "$rejected_key" 2>&1); then
+    fail "checksum signing preflight accepted a rejected key: $expected_message"
+  fi
+  printf '%s\n' "$rejection_output" | grep -Fq "$expected_message" ||
+    fail "checksum signing preflight failed for the wrong reason: $rejection_output"
+}
+
 expect_checksum_key_failure() {
   expected_message=$1
   rejected_key=$2
@@ -89,6 +107,9 @@ expect_checksum_key_failure \
 
 cp "$workspace/signing-key" "$workspace/hardlinked-key"
 ln "$workspace/hardlinked-key" "$workspace/hardlinked-key-alias"
+expect_checksum_preflight_failure \
+  'signing key must have exactly one hard link' \
+  "$workspace/hardlinked-key"
 expect_checksum_key_failure \
   'signing key must have exactly one hard link' \
   "$workspace/hardlinked-key" \
@@ -145,6 +166,9 @@ if test "$(uname -s)" = Darwin; then
   cp "$workspace/signing-key" "$workspace/acl-ancestor/key-vault/signing-key"
   chmod 0600 "$workspace/acl-ancestor/key-vault/signing-key"
   chmod +a 'everyone deny delete' "$workspace/acl-ancestor"
+  expect_checksum_preflight_failure \
+    'protected key ancestor has an extended ACL' \
+    "$workspace/acl-ancestor/key-vault/signing-key"
   expect_checksum_key_failure \
     'protected key ancestor has an extended ACL' \
     "$workspace/acl-ancestor/key-vault/signing-key" \

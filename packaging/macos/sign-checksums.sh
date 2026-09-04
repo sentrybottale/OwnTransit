@@ -24,7 +24,10 @@ fail() {
 
 usage() {
   cat <<'EOF'
-usage: sign-checksums.sh \
+usage: sign-checksums.sh --preflight-only \
+  --signing-key ABSOLUTE_ED25519_SSH_PRIVATE_KEY
+
+or: sign-checksums.sh \
   --subject ABSOLUTE_SHA256SUMS \
   --signing-key ABSOLUTE_ED25519_SSH_PRIVATE_KEY \
   --allowed-signers ABSOLUTE_FILE \
@@ -35,9 +38,13 @@ Signs exact checksum bytes in the fixed owntransit-release-v1 SSHSIG namespace,
 then verifies the new signature against the intended public trust anchor. The
 output is required to be outside the checksum staging tree because the native
 installers reject unauthenticated extra files in that tree.
+
+The preflight-only form performs the exact signing-key path, metadata,
+protected-ancestor and Ed25519 validation without signing or creating output.
 EOF
 }
 
+preflight_only=0
 subject=
 signing_key=
 allowed_signers=
@@ -45,6 +52,11 @@ signer=
 output=
 while test "$#" -gt 0; do
   case "$1" in
+    --preflight-only)
+      test "$preflight_only" -eq 0 || fail "--preflight-only may be supplied only once"
+      preflight_only=1
+      shift
+      ;;
     --subject|--signing-key|--allowed-signers|--signer|--output)
       test "$#" -ge 2 || fail "$1 requires a value"
       option=$1
@@ -193,6 +205,16 @@ validate_signing_key() {
     fail "signing key must be an Ed25519 private key"
   private_public=
 }
+
+if test "$preflight_only" -eq 1; then
+  test -n "$signing_key" || fail "--preflight-only requires --signing-key"
+  for preflight_unused in "$subject" "$allowed_signers" "$signer" "$output"; do
+    test -z "$preflight_unused" || fail "--preflight-only accepts only --signing-key"
+  done
+  canonical_file "$signing_key" signing-key
+  validate_signing_key
+  exit 0
+fi
 
 canonical_file "$subject" subject
 canonical_file "$signing_key" signing-key
