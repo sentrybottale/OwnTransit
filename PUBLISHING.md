@@ -219,9 +219,11 @@ candidate from public commit `5ce5245c` at tuple `10/6/10/1` was signed and
 then abandoned when the v0.1.0 release qualification scope was simplified
 before publication. A fourth private candidate from public commit `442a5696`
 at tuple `11/7/11/1` was rejected after live qualification exposed a
-post-READY doctor teardown false negative. None of those signature sets
-advances public trust, but all consume their sequence numbers; their artifacts,
-ledgers, signatures, and evidence must not be reused. The next `0.1.0`
-candidate must use a fresh release ID and tuple `12/8/12/1`, verified from the
-still-official RC7 policy anchor `3/5/1`, and requires a complete new
-qualification record.
+post-READY doctor teardown false negative. A fifth private attempt from public
+commit `117e24eb` issued the release-manifest and policy signatures for tuple
+`12/8/12/1`, then failed the protected-ancestor ACL preflight before atomic
+handoff publication. None of those signature sets advances public trust, but
+all consume their sequence numbers; their artifacts, ledgers, signatures, and
+evidence must not be reused. The next `0.1.0` candidate must use a fresh release
+ID and tuple `13/9/13/1`, verified from the still-official RC7 policy anchor
+`3/5/1`, and requires a complete new qualification record.

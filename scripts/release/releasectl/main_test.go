@@ -45,6 +45,80 @@ func TestPublicKeyIDPrintsCanonicalParsedKeyIdentity(t *testing.T) {
 	}
 }
 
+func TestVerifyKeyPairCommand(t *testing.T) {
+	root := mustCanonicalTempDir(t)
+	keys, err := signing.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	privatePath := filepath.Join(root, "private.pem")
+	publicPath := filepath.Join(root, "public.pem")
+	if err := os.WriteFile(privatePath, keys.PrivatePEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(publicPath, keys.PublicPEM, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var output bytes.Buffer
+	if err := run([]string{"verify-keypair", "--private-key", privatePath, "--public-key", publicPath}, &output); err != nil {
+		t.Fatal(err)
+	}
+	want := "verified Ed25519 keypair " + keys.KeyID + "\n"
+	if output.String() != want {
+		t.Fatalf("verify-keypair output = %q, want %q", output.String(), want)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("verify-keypair created output: %v", entries)
+	}
+}
+
+func TestVerifyKeyPairCommandRejectsMismatchAndUnknownOutput(t *testing.T) {
+	root := mustCanonicalTempDir(t)
+	first, err := signing.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := signing.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	privatePath := filepath.Join(root, "private.pem")
+	publicPath := filepath.Join(root, "public.pem")
+	if err := os.WriteFile(privatePath, first.PrivatePEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(publicPath, second.PublicPEM, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var output bytes.Buffer
+	err = run([]string{"verify-keypair", "--private-key", privatePath, "--public-key", publicPath}, &output)
+	if err == nil || !strings.Contains(err.Error(), "do not match") {
+		t.Fatalf("mismatched verify-keypair error = %v", err)
+	}
+	if output.Len() != 0 {
+		t.Fatalf("failed verify-keypair wrote output %q", output.String())
+	}
+	if err := run([]string{"verify-keypair", "--private-key", privatePath, "--public-key", publicPath, "--out", "signature"}, io.Discard); err == nil {
+		t.Fatal("verify-keypair accepted an output argument")
+	}
+	for _, arguments := range [][]string{
+		{"verify-keypair"},
+		{"verify-keypair", "--private-key", privatePath},
+		{"verify-keypair", "--public-key", publicPath},
+		{"verify-keypair", "--private-key", privatePath, "--public-key", publicPath, "trailing"},
+	} {
+		if err := run(arguments, io.Discard); err == nil {
+			t.Fatalf("verify-keypair accepted incomplete or positional arguments: %q", arguments)
+		}
+	}
+}
+
 func TestManifestAuthenticatesTheInstallEntrypoint(t *testing.T) {
 	var matches int
 	for _, evidence := range manifestPackageEvidence() {

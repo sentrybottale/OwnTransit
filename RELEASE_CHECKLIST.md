@@ -89,7 +89,7 @@ unless it reveals a source or artifact change; its status must be disclosed.
   gets a fresh release ID and strictly higher release and policy sequences; do
   not reclaim or reuse a signed tuple.
 - For the `0.1.0` stable handoff, require the frozen release/policy tuple
-  `12/8/12/1` (release sequence, policy sequence, minimum release sequence,
+  `13/9/13/1` (release sequence, policy sequence, minimum release sequence,
   minimum lifecycle). The signing conductor rejects every other tuple because
   rollback to RC5-RC7 is incompatible with the hardened macOS launcher and
   Linux provisioner package boundary.
@@ -118,10 +118,16 @@ unless it reveals a source or artifact change; its status must be disclosed.
   distributed, but its signatures permanently consumed release sequence `11`
   and policy sequence `7`; its artifacts, ledger, signatures, and failed
   qualification evidence must not be reused as release inputs.
-- The next issuance deliberately advances to `12/8/12/1` from the
+- The private `0.1.0` attempt from public commit `117e24eb` issued the
+  release-manifest and policy signatures for tuple `12/8/12/1`, then failed the
+  protected-ancestor ACL preflight before atomic handoff publication. The
+  attempt permanently consumed release sequence `12` and policy sequence `8`;
+  its unsigned bundle, ledger, signatures, and partial evidence must not be
+  reused as release inputs.
+- The next issuance deliberately advances to `13/9/13/1` from the
   still-official RC7 policy anchor `3/5/1`. Skipping consumed policy sequences
-  `4`, `5`, `6`, and `7` is intentional and does not claim that any abandoned
-  policy was applied to the official policy/custody anchor.
+  `4`, `5`, `6`, `7`, and `8` is intentional and does not claim that any
+  abandoned policy was applied to the official policy/custody anchor.
 
 ## 3. Build and authenticate the candidate
 

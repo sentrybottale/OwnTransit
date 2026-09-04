@@ -56,7 +56,7 @@ or publish artifacts automatically.
   root-only advisory lock. Interrupted stages are recoverable only through
   their exact bounded metadata profiles.
 - Froze the next `0.1.0` signing ceremony to
-  release/policy/floor/lifecycle tuple `12/8/12/1`, preventing rollback to
+  release/policy/floor/lifecycle tuple `13/9/13/1`, preventing rollback to
   RC5-RC7 package boundaries after the launcher and Linux provisioner
   migrations. The earlier private `8/4/8/1`, `9/5/9/1`, `10/6/10/1`, and
   `11/7/11/1` issuances were not publicly distributed. The `9/5/9/1` was used
@@ -64,9 +64,12 @@ or publish artifacts automatically.
   `5ce5245c` was signed and then abandoned when the v0.1.0 release
   qualification scope was simplified before publication. The `11/7/11/1`
   issuance from public commit `442a5696` was rejected when live qualification
-  exposed a post-READY doctor teardown false negative. All four abandoned
-  candidates permanently consumed their release and policy sequences; none of
-  their artifacts, ledgers, signatures, or evidence may be reused.
+  exposed a post-READY doctor teardown false negative. A fifth private attempt
+  from public commit `117e24eb` issued the release-manifest and policy
+  signatures for tuple `12/8/12/1`, then failed the protected-ancestor ACL
+  preflight before atomic handoff publication. All five abandoned attempts
+  permanently consumed their release and policy sequences; none of their
+  artifacts, ledgers, signatures, or evidence may be reused.
 - Kept the macOS provisioner release tree non-user-traversable as
   `root:wheel` mode `0750` and published a distinct `root:wheel` mode-`0755`
   public provisioner copy with the authenticated digest and a different inode.
