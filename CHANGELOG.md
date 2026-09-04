@@ -18,8 +18,8 @@ or publish artifacts automatically.
   The supported matrix is Apple-silicon macOS, Linux amd64, and Linux arm64;
   Intel macOS remains unsupported.
 - Expanded deterministic staging, manifests, SBOMs, native archives,
-  installers, and hard qualification lanes from nine artifacts to the exact
-  fourteen-artifact matrix.
+  installers, and authenticated distribution evidence from nine artifacts to
+  the exact fourteen-artifact matrix.
 
 ### Security
 
@@ -27,8 +27,10 @@ or publish artifacts automatically.
   boundary. Installed `0.1.0-rc.*` package state is not a supported in-place
   predecessor for stable `0.1.0`; the old exact-nine lifecycle must fail closed
   on the stable manifest. Ordinary uninstall deliberately preserves that state,
-  and no destructive RC trust-reset is implemented, so stable qualification
-  requires a genuinely fresh host.
+  and no destructive RC trust-reset is implemented. The hard macOS release
+  lane therefore stays read-only; Linux release qualification reuses retained,
+  authenticated hosts without pretending that any retained RC state was
+  purged.
 
 - Replaced the macOS client's public release-selector symlink with a distinct
   single-link `root:_owntransit` mode-`2751` regular launcher. Its bytes must
@@ -53,12 +55,16 @@ or publish artifacts automatically.
   detach and all deterministic public-entry stages with one persistent,
   root-only advisory lock. Interrupted stages are recoverable only through
   their exact bounded metadata profiles.
-- Froze the corrected `0.1.0` signing ceremony to
-  release/policy/floor/lifecycle tuple `10/6/10/1`, preventing rollback to
+- Froze the next `0.1.0` signing ceremony to
+  release/policy/floor/lifecycle tuple `11/7/11/1`, preventing rollback to
   RC5-RC7 package boundaries after the launcher and Linux provisioner
-  migrations. The earlier private `8/4/8/1` and `9/5/9/1` issuances were not
-  publicly distributed; `9/5/9/1` was used only for private qualification.
-  Both were abandoned and their sequence numbers remain permanently consumed.
+  migrations. The earlier private `8/4/8/1`, `9/5/9/1`, and `10/6/10/1`
+  issuances were not publicly distributed. The `9/5/9/1` issuance was used
+  only for private qualification; the `10/6/10/1` issuance from public commit
+  `5ce5245c` was signed and then abandoned when the v0.1.0 release
+  qualification scope was simplified before publication. All three abandoned
+  candidates permanently consumed their release and policy sequences; none of
+  their artifacts, ledgers, signatures, or evidence may be reused.
 - Kept the macOS provisioner release tree non-user-traversable as
   `root:wheel` mode `0750` and published a distinct `root:wheel` mode-`0755`
   public provisioner copy with the authenticated digest and a different inode.
@@ -97,6 +103,24 @@ or publish artifacts automatically.
 
 ### Assurance
 
+- Reduced the 0.1.0 hard release record to four honest exact-byte results:
+  source/security/publication, independent signature verification,
+  supported-artifact execution on existing hosts, and live SSH plus
+  integrity-checked SCP through the untrusted relay using unchanged
+  pre-existing operator client configuration and SSH key, with no macOS system
+  mutation and no deployed connector configuration or endpoint-credential
+  change. The bounded platform result
+  runs the exact native binaries, inspects non-ordinary artifacts, performs no
+  macOS system mutation, and qualifies exact
+  connector install/activation, enabled restart, actual host reboot/direct
+  reacquisition, and post-boot running/retrying on both Linux architectures. It
+  does not claim stable native macOS client lifecycle activation, macOS
+  provisioner package lifecycle, Linux client, provisioner, or relay package
+  lifecycle, or pristine-host evidence.
+  Clean-room
+  platform matrices, dual relay-exchange labs, exhaustive composite dossiers
+  and external review remain documented additional assurance rather than
+  hidden publication blockers.
 - Extended macOS install, uninstall, qualification and static gates for the
   distinct public launcher and provisioner copy, equal signed digest/different
   inode invariants, exact persistent global mutation lock, durable detach,

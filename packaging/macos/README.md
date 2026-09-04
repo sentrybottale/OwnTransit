@@ -74,9 +74,10 @@ reader-identity boundary and provisioner generation fails because a
 payload-only package cannot enter the manager-bound signed release/policy
 transaction.
 
-Apple's paid program is therefore not a v1 dependency. The supported direction
-remains the no-fee source/Homebrew lane plus a separately authenticated,
-qualified privileged handoff.
+Apple's paid program is therefore not a v1 dependency. The implemented direction
+remains the no-fee source/Homebrew lane plus a separately authenticated
+privileged handoff. The bounded 0.1.0 record qualifies the client transport,
+not that package lifecycle.
 
 The supported source lane authenticates bytes before building. The disabled
 package tooling and the unsigned qualification aid do not create OwnTransit
@@ -128,9 +129,14 @@ already-absent names. Provisioner detach similarly removes only its exact
 public copy. Both roles preserve protected releases, selectors, rollback
 floors, identities, credentials and recovery state.
 
-Every official 0.1.0 handoff must exercise the ACL trampoline and setgid
-launcher after lifecycle activation on a clean Apple-silicon Mac and carry the
-result in its exact qualification record. That evidence must prove
+The 0.1.0 hard artifact smoke authenticates and inspects the Darwin launcher and
+records its expected fail-closed rejection when invoked outside the fixed
+installed path. It is strictly read-only and performs no macOS system mutation
+because retained RC7 client state is intentionally not a stable predecessor. It
+therefore makes no candidate macOS client-install,
+launcher-activation, ACL-trampoline or setgid-runtime claim. The clean
+Apple-silicon matrix below is additional assurance. When it is run, its evidence
+should prove
 ordinary-process denial for actual runtime and anchor bytes, correct setgid
 propagation through the distinct public inode, equal launcher digests and
 different inode identities, denial of direct traversal to the protected

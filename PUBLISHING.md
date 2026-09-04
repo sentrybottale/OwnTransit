@@ -7,12 +7,20 @@ Source publication and an authenticated binary release are separate events. A
 public checkout is never an authenticated installation. OwnTransit 0.1.0 is
 currently a candidate line: its tooling can produce a signed installable
 handoff for qualification, but that handoff is not an official stable release
-until the exact artifact set satisfies every hard integrity and
-supported-platform requirement below and carries the independently verified
-signed qualification record. Until then, describe it as a candidate and never
-as stable or production-ready. After those gates pass, the bounded claim is
+until the exact artifact set satisfies the four bounded integrity and execution
+requirements below and carries an independently verified signed qualification
+record with `schema=owntransit.qualification.v1`,
+`gate_set=owntransit-0.1.0-minimal.v1`, and overall `status=PASS`. Until then,
+describe it as a candidate and never as stable or
+production-ready. After those gates pass, the bounded claim is
 “stable and installable within the documented scope,” not an unqualified
 “production-ready” claim.
+
+Within that scope, the only positively qualified package lifecycle is the Linux
+connector on both supported architectures, and the exact Mac client transport
+is qualified by the live path. Stable native macOS client lifecycle activation
+and the other explicitly listed package lifecycles are not claimed by the 0.1.0
+qualification record.
 
 The project owner may authorize a public qualification prerelease solely so
 other machines can test one exact candidate. That narrow lane requires a
@@ -141,17 +149,35 @@ branding.
 Do not publish an official stable artifact set until all hard release-integrity
 requirements are complete for the exact bytes:
 
-- executed and independently verified software-release and release-policy
-  signatures used by the installers;
-- signed native artifacts, free macOS Homebrew/source-install qualification,
-  and Linux service ownership and sandbox qualification; Developer ID
-  packaging remains disabled and is not a v1 requirement;
-- clean-host install, boot, reconnect, upgrade, interrupted-apply, rollback,
-  uninstall and recovery checks on every supported platform; and
-- closure or explicit public acceptance of every known Critical or High defect;
-  and
+- the full source, security, publication and complete public-history gate;
+- independent authentication of the signed handoff, release policy, manifests,
+  outer and native inventories, and every referenced byte;
+- execution/version checks of every exact native ordinary binary on existing or
+  operator-provided macOS arm64, Linux amd64 and Linux arm64 hosts;
+- authentication and inspection of relay OCI archives and the Darwin launcher,
+  including expected direct-launch rejection, with no macOS system mutation;
+- exact signed connector install/activation on existing Linux amd64 and Linux
+  arm64 hosts, including enabled-service restart, actual host reboot, direct
+  host reacquisition, post-boot running/retrying, running-binary identity,
+  systemd confinement and absence of an OwnTransit listener;
+- a real SSH session and integrity-checked SCP transfer from the exact signed
+  macOS client through the deployed untrusted relay to the exact signed
+  connector, using the pre-existing operator-supplied client configuration and
+  SSH key without macOS system mutation and leaving those client inputs plus
+  the deployed connector configuration and endpoint credentials unchanged;
+- zero unresolved Critical and High defects; and
 - an independently verified signed qualification record binding the exact
-  candidate, outer asset inventory, platform results and those dispositions.
+  candidate and outer asset inventory, with
+  `schema=owntransit.qualification.v1`,
+  `gate_set=owntransit-0.1.0-minimal.v1`, overall `status=PASS`, all four exact
+  results at `PASS`, and both unresolved counts at zero.
+
+Routine releases reuse retained, authenticated hosts. These checks require no
+new machine and do not claim stable native macOS client lifecycle activation,
+macOS provisioner package lifecycle, Linux client, provisioner, or relay
+package lifecycle, or a pristine host. Clean-room macOS and broader Linux
+lifecycle matrices, dual public relay-exchange labs and exhaustive composite
+dossiers remain periodic additional assurance.
 
 Independent implementation review, authorized penetration testing,
 clean-builder reproduction, legal/name review, key-custody recovery rehearsal
@@ -162,7 +188,7 @@ or installer functionality. Actual usable release signatures remain a hard
 requirement; a custody rehearsal does not substitute for them.
 
 An owner-authorized public qualification prerelease may carry a signed
-`BLOCKED` record solely because supported-platform gates remain
+`BLOCKED` record solely because one or more of the four bounded gates remain
 `NOT-PERFORMED`, but only under the exact prerelease boundary above and the
 tag/draft-verification order in `RELEASE_CHECKLIST.md`. It must first pass the
 public source/history gates and independently verified signing path for its
@@ -188,8 +214,11 @@ private `0.1.0` candidate signed from public commit `9fc7d206` at tuple
 `8/4/8/1` was abandoned before tagging, upload or distribution after a
 source-archive packaging correction. A second private candidate from public
 commit `cfbd584f` at tuple `9/5/9/1` was rejected after Linux arm64
-qualification exposed a package-supervisor restart deadlock. Neither signature
-set advances public trust, but both consume their sequence numbers. The
-corrected `0.1.0` candidate uses a fresh release ID and tuple `10/6/10/1`,
-verified from the still-official RC7 policy anchor `3/5/1`, and requires a
-complete new qualification record.
+qualification exposed a package-supervisor restart deadlock. A third private
+candidate from public commit `5ce5245c` at tuple `10/6/10/1` was signed and
+then abandoned when the v0.1.0 release qualification scope was simplified
+before publication. None of those signature sets advances public trust, but
+all consume their sequence numbers; their artifacts, ledgers, signatures, and
+evidence must not be reused. The next `0.1.0` candidate must use a fresh release
+ID and tuple `11/7/11/1`, verified from the still-official RC7 policy anchor
+`3/5/1`, and requires a complete new qualification record.

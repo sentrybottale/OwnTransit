@@ -8,8 +8,11 @@ target-first word comparison, durable target/operator sessions, response
 cross-binding, the hostile courier/mailbox, resumable client setup and the
 carrier-only `READY` gate are present in source. A signed installable candidate
 handoff can be built, but an official stable handoff must still carry an
-independently verified signed platform qualification record with every hard
-gate passing. Independent cryptographic, application and human-factors
+independently verified signed qualification record containing literal
+`schema=owntransit.qualification.v1`,
+`gate_set=owntransit-0.1.0-minimal.v1` and `status=PASS`. That overall status
+requires all four bounded 0.1.0 results to pass and both unresolved finding
+counts to be zero. Independent cryptographic, application and human-factors
 certification is not claimed.
 
 ## Outcome
@@ -330,9 +333,22 @@ transition test, an authenticated carrier-only READY proof, and deterministic
 local retirement after READY.
 
 The implementation intentionally cannot certify its own human procedure or
-platform behavior. Each official artifact handoff must exercise install,
-resume, cold boot, reconnect, upgrade, rollback and recovery on disposable
-supported hosts using the exact packaged binaries. An independent review is
+all platform behavior. The 0.1.0 artifact result requires native execution, an
+authenticated read-only macOS launcher check with no system mutation, and exact
+signed connector install/activation on both Linux architectures with enabled-service restart,
+actual host reboot, direct host reacquisition, post-boot running/retrying,
+binary-identity, systemd-confinement and no-listener checks. Its live result
+separately proves SSH and SCP through the
+deployed untrusted relay with the exact signed client and connector, using the
+pre-existing operator-supplied client configuration and SSH key without macOS
+system mutation and leaving those client inputs plus the deployed connector
+configuration and endpoint credentials unchanged. Neither result claims a
+candidate enrollment ceremony, macOS client installation or launcher
+activation, macOS provisioner package lifecycle, Linux client, provisioner, or
+relay package lifecycle, or clean-host state.
+Enrollment source tests remain part of the source/security/publication result.
+Broader clean-host install, resume, upgrade, rollback and recovery matrices
+remain additional assurance. An independent review is
 invited to challenge the phrase construction, phishing assumptions,
 invitation theft and races, self-authenticating-verifier attempts, a malicious
 relay that knows the words, transcript replacement, response cross-wiring,

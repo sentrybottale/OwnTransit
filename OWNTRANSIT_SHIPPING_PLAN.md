@@ -5,10 +5,15 @@ publication**. The tunnel, guided client exchange, target-local credential
 lifecycle, signed package transaction and publication boundaries exist in
 source, and the tooling can build a signed installable candidate handoff. An
 official stable handoff must execute the signing path, carry an independently
-verified signed qualification record for the exact bytes, and report PASS for
-every hard supported-host gate. Independent reproduction, security/legal
-review, custody rehearsal and environment canary work are additional assurance
-whose status must be disclosed, not fabricated.
+verified signed qualification record for the exact bytes containing literal
+`schema=owntransit.qualification.v1`,
+`gate_set=owntransit-0.1.0-minimal.v1` and `status=PASS`. That overall status
+requires zero unresolved Critical/High findings and four bounded PASS results:
+full source/security/publication checks, independent signed-artifact
+verification, the native-artifact smoke defined below, and live SSH plus SCP
+through the untrusted relay. Independent reproduction, clean-room platform
+labs, security/legal review, custody rehearsal and environment canary work are
+additional assurance whose status must be disclosed, not fabricated.
 
 ## Product contract
 
@@ -57,9 +62,14 @@ The software-release v1 JSON/signature envelope admits only explicitly
 enumerated artifact-matrix editions. Public `0.1.0-rc.*` packages bind the
 exact-nine edition; stable `0.1.0` binds exact-fourteen. The former is not an
 in-place predecessor of the latter. Its non-purging uninstall preserves the
-selected lifecycle and trust state, so stable qualification uses a genuinely
-fresh host unless a separately reviewed destructive trust-reset ceremony is
-implemented in a future change.
+selected lifecycle and trust state, so the stable installer fails closed on
+that retained role unless a separately reviewed destructive trust-reset
+ceremony is implemented in a future change. This compatibility rule does not
+make a new machine a recurring release requirement. For initial 0.1.0, retained
+RC7 macOS client state cannot become stable client-install evidence; the bounded
+macOS gate therefore remains read-only, performs no system mutation, and makes
+no candidate macOS client-install claim. This initial incompatibility does not
+prevent later releases from reusing an already supported stable installation.
 
 The public route-capability profile is separately identified as
 `owntransit-route-capability/1` and negotiates its own inner ALPN. It never
@@ -121,15 +131,28 @@ builds of each administrative tool as fourteen separate artifact records. Each
 record binds its bytes, SHA-256 digest, size, role, platform, format, and named
 SBOM evidence. Licenses are independent evidence.
 
-Platform support attaches to exact released bytes only after their native
-package, clean-host, rollback and qualification matrices pass, plus upgrade
-qualification whenever a supported predecessor exists. Initial stable `0.1.0`
-has no supported predecessor, so upgrade is recorded as not applicable; public
+Platform support attaches to exact released bytes only after the four bounded
+release results pass. The artifact result executes and version-checks every
+ordinary native executable on its matching architecture, authenticates and
+inspects both relay OCI archives and the Darwin launcher, records the launcher's
+expected fail-closed fixed-path rejection, and performs no macOS system
+mutation. On existing Linux amd64 and
+Linux arm64 hosts it installs and activates the exact signed connector, verifies
+its binary identity and systemd confinement, proves it owns no OwnTransit
+listener, restarts the enabled service, performs an actual host reboot,
+reacquires the host directly, and proves the connector is running or retrying
+post-boot. Initial stable `0.1.0` has no
+supported predecessor; public
 `0.1.0-rc.*` state is not an in-place upgrade source. The candidate targets
 Apple-silicon macOS (`arm64`), 64-bit x86 Linux (`amd64`,
 also called `x86_64`), and 64-bit ARM Linux (`arm64`, also called `aarch64`).
 Intel macOS and every other architecture are outside the 0.1.0 scope.
-Cross-compilation alone is not support evidence.
+Cross-compilation alone is not support evidence. This bounded smoke does not
+claim candidate macOS client installation or launcher activation, macOS
+provisioner package lifecycle, Linux client, provisioner, or relay package
+lifecycle, pristine-host state, exhaustive lifecycle coverage or universal
+compatibility. Its connector reboot claim is limited to the two exercised
+existing Linux hosts.
 
 ## Intended command surface
 
@@ -256,8 +279,9 @@ revocation/tombstone overlays, an external exact-state rollback anchor, signed
 exact-record rollback, interrupted anchor-first recovery and current/previous
 package retention. OwnTransit 0.1.0 does not make expiry monitoring,
 two-location custody or clean-room recovery automatic. Those remain documented
-operator procedures, while each official release must qualify its exact
-installed service path on the supported hosts.
+operator procedures. Each official release instead executes the exact bounded
+native-artifact and read-only macOS checks plus the Linux connector
+install/activation/reboot checks on existing or operator-provided hosts.
 
 ## Native lifecycle requirements
 
@@ -319,12 +343,13 @@ idempotent operation; conflicting states fail closed.
 Ordinary uninstall is non-purging. Destructive purge and trust reset require a
 separate explicit recovery ceremony.
 
-The supported macOS client needs a release-signature-verified Homebrew/source
-installation plus the qualified privileged handoff that installs its fixed
-launcher boundary. A formula that only compiles unprivileged binaries is not a
-complete client installation. The optional Developer ID package lane is
-disabled until OwnTransit also authenticates its final post-signing bytes; it
-is not a v1 requirement. The Linux client needs a signed native package, one
+The implemented macOS client installation direction is a
+release-signature-verified Homebrew/source installation plus the authenticated
+privileged handoff that installs its fixed launcher boundary. A formula that
+only compiles unprivileged binaries is not a complete client installation. The
+bounded 0.1.0 record does not qualify that package lifecycle. The optional
+Developer ID package lane is disabled until OwnTransit also authenticates its
+final post-signing bytes; it is not a v1 requirement. The Linux client needs a signed native package, one
 exact authenticated install command and unprivileged per-user enrollment. The
 Linux connector needs a dedicated locked, no-login service identity, a
 root-owned PID-1 systemd unit, service-nonwritable configuration ancestors,
@@ -342,18 +367,32 @@ one exact source revision and artifact set:
    its source, inputs, digests, SBOMs and licenses;
 2. create and independently verify the actual release-manifest and monotonic
    release-policy signatures used by the installers;
-3. independently qualify disposable Linux amd64 and Linux arm64
-   install/systemd/reboot, reconnect, interruption, rollback, uninstall and
-   recovery behavior through a reviewed composite dossier, treating the
-   installer/reboot JSON as sub-evidence only;
-4. qualify disposable Apple-silicon Directory Services, zero-member setgid
-   launcher, ACL, rollback and reboot behavior;
-5. close or explicitly accept every known Critical or High defect affecting
-   those exact bytes; and
-6. record initial-stable upgrade as **N/A** because `0.1.0` has no supported
-   predecessor, then create and independently verify a signed qualification
-   record binding the exact source, release identity, outer asset inventory and
-   all hard-gate results without representing missing evidence as PASS.
+3. execute and version-check every ordinary native executable on its matching
+   architecture, authenticate and inspect both relay OCI archives and the
+   Darwin launcher, record the launcher's expected fail-closed fixed-path
+   rejection, while performing no macOS system mutation;
+4. on existing Linux amd64 and Linux arm64 hosts, install and activate the exact
+   signed connector, verify its binary identity and systemd confinement, prove
+   it owns no OwnTransit listener, restart the enabled service, perform an
+   actual host reboot, reacquire the host directly, and prove the connector is
+   running or retrying post-boot;
+5. use the exact signed macOS client through the deployed untrusted relay to the
+   exact signed connector and prove a real SSH session plus an integrity-checked
+   SCP transfer, using the pre-existing operator-supplied client configuration
+   and SSH key without macOS system mutation and leaving those client inputs
+   plus the deployed connector configuration and endpoint credentials unchanged;
+6. close every known unresolved Critical or High defect affecting those exact
+   bytes; and
+7. create and independently verify a signed qualification record binding the
+   exact source, release identity, outer asset inventory and those four results,
+   with literal `schema=owntransit.qualification.v1`,
+   `gate_set=owntransit-0.1.0-minimal.v1` and `status=PASS`.
+
+Steps 3 and 4 do not claim candidate macOS client installation or launcher
+activation, macOS provisioner package lifecycle, Linux client, provisioner, or
+relay package lifecycle, clean-host state or exhaustive lifecycle coverage. The
+Linux connector reboot result is limited to the two exercised existing hosts.
+The live data-path result in step 5 is separate from those package claims.
 
 ## Additional assurance and operator operations
 
@@ -362,6 +401,8 @@ OwnTransit 0.1.0 does not claim completion or certification of these activities:
 - independent clean-builder reproduction and an external public-object secret
   scan;
 - independent implementation review and authorized penetration testing;
+- clean-room macOS and per-architecture Linux lifecycle/reboot matrices;
+- dual public relay-exchange qualification and exhaustive composite dossiers;
 - professional name, applicable-contract, license and targeted-patent review;
 - two-location release/issuer custody and clean-room recovery rehearsal;
 - broader hostile-relay, disk-full, signal and power-loss exercises; and
@@ -379,7 +420,7 @@ relay-delivered trust bootstrap is permitted.
 OwnTransit 0.1.0 is installable and stable within its stated scope only when all
 of these are true for the exact released bytes:
 
-- a clean supported client reaches a clean connector without source checkout,
+- a supported client reaches a connector without source checkout,
   a client-side container runtime, hand-edited JSON, or copied PEM files;
 - every installation has unique OwnTransit keys and an exact
   route/connector/epoch capability binding;
@@ -387,13 +428,31 @@ of these are true for the exact released bytes:
   survive a fully compromised relay;
 - the connector can reach only `tcp4 127.0.0.1:22` and has no positive client
   allowlist to synchronize;
-- artifacts and deployments are authenticated, sequenced, recoverable, and
-  reversibly activated without resurrecting tombstoned state;
+- signed artifact, deployment and package-lifecycle tooling implements
+  authenticated, sequenced, recoverable and reversible activation without
+  resurrecting tombstoned state; this does not qualify the package roles
+  explicitly disclaimed below;
 - credential removal affects new sessions and existing sessions are bounded;
-- connector reboot and relay restart recover without weakening trust;
-- normal uninstall preserves OwnTransit recovery state and touches no SSH or
-  unrelated host configuration;
-- native release signing and supported-platform clean-host qualification pass;
+- source/security/publication and complete-history checks pass;
+- all handoff, release, policy and inventory signatures are independently
+  verified;
+- every ordinary native executable runs and reports the exact build identity,
+  both relay OCI archives and the Darwin launcher pass authenticated inspection,
+  the launcher rejects its noncanonical direct invocation, and the macOS checks
+  perform no system mutation;
+- the exact signed Linux connector installs and activates on existing amd64 and
+  arm64 hosts, matches its expected identity, remains systemd-confined and
+  listener-free, restarts as an enabled service, undergoes an actual host
+  reboot and direct host reacquisition, and is running or retrying post-boot;
+- the exact signed macOS client and connector carry a real SSH session and an
+  integrity-checked SCP transfer through the deployed untrusted relay, using
+  the pre-existing operator-supplied client configuration and SSH key without
+  macOS system mutation and leaving those client inputs plus the deployed
+  connector configuration and endpoint credentials unchanged;
+- no known unresolved Critical or High defect remains;
+- the independently verified signed qualification record contains literal
+  `schema=owntransit.qualification.v1`,
+  `gate_set=owntransit-0.1.0-minimal.v1` and `status=PASS`;
 - the status of independent review, reproduction, custody and recovery
   assurance is disclosed without implying certification; and
 - an operator-owned out-of-band SSH and host-recovery path remains available
@@ -403,3 +462,11 @@ Meeting this definition means the release is distributable and installable
 within the documented platform and SSH-only boundary. Suitability for a
 particular production environment remains the operator's risk decision;
 OwnTransit is not an SSH or host-recovery system.
+
+It does not mean candidate macOS client installation or launcher activation,
+macOS provisioner package lifecycle, Linux client, provisioner, or relay
+package lifecycle, pristine-host installation, every lifecycle or interruption
+path, dual relay-exchange labs, or external security review was completed. The
+stated Linux connector reboot checks apply only to the two exercised existing
+hosts. The broader claims remain roadmap assurance items, not hidden 0.1.0
+blockers.

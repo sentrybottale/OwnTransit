@@ -123,11 +123,15 @@ published views. It does not defend against root, an administrator granting
 root, kernel compromise, denial of service, or malicious root-level replacement
 followed by deliberate metadata and receipt repair.
 
-## Qualification invariant
+## Additional clean-host assurance
 
-Every official 0.1.0 handoff must exercise this boundary after lifecycle
-activation on a clean Apple-silicon Mac and attach the exact result to its
-qualification record:
+The 0.1.0 hard artifact smoke authenticates and inspects the Darwin launcher and
+records its expected fail-closed rejection outside the fixed installed path. It
+is strictly read-only and performs no macOS system mutation because retained
+RC7 client state is intentionally not a stable predecessor. It does not claim
+candidate macOS client installation, launcher activation or this complete
+reader boundary. The following clean Apple-silicon harness is optional
+additional assurance, not a fixed publication result:
 
 ```text
 sudo scripts/qualify/macos-client-boundary.sh \
@@ -136,7 +140,7 @@ sudo scripts/qualify/macos-client-boundary.sh \
   --reader-gid NUMERIC_GID_FROM_INSTALLER
 ```
 
-The gate verifies zero membership/nesting, identity receipt and live
+The harness verifies zero membership/nesting, identity receipt and live
 GeneratedUID agreement, exact file modes and ACL absence, denial of direct
 runtime/anchor reads by an ordinary target process, equal signed digests but
 distinct inodes for the protected and public launchers, the exact persistent

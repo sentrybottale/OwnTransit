@@ -104,11 +104,18 @@ class Owntransit < Formula
       lifecycle copy at /Library/OwnTransit/roles/client/current/owntransitctl.
 
       Formula installation alone is not evidence that the protected macOS path
-      is qualified. Activate it only with the exact independently authenticated
-      native handoff whose signed qualification record reports PASS for the
-      Apple-silicon lifecycle and reboot hard gates. If that record is absent or
-      any hard gate is not PASS, keep the installation qualification-only and
-      retain an independent access and recovery path.
+      was exercised. Activate it only with the exact independently authenticated
+      native handoff whose signed qualification record was independently
+      verified with schema=owntransit.qualification.v1,
+      gate_set=owntransit-0.1.0-minimal.v1, and status=PASS. If that record is
+      absent or any fixed result is not PASS, keep the installation
+      qualification-only and retain an independent access and recovery path.
+      The 0.1.0 record qualifies the exact Mac client transport and live path,
+      using pre-existing operator-supplied client configuration and SSH key
+      without changing them or mutating the Mac. It also requires the deployed
+      connector configuration and endpoint credentials to remain unchanged. It
+      is not stable native macOS client lifecycle activation evidence; canary
+      that boundary with independent access available.
     EOS
   end
 

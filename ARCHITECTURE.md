@@ -170,9 +170,19 @@ external anchor and role-selector locks across authenticated transitions, and
 publishes a read-only runtime view to the exact installed runtime identity.
 Guided setup is bound to that identity and cannot activate a detached package
 decision. Compromise of the privileged package manager or host root remains
-outside the endpoint-isolation claim; the platform ownership, ACL, reboot,
-interruption and hostile-filesystem boundary must be exercised by each exact
-supported-platform release handoff.
+outside the endpoint-isolation claim. The 0.1.0 artifact smoke executes and
+version-checks every ordinary native executable on its matching architecture,
+authenticates and inspects both relay OCI archives and the Darwin launcher,
+records the launcher's expected fail-closed fixed-path rejection, and performs
+no macOS system mutation.
+On existing Linux amd64 and Linux arm64 hosts it installs and activates the
+exact signed connector, verifies its binary identity and systemd confinement,
+proves it owns no OwnTransit listener, restarts the enabled service, performs an
+actual host reboot, reacquires the host directly, and proves the connector is
+running or retrying post-boot. It does not claim candidate macOS client
+installation or launcher activation, macOS provisioner package lifecycle,
+Linux client, provisioner, or relay package lifecycle, clean-host state,
+interruption or hostile-filesystem coverage.
 
 The native filesystem boundary is platform-specific. On macOS arm64, one
 persistent root-only `package-mutation.v1.lock` serializes client and
@@ -200,11 +210,18 @@ transition. Conflicting records fail closed.
 
 Initial request, guided approval, apply, signed floor/upgrade policy, exact
 rollback, interruption recovery and native package integration are part of the
-0.1.0 candidate implementation. An official stable handoff must qualify the
-exact installed bytes on all three supported platform/architecture targets and
-carry the independently verified signed result. The initial workflow
-authorizes exactly one relay, one connector, one route and one client. Adding a
-later client requires a
+0.1.0 candidate implementation. An official stable handoff must independently
+verify its signed bytes, complete the bounded artifact smoke above, and prove
+real SSH and SCP through the deployed untrusted relay with the exact signed
+client and connector. That live proof uses the pre-existing operator-supplied
+client configuration and SSH key, performs no macOS system mutation, and must
+leave those client inputs plus the deployed connector configuration and
+endpoint credentials unchanged. Its independently verified signed qualification
+record must contain literal `schema=owntransit.qualification.v1`,
+`gate_set=owntransit-0.1.0-minimal.v1` and `status=PASS`; that overall status
+also requires all four fixed results to pass and both unresolved finding counts
+to be zero. The initial workflow authorizes exactly one relay, one connector,
+one route and one client. Adding a later client requires a
 separately versioned approval-context and signed relay-policy transition and is
 not implemented in 0.1.0. Expiry monitoring, rotation, revocation, retirement,
 issuer custody and clean-room recovery remain operator-run procedures and
@@ -249,5 +266,6 @@ negotiation, downgrade protection and mixed-version rollback tests.
 The release-manifest v1 envelope separately authenticates an exact artifact
 matrix. Public `0.1.0-rc.*` lifecycle binaries accept exact-nine; stable
 `0.1.0` accepts exact-fourteen. RC state is not a supported in-place stable
-predecessor, and ordinary non-purging uninstall does not turn that host into a
-clean installation target.
+predecessor, and ordinary non-purging uninstall does not erase that retained
+state. This compatibility rule is separate from the release's bounded native
+artifact, read-only macOS, and Linux connector/reboot checks.
