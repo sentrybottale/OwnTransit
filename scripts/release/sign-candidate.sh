@@ -391,17 +391,19 @@ test "${#source_manifest_sha256}" -eq 64 || fail "source manifest digest must co
 # correction, and the 9/5/9/1 candidate was rejected during private Linux arm64
 # qualification after exposing a supervisor restart deadlock. The private
 # 10/6/10/1 candidate signed from public commit 5ce5245c was abandoned before
-# publication when the v0.1.0 qualification scope was simplified.
+# publication when the v0.1.0 qualification scope was simplified. The private
+# 11/7/11/1 candidate signed from public commit 442a5696 was rejected when live
+# qualification exposed a post-READY doctor teardown false negative.
 # Signature issuance consumes its release and policy sequences even when a
 # handoff is not published, so none of those tuples may be reused. The next
 # issuance advances from the still-official RC7 3/5/1 policy anchor and skips
-# all three consumed policy sequences. Keep the candidate and anchor tuples
+# all four consumed policy sequences. Keep the candidate and anchor tuples
 # fixed in the offline signing conductor rather than relying on an operator to
 # remember correlated values during the signing ceremony.
 if test "$version" = 0.1.0; then
-  test "$release_sequence" = 11 || fail "OwnTransit 0.1.0 requires release sequence 11"
-  test "$policy_sequence" = 7 || fail "OwnTransit 0.1.0 requires policy sequence 7"
-  test "$release_floor" = 11 || fail "OwnTransit 0.1.0 requires release floor 11"
+  test "$release_sequence" = 12 || fail "OwnTransit 0.1.0 requires release sequence 12"
+  test "$policy_sequence" = 8 || fail "OwnTransit 0.1.0 requires policy sequence 8"
+  test "$release_floor" = 12 || fail "OwnTransit 0.1.0 requires release floor 12"
   test "$lifecycle_floor" = 1 || fail "OwnTransit 0.1.0 requires lifecycle floor 1"
   test "$anchor_policy_sequence" = 3 || fail "OwnTransit 0.1.0 requires RC7 anchor policy sequence 3"
   test "$anchor_release_floor" = 5 || fail "OwnTransit 0.1.0 requires RC7 anchor release floor 5"

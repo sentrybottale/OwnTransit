@@ -56,13 +56,15 @@ or publish artifacts automatically.
   root-only advisory lock. Interrupted stages are recoverable only through
   their exact bounded metadata profiles.
 - Froze the next `0.1.0` signing ceremony to
-  release/policy/floor/lifecycle tuple `11/7/11/1`, preventing rollback to
+  release/policy/floor/lifecycle tuple `12/8/12/1`, preventing rollback to
   RC5-RC7 package boundaries after the launcher and Linux provisioner
-  migrations. The earlier private `8/4/8/1`, `9/5/9/1`, and `10/6/10/1`
-  issuances were not publicly distributed. The `9/5/9/1` issuance was used
+  migrations. The earlier private `8/4/8/1`, `9/5/9/1`, `10/6/10/1`, and
+  `11/7/11/1` issuances were not publicly distributed. The `9/5/9/1` was used
   only for private qualification; the `10/6/10/1` issuance from public commit
   `5ce5245c` was signed and then abandoned when the v0.1.0 release
-  qualification scope was simplified before publication. All three abandoned
+  qualification scope was simplified before publication. The `11/7/11/1`
+  issuance from public commit `442a5696` was rejected when live qualification
+  exposed a post-READY doctor teardown false negative. All four abandoned
   candidates permanently consumed their release and policy sequences; none of
   their artifacts, ledgers, signatures, or evidence may be reused.
 - Kept the macOS provisioner release tree non-user-traversable as
@@ -81,6 +83,11 @@ or publish artifacts automatically.
 
 ### Fixed
 
+- Made the carrier-only doctor treat only wrapped `EOF` and closed-network
+  results during post-READY cleanup as successful teardown. The relay is
+  deliberately allowed to abort paired carriers after drain; every outer TLS,
+  inner mTLS, endpoint authorization, fixed loopback dial, and exact READY
+  failure remains fatal.
 - Made Linux connector and relay package recovery atomically replace the
   start-blocking mutation intent with a durable restart-pending record before
   invoking systemd. Start failure and reboot preserve a recoverable obligation,

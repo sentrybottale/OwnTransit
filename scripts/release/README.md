@@ -152,8 +152,8 @@ policy-anchor JSON does not contain that key identity. Derive that identity
 from the already trusted prior key with `releasectl public-key-id`, never from
 the candidate's copy. This helper does not support policy-key rotation.
 
-The `0.1.0` stable handoff is deliberately frozen to release sequence `11`,
-policy sequence `7`, minimum release sequence `11`, and minimum lifecycle `1`.
+The `0.1.0` stable handoff is deliberately frozen to release sequence `12`,
+policy sequence `8`, minimum release sequence `12`, and minimum lifecycle `1`.
 The signing conductor rejects every other candidate tuple and requires the
 still-official RC7 policy anchor `3/5/1` before any signature operation. This
 floor is mandatory: RC5-RC7 predate the hardened macOS launcher/package
@@ -174,11 +174,15 @@ sequence `5`. A third private candidate from public commit `5ce5245c` was
 signed with tuple `10/6/10/1`, then abandoned when the v0.1.0 release
 qualification scope was simplified before publication. It was never tagged,
 uploaded, or publicly distributed, but that signature consumed release
-sequence `10` and policy sequence `6`. The next ceremony therefore uses
-`11/7/11/1` and verifies policy sequence `7` as a strict advance from the
-still-official RC7 anchor rather than treating any abandoned policy as official
-persisted trust. No abandoned artifact, ledger, signature set, or qualification
-evidence is an input to the next handoff.
+sequence `10` and policy sequence `6`. A fourth private candidate from public
+commit `442a5696` was signed with tuple `11/7/11/1`, then rejected when live
+qualification exposed a post-READY doctor teardown false negative. It was
+never tagged, uploaded, or publicly distributed, but that signature consumed
+release sequence `11` and policy sequence `7`. The next ceremony therefore
+uses `12/8/12/1` and verifies policy sequence `8` as a strict advance from the
+still-official RC7 anchor rather than treating any abandoned policy as
+official persisted trust. No abandoned artifact, ledger, signature set, or
+qualification evidence is an input to the next handoff.
 
 Fresh endpoints can bootstrap the currently trusted policy against their empty
 local anchor. An upgraded endpoint independently requires the new policy
@@ -187,7 +191,7 @@ disappear, and the pinned policy signer not to change. During a canary, retainin
 the previous release floor preserves authenticated rollback only when the two
 package layouts are explicitly qualified as rollback-compatible. Raising the
 floor to the candidate sequence deliberately burns that rollback. For `0.1.0`,
-floor `11` is a fixed safety requirement rather than an optional canary choice.
+floor `12` is a fixed safety requirement rather than an optional canary choice.
 
 The independently authenticated OpenSSH key authorized as
 `owntransit-release` in `allowed_signers` is the privileged package-bootstrap
