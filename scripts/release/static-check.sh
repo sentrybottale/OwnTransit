@@ -483,9 +483,9 @@ if grep -Fq 'source=$temporary,target=/output' scripts/release/archive-native.sh
 fi
 
 require_text scripts/release/sign-candidate.sh 'release and policy public key IDs must be different'
-require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires release sequence 9'
-require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires policy sequence 5'
-require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires release floor 9'
+require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires release sequence 10'
+require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires policy sequence 6'
+require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires release floor 10'
 require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires lifecycle floor 1'
 require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires RC7 anchor policy sequence 3'
 require_text scripts/release/sign-candidate.sh 'OwnTransit 0.1.0 requires RC7 anchor release floor 5'
