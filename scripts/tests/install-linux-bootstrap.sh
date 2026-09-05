@@ -259,8 +259,10 @@ printf '%s\n' bad-size > "$fake_bin/curl-mode"
 : > "$fake_bin/events"
 
 fixture_installer=$test_root/install-linux.fixture.sh
+# Lookup scenarios must not inherit a real Podman from the runner's PATH.
+# The executable PATH below still provides ordinary host utilities.
 sed \
-  -e "s#^caller_path=.*#caller_path=\${OT_TEST_CALLER_PATH-$podman_bin:/usr/sbin:/usr/bin:/sbin:/bin}#" \
+  -e "s#^caller_path=.*#caller_path=\${OT_TEST_CALLER_PATH-$podman_bin}#" \
   -e "s#^PATH=/usr/sbin:/usr/bin:/sbin:/bin\$#PATH=$fake_bin:$podman_bin:/usr/sbin:/usr/bin:/sbin:/bin#" \
   -e "s#^require_protected_ancestor /var\$#require_protected_ancestor $stage_root#" \
   -e "s#/run/systemd/system#$systemd_root#g" \
