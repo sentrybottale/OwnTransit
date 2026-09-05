@@ -9,6 +9,21 @@ becomes a publication record only after its authenticated evidence, signed
 qualification record and release decision are complete. Git tags never create
 or publish artifacts automatically.
 
+## [0.1.3]
+
+Signed development preview only; not a stable or production-qualified release.
+
+- Fixed receiver startup under systemd confinement by explicitly retaining the
+  broker's UID-drop capability; retained all sandbox restrictions.
+- Added worker readiness notification and bounded startup failure instead of
+  reporting success merely because systemd accepted a start request.
+- Made explicit receiver setup generate fresh IDs, issuer/endpoint keys and
+  one-use codes, with terminal retirement and worker shutdown before atomic
+  replacement. Normal restart and network recovery preserve identities.
+- Added confirmation before replacing a paired client, visible public URL
+  input, and exact machine-specific next-step commands.
+- Allowed verified managed preview installation to upgrade 0.1.1/0.1.2 units.
+
 ## [0.1.2]
 
 Signed development preview only; not a stable or production-qualified release.

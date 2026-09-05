@@ -8,8 +8,8 @@ LC_ALL=C
 export LC_ALL
 unset CDPATH ENV BASH_ENV TAR_OPTIONS GZIP SSH_AUTH_SOCK SSH_ASKPASS DISPLAY
 umask 077
-version=0.1.2
-base=https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.2
+version=0.1.3
+base=https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.3
 stage=
 fail() { printf 'owntransit-development: %s\n' "$*" >&2; exit 1; }
 cleanup() {
@@ -85,7 +85,7 @@ awk '
   BEGIN { ok=1; previous="" }
   {
     if (NF!=2 || length($1)!=64 || $1 !~ /^[0-9a-f]+$/ || $0!=$1 "  " $2 || seen[$2]++ || (previous!="" && previous >= $2)) ok=0
-    if ($2!="DEVELOPMENT.txt" && $2!="install-preview-linux.sh" && $2!="owntransit-preview-0.1.2-darwin-arm64.tar.gz" && $2!="owntransit-preview-0.1.2-linux-amd64.tar.gz" && $2!="owntransit-preview-0.1.2-linux-arm64.tar.gz") ok=0
+    if ($2!="DEVELOPMENT.txt" && $2!="install-preview-linux.sh" && $2!="owntransit-preview-0.1.3-darwin-arm64.tar.gz" && $2!="owntransit-preview-0.1.3-linux-amd64.tar.gz" && $2!="owntransit-preview-0.1.3-linux-arm64.tar.gz") ok=0
     previous=$2
   }
   END { exit ok ? 0 : 1 }

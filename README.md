@@ -23,7 +23,7 @@ It can observe addresses, timing and traffic sizes, or deny service. It must
 not read the inner stream, impersonate an endpoint accepted by its peer, or
 choose where the receiver sends traffic.
 
-## Install the 0.1.2 development preview
+## Install the 0.1.3 development preview
 
 This is a **signed development preview**, not a stable or production-qualified
 release. It installs separately from 0.1.0. Explicit relay setup can replace an
@@ -33,21 +33,21 @@ arm64/aarch64 use the same command.
 On the private SSH server:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.2/install-preview-linux.sh | sudo sh -s -- connector
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.3/install-preview-linux.sh | sudo sh -s -- connector
 sudo owntransit-connector-preview pair setup
 ```
 
 On a Linux client:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.2/install-preview-linux.sh | sudo sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.3/install-preview-linux.sh | sudo sh -s -- client
 owntransit-preview pair setup
 ```
 
 On the public relay:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.2/install-preview-linux.sh | sudo sh -s -- relay
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.3/install-preview-linux.sh | sudo sh -s -- relay
 ```
 
 The relay installer starts one setup workflow and asks for the full public URL,
@@ -62,7 +62,7 @@ an existing HTTPS site. Bespoke proxy layouts or a missing HTTPS site produce a
 specific setup error; they are not guessed. Failed cutover restores the previous
 relay and any route changed by setup. Start the relay before endpoint setup.
 
-Apple-silicon macOS uses the [signed client archive](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.1.2).
+Apple-silicon macOS uses the [signed client archive](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.1.3).
 Intel macOS is not supported. No Apple signing subscription is required; the
 client is not Apple-notarized.
 
@@ -87,6 +87,13 @@ different values:
 
 - a **public receiver ID** to register at the relay; and
 - a **private, one-use pairing code** to give directly to your client.
+
+Setup waits until the receiver has advertised and prints the exact next command
+to run on the relay. Running receiver `pair setup` again creates a **fresh ID and
+fresh code**, permanently retiring the old pairing. A paired receiver asks before
+disconnecting its existing client. Use `pair status` to inspect the receiver or
+`sudo systemctl restart owntransit-connector-pair.service` to restart it without
+changing identities. The package installer itself preserves pairing state.
 
 Never give the private code to the relay. Transfer it through your existing
 authenticated SSH or local-console access. Possession authorizes one device;

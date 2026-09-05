@@ -1,4 +1,4 @@
-# Test OwnTransit 0.1.2
+# Test OwnTransit 0.1.3
 
 This is the **signed development preview**, installed separately from 0.1.0.
 It is not a stable or production-qualified release. Keep another access path.
@@ -9,7 +9,7 @@ The three roles are client, public relay and private receiver/connector.
 On Linux amd64 or arm64:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.2/install-preview-linux.sh | sudo sh -s -- relay
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.3/install-preview-linux.sh | sudo sh -s -- relay
 ```
 
 Enter the full public URL at the visible prompt, such as
@@ -19,7 +19,7 @@ hostname selects exactly which HTTPS site receives the route.
 You can also pass the URL in the same installation command:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.2/install-preview-linux.sh | sudo sh -s -- relay wss://relay.example/connects
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.3/install-preview-linux.sh | sudo sh -s -- relay wss://relay.example/connects
 ```
 
 Setup detects Docker or Podman, installs Podman through a supported package
@@ -58,13 +58,25 @@ These commands work on both supported Linux architectures, including a 64-bit
 Raspberry Pi:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.2/install-preview-linux.sh | sudo sh -s -- connector
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.3/install-preview-linux.sh | sudo sh -s -- connector
 sudo owntransit-connector-preview pair setup
 ```
 
 Enter your relay URL, for example `wss://relay.example/connects`.
 Setup initializes the receiver and enables its installed systemd service for
 reboot. It displays a **public receiver ID** and a **private pairing code**.
+
+It reports success only after the unprivileged worker starts and the relay
+acknowledges its advertisement, then prints the exact relay registration command.
+Rerun `pair setup` if you lost the code: this creates a **new receiver ID and new
+one-use code**, retires the previous pairing and asks before replacing a paired
+client. Use independent SSH or local-console access when replacing a live tunnel.
+Old state is retained in a private, terminally locked generation under
+`/var/lib/owntransit-pair.setup`; it is not an automatic rollback target.
+Interrupted preparation leaves the old pairing unchanged; interruption after
+retirement keeps it locked. Rerunning explicit setup creates fresh identities.
+Normal restart uses `sudo systemctl restart owntransit-connector-pair.service`,
+not `pair setup`, and does not require new codes.
 
 Give only the public ID to the relay. Keep the private code for your intended
 client, transferring it through existing authenticated SSH/local-console access.
@@ -90,7 +102,7 @@ registration automatically; you do not paste that code back into the receiver.
 ## 4. Install and pair a Linux client
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.2/install-preview-linux.sh | sudo sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.3/install-preview-linux.sh | sudo sh -s -- client
 owntransit-preview pair setup
 ```
 
@@ -106,8 +118,8 @@ owntransit-preview pair resume
 
 ### Apple-silicon macOS client
 
-Download `owntransit-preview-0.1.2-darwin-arm64.tar.gz` from the
-[0.1.2 development release](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.1.2).
+Download `owntransit-preview-0.1.3-darwin-arm64.tar.gz` from the
+[0.1.3 development release](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.1.3).
 Verify its digest against the signed `DEVELOPMENT-SHA256SUMS`, then extract it.
 The archive contains the client, capsule identity, checksums and license notices.
 It does not alter your Mac or require Apple notarization.
@@ -171,7 +183,7 @@ clearable-lock development state is rejected rather than silently converted.
 
 ## What installation changes
 
-Only the requested role is installed below `/opt/owntransit-preview/0.1.2`,
+Only the requested role is installed below `/opt/owntransit-preview/0.1.3`,
 with a separately named `*-preview` alias. An exact reinstall is idempotent;
 an unmanaged conflicting file is not overwritten. The connector installer
 creates a disabled service; only your explicit `pair setup` enables it.

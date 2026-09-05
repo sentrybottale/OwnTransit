@@ -13,6 +13,7 @@ import (
 	"io"
 	"net"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -45,6 +46,11 @@ func privatePath(t *testing.T, name string) string {
 	t.Helper()
 	base, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
+		t.Fatal(err)
+	}
+	// testing.TempDir's numbered child respects the caller's umask. Keep the
+	// fixture parent private even under a developer's group-writable umask.
+	if err := os.Chmod(base, 0700); err != nil {
 		t.Fatal(err)
 	}
 	return filepath.Join(base, name)

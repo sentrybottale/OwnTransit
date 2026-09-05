@@ -275,6 +275,7 @@ func InitializeReceiver(path, origin string, info pairrelay.ServerInfo) (receive
 type ReceiverBackend struct {
 	Path     string
 	receiver *receiverpairing.Receiver
+	OnReady  func() error
 }
 
 func (b ReceiverBackend) openReceiver() (*receiverpairing.Receiver, error) {

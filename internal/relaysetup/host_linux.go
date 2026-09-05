@@ -30,7 +30,7 @@ const managedRoot = "/var/lib/owntransit-relay-setup"
 const managedContainer = "owntransit-relay-managed"
 const managedUnit = "owntransit-relay-managed.service"
 const unitPath = "/etc/systemd/system/" + managedUnit
-const imageTag = "owntransit-relay-pair:0.1.2"
+const imageTag = "owntransit-relay-pair:0.1.3"
 
 type boundedBuffer struct {
 	bytes.Buffer
@@ -593,7 +593,7 @@ func Setup(ctx context.Context, inputURL string, output io.Writer) (returnErr er
 	if err := root.ReplaceFile("setup.json", configBytes, 0600); err != nil {
 		return err
 	}
-	fmt.Fprintf(output, "Relay is ready at %s and enabled for reboot.\nNext: run receiver setup, then submit its public receiver ID with:\n  sudo owntransit-relay-preview register RECEIVER_ID\n", publicURL)
+	fmt.Fprintf(output, "Relay is ready at %s and enabled for reboot.\nNEXT — on your private SSH server:\n  sudo owntransit-connector-preview pair setup\nUse the relay URL above. Receiver setup prints the exact command to run here next:\n  sudo owntransit-relay-preview register RECEIVER_ID\n", publicURL)
 	return nil
 }
 

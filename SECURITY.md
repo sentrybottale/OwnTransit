@@ -51,6 +51,21 @@ explicitly unsigned development outputs and do not replace stable assets.
 The separately signed preview capsules use the isolated development namespace
 documented in [scripts/development/README.md](scripts/development/README.md).
 
+Receiver `pair setup` is an explicit local trust replacement, not a restart.
+It prepares fresh receiver/route/issuer/operational identities, permanently locks
+the old pairing and waits for its active workers to exit before atomically
+exchanging directory generations. Old state stays private and locked; no failed
+replacement, relay response or ordinary reconnect may reactivate it. Existing
+paired receivers require local confirmation before replacement. Installation
+alone never replaces endpoint identities.
+
+The receiver broker retains CAP_SETUID to create its unprivileged worker and
+CAP_KILL to enforce shutdown of that different-UID process. The network worker
+has no effective, permitted or ambient capabilities after dropping credentials.
+The systemd service uses readiness notification: fresh setup does not report
+advertising until the worker observes relay acknowledgement. This is a delivery
+check, not proof that the relay is honest or that a client is authenticated.
+
 ## Release and assurance status
 
 OwnTransit 0.1.0 is the candidate release line for Apple-silicon macOS

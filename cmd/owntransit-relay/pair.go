@@ -74,7 +74,9 @@ func runManagedRelay(arguments []string, input io.Reader, output, diagnostics io
 			fmt.Fprintln(diagnostics, err)
 			return 1
 		}
+		fmt.Fprintln(diagnostics, "Relay code (give to your client):")
 		fmt.Fprintln(output, code)
+		fmt.Fprintln(diagnostics, "\nNEXT — on your client:\n  owntransit-preview pair setup\nEnter your relay URL, the relay code above, and the receiver's private one-use pairing code. Never give the private receiver code to this relay.")
 		return 0
 	}
 	flags := flag.NewFlagSet("relay setup", flag.ContinueOnError)
