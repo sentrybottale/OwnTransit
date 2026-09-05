@@ -1,5 +1,32 @@
 # OwnTransit security policy
 
+## Receiver-owned pairing development profile
+
+The `pair` commands implement a separately selected 0.1.1 development profile;
+they do not change the published 0.1.0 enrollment rules below. See
+[RECEIVER_PAIRING.md](RECEIVER_PAIRING.md) and
+[PAIRING_INSTALL.md](PAIRING_INSTALL.md) for its authority and testing boundaries.
+An independently transferred 256-bit one-use receiver code binds the exact
+advertisement and intended receiver. Public IDs and relay codes cannot issue
+inner credentials. Code possession authorizes a device, not a human identity.
+
+Receiver issuance happens in a root-owned local process with a bounded pipe
+interface. Its separate Linux network worker drops to UID/GID 65534, clears
+supplementary groups, disables dumps and gaining privileges, and cannot read the
+root-private issuer/signing/age store. Client operational keys are generated on
+the client. Both TLS 1.3 mTLS boundaries remain independent; inner exact names,
+SPKIs, ALPN and fresh exporter-bound leases gate the fixed SSH dial. Relay keys
+cannot forge those checks. Root/endpoint compromise and whole-state rollback or
+cloning remain outside this profile's guarantee.
+
+Local policy locks survive restart. A successful lock acknowledges persistence
+and closure of the local active-worker gate. Peer shutdown can be delayed by a
+malicious relay until the remaining authorization lease expires. It is not a
+guarantee of simultaneous shutdown, termination of SSH-started jobs or erasure
+of bytes already delivered. Source integration tests are not an independent
+security assessment or signed release qualification. CI self-test artifacts are
+explicitly unsigned development outputs and do not replace stable assets.
+
 ## Release and assurance status
 
 OwnTransit 0.1.0 is the candidate release line for Apple-silicon macOS

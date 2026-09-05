@@ -1,5 +1,12 @@
 # OwnTransit v1 shipping plan
 
+The 0.1.1 receiver-owned source integration is documented in
+[PAIRING_INSTALL.md](PAIRING_INSTALL.md). Its CI outputs are explicitly
+development self-test executables, not an official signed handoff. They do not
+overwrite 0.1.0 assets or grant new authority to its installer. The historical
+0.1.0 release contract below is retained; source integration is not a claim that
+a new release signing, install/upgrade or real-host qualification has completed.
+
 Status: **OwnTransit 0.1.0 release-candidate contract; not an official stable
 publication**. The tunnel, guided client exchange, target-local credential
 lifecycle, signed package transaction and publication boundaries exist in

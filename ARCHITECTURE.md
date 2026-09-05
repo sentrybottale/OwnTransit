@@ -1,5 +1,10 @@
 # OwnTransit architecture
 
+The receiver-owned 0.1.1 development profile is explicitly selected by the
+`pair` commands and specified in [RECEIVER_PAIRING.md](RECEIVER_PAIRING.md).
+Its command flow is in [PAIRING_INSTALL.md](PAIRING_INSTALL.md). The legacy
+administrator-led profile below remains unchanged for the 0.1.0 release.
+
 ## Scope
 
 OwnTransit carries one thing: a byte stream between a native OpenSSH client and

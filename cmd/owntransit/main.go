@@ -21,6 +21,7 @@ import (
 	"github.com/sentrybottale/owntransit/internal/enrollment"
 	"github.com/sentrybottale/owntransit/internal/enrollmentexchange"
 	"github.com/sentrybottale/owntransit/internal/enrollmenttarget"
+	"github.com/sentrybottale/owntransit/internal/paircmd"
 )
 
 type clientCommands struct {
@@ -41,6 +42,7 @@ type clientCommands struct {
 	courierFetchRequest     func(string, string) error
 	courierUploadResponse   func(string, string) error
 	setup                   func([]string, io.Reader, io.Writer, io.Writer) int
+	pair                    func([]string, io.Reader, io.Writer, io.Writer) int
 }
 
 type clientRuntimeSource struct {
@@ -84,6 +86,9 @@ func productionClientCommands() clientCommands {
 		courierFetchRequest:     fetchCourierRequest,
 		courierUploadResponse:   uploadCourierResponse,
 		setup:                   runClientSetupCommand,
+		pair: func(args []string, in io.Reader, out, diag io.Writer) int {
+			return paircmd.Run(false, args, in, out, diag)
+		},
 	}
 }
 
@@ -113,7 +118,7 @@ func executeClient(
 	commandArguments := arguments
 	if len(arguments) > 0 {
 		switch arguments[0] {
-		case "version", "check-config", "verify-reader-gid", "proxy", "doctor", "ssh-config", "courier-credential-init", "courier-credential-rotate", "courier-register", "courier-fetch-request", "courier-upload-response", "setup":
+		case "version", "check-config", "verify-reader-gid", "proxy", "doctor", "ssh-config", "courier-credential-init", "courier-credential-rotate", "courier-register", "courier-fetch-request", "courier-upload-response", "setup", "pair":
 			command = arguments[0]
 			commandArguments = arguments[1:]
 		}
@@ -126,6 +131,11 @@ func executeClient(
 	}
 
 	switch command {
+	case "pair":
+		if commands.pair == nil {
+			return 1
+		}
+		return commands.pair(commandArguments, input, output, diagnostics)
 	case "setup":
 		if commands.setup == nil {
 			fmt.Fprintln(diagnostics, "owntransit setup: installed setup support is unavailable")
@@ -393,7 +403,7 @@ func clientCommandAuthorizer(invokedPath string, realUID, effectiveUID, realGID,
 	return func(command string, arguments []string) error {
 		if frontendEntry {
 			switch command {
-			case "version", "ssh-config", "courier-credential-init", "courier-credential-rotate", "courier-register", "courier-fetch-request", "courier-upload-response", "setup":
+			case "version", "ssh-config", "courier-credential-init", "courier-credential-rotate", "courier-register", "courier-fetch-request", "courier-upload-response", "setup", "pair":
 				if !privileged {
 					return nil
 				}

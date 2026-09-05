@@ -58,7 +58,12 @@ aliases before removing legacy source entrypoints.
    host/user keys, accounts, `authorized_keys`, client/server configuration,
    forwarding rules or SSH/host recovery. Qualification uses disposable or
    operator-supplied SSH fixtures.
-10. Enrollment convenience may move only bounded opaque blobs through the
+10. The explicitly selected receiver-owned pairing profile is specified in
+    `RECEIVER_PAIRING.md` and `PAIRING_INSTALL.md`. Its independently transferred
+    private one-use code authorizes one exact client; public receiver IDs and
+    relay routing codes grant no endpoint authority. Receiver issuer/signing/age
+    keys stay in the local authority process, inaccessible to its unprivileged
+    network worker. Legacy v1 enrollment convenience may move only bounded opaque blobs through the
     relay. Comparison words are only a human view of the full transcript digest;
     they grant no authority and authenticate neither human. Before issuance or
     activation, the recipient must authenticate the administrator through an
