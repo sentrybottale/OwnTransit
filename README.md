@@ -2,21 +2,46 @@
 
 **Your SSH. Your keys. Untrusted transit.**
 
+Connect two private computers over SSH when neither can accept a public
+connection. OwnTransit carries their traffic through a public relay, with a
+separate end-to-end encryption layer that keeps the relay outside the
+conversation. You keep your existing SSH keys and login rules.
+
+## Install on Linux
+
+Client:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/f1eb0003ad49ff73617d3f3bea0b10f0da2f0a18/install-linux.sh | sudo sh -s -- client
+```
+
+Connector beside the SSH server:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/f1eb0003ad49ff73617d3f3bea0b10f0da2f0a18/install-linux.sh | sudo sh -s -- connector
+```
+
+The installer selects Linux `amd64` or `arm64`, verifies the exact 0.1.0
+release, and installs only the requested local role. A fresh connector remains
+disabled until enrollment. Continue with the short recipient flow below or the
+complete [installation guide](INSTALL.md). This quick path trusts GitHub to
+deliver the initial installer; see [installation trust](SECURITY.md#installation-trust).
+
+<details>
+<summary>Release scope and pre-release upgrade limits</summary>
+
 > [!IMPORTANT]
-> OwnTransit 0.1.0 is the candidate release line for Apple-silicon macOS
+> OwnTransit 0.1.0 is published for Apple-silicon macOS
 > (`arm64`), 64-bit x86 Linux (`amd64`, also called `x86_64`), and 64-bit ARM
 > Linux (`arm64`, also called `aarch64`) within the SSH-only boundary described
-> here. Intel macOS is outside the 0.1.0 support matrix. The repository can
-> build a signed, installable candidate handoff, but that handoff is not an
-> official stable release until its exact assets and policy are authenticated
-> and its independently verified signed qualification record has
+> here. Intel macOS is outside the 0.1.0 support matrix. Its independently
+> verified signed qualification record has
 > `schema=owntransit.qualification.v1`,
 > `gate_set=owntransit-0.1.0-minimal.v1`, and overall `status=PASS`. That status
 > requires zero unresolved Critical/High defects and four bounded PASS results:
 > source/security/publication, release signatures, supported-artifact
-> execution, and a live SSH-and-SCP path through the untrusted relay. This
-> checkout does not claim that such a record exists or that an independent
-> external security certification exists.
+> execution, and a live SSH-and-SCP path through the untrusted relay. This is
+> bounded release evidence, not an independent external security certification.
 > Keep an operator-owned alternative access and recovery path throughout
 > qualification and deployment canarying.
 
@@ -44,6 +69,8 @@ client and connector over real SSH and SCP while using the pre-existing
 operator-supplied client configuration and SSH key. It performs no macOS system
 mutation and requires those client inputs plus the deployed connector
 configuration and endpoint credentials to remain unchanged.
+
+</details>
 
 ## Installed operator experience
 

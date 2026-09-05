@@ -1,12 +1,53 @@
 # Install OwnTransit
 
+## Linux quick install
+
+Client computer:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/f1eb0003ad49ff73617d3f3bea0b10f0da2f0a18/install-linux.sh | sudo sh -s -- client
+```
+
+Connector beside the SSH server:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/f1eb0003ad49ff73617d3f3bea0b10f0da2f0a18/install-linux.sh | sudo sh -s -- connector
+```
+
+That is the package installation. The same commands work on Linux
+`amd64`/`x86_64` and `arm64`/`aarch64`; the installer selects the build,
+downloads and verifies the exact 0.1.0 release, and removes its temporary
+files. The client command uses the non-root account that invoked `sudo`; add an
+explicit existing username after `client` only when running from a root
+automation session.
+
+Start a new login session before using the client. A fresh connector remains
+disabled and stopped until enrollment; an update preserves its existing
+service state. Package installation does not create SSH keys, edit SSH, or
+enroll either role.
+
+If a retry reports pending connector package recovery, do not delete its
+`.intent` or `.restart` record. When the selected lifecycle is already stable
+0.1.0, run `sudo /usr/libexec/owntransit/roles/connector/current/owntransitctl package-recover --role connector`, then retry the installer.
+
+This quick path trusts GitHub to deliver the initial installer. The URL pins a
+specific source commit; it does not authenticate a compromised GitHub delivery
+channel. The independently authenticated/offline path remains available under
+step 1 below; [installation trust](SECURITY.md#installation-trust) explains the distinction.
+The bootstrap is a convenience script added after v0.1.0; the published
+release binaries and their signatures are unchanged.
+
+Existing `0.1.0-rc.*` role state cannot be upgraded in place to stable `0.1.0`.
+The installer stops without erasing that state.
+
+<details>
+<summary>Release scope and pre-release upgrade limits</summary>
+
 > [!WARNING]
-> OwnTransit 0.1.0 is currently a candidate for Apple-silicon macOS (`arm64`),
-> 64-bit x86 Linux (`amd64`/`x86_64`), and 64-bit ARM Linux
-> (`arm64`/`aarch64`), not an official stable publication. Intel macOS is
-> outside the 0.1.0 support matrix. The repository can build a
-> signed, installable candidate handoff, but use it only for qualification
-> unless its exact signed qualification record is independently verified with
+> OwnTransit 0.1.0 is published for Apple-silicon macOS (`arm64`), 64-bit x86
+> Linux (`amd64`/`x86_64`), and 64-bit ARM Linux (`arm64`/`aarch64`). Intel
+> macOS is outside the 0.1.0 support matrix. Its exact signed qualification
+> record has
 > `schema=owntransit.qualification.v1`,
 > `gate_set=owntransit-0.1.0-minimal.v1`, and overall `status=PASS`. That status
 > requires zero unresolved Critical/High defects and all four bounded release
@@ -38,6 +79,8 @@ amd64 and arm64 results do qualify exact signed connector install/activation,
 enabled-service restart, actual host reboot, direct host reacquisition, and the
 connector running or retrying post-boot on existing hosts. Keep
 independent access while canarying every installation.
+
+</details>
 
 ## The recipient experience
 
@@ -77,10 +120,18 @@ unsolicited caller.
 
 ### 1. Install an authenticated release
 
-OwnTransit deliberately has no `curl | sh` installer and this source tree is
-not a trusted package merely because it is on GitHub. A release must provide
-the signed manifest, monotonic release policy, detached signatures, exact
-digests, SBOMs and license evidence described in
+The normal Linux commands are at the top of this page. To inspect the bootstrap
+before running it, download that same URL to `install-linux.sh`, read it, and
+then run `sudo sh ./install-linux.sh client` or `connector`.
+
+<details>
+<summary>Advanced: independently authenticated/offline handoff</summary>
+
+<br>
+
+The strict path does not treat a source tree as trusted merely because it is on
+GitHub. A release must provide the signed manifest, monotonic release policy,
+detached signatures, exact digests, SBOMs and license evidence described in
 [scripts/release/README.md](scripts/release/README.md).
 
 For Apple-silicon macOS, the no-fee distribution lane is a signed source
@@ -137,9 +188,11 @@ an official installation. Connector and relay installation also deliberately
 leave their services disabled; enabling each installed service is a separate,
 explicit operator action after its local enrollment is complete.
 
-Do not use a command from an advertisement, direct message, search result, or
-relay error page. Never use a command that downloads a script and immediately
-runs it as root.
+Do not use an installation command copied from an advertisement, direct
+message, search result, or relay error page. Use the canonical repository or an
+independently authenticated handoff.
+
+</details>
 
 ### 2. Open the invitation and perform the safety check
 
@@ -371,7 +424,7 @@ is denial of service.
 
 ## Release and assurance status
 
-The OwnTransit 0.1.0 candidate provides the SSH-only client, connector, relay,
+The OwnTransit 0.1.0 release provides the SSH-only client, connector, relay,
 offline provisioner, guided enrollment, authenticated package lifecycle, and
 native installer paths described here. The tooling can build a signed
 installable handoff for qualification. An official stable handoff must bind its
@@ -394,8 +447,8 @@ direct host reacquisition, post-boot running/retrying, binary identity, systemd
 confinement, and absence of an
 OwnTransit listener. It does not claim stable native macOS client lifecycle
 activation, macOS provisioner package lifecycle, Linux client, provisioner, or
-relay package lifecycle, or pristine-host qualification. This document does
-not assert that such a record exists.
+relay package lifecycle, or pristine-host qualification. The exact results are
+published with [v0.1.0](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.1.0).
 
 Independent implementation review, penetration testing, clean-builder
 reproduction, legal review, custody rehearsal, and environment canary results
