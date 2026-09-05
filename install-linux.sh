@@ -1,5 +1,6 @@
 #!/bin/sh
 main() {
+caller_path=${PATH-}
 set -eu
 
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -26,11 +27,13 @@ usage() {
 usage:
   sudo ./install-linux.sh connector
   sudo ./install-linux.sh client [EXISTING_LOCAL_USER]
+  sudo ./install-linux.sh relay
+  sudo ./install-linux.sh provisioner
 
 Installs one local OwnTransit 0.1.0 role on Linux amd64 or arm64. A fresh
-connector remains disabled and stopped; an existing connector keeps its service
-state. When client user is omitted, the script uses the non-root account
-recorded by sudo.
+connector or relay remains disabled and stopped; an existing service role keeps
+its service state. When client user is omitted, the script uses the non-root
+account recorded by sudo.
 EOF
 }
 
@@ -86,7 +89,7 @@ shift
 client_user=
 client_user_inferred=no
 case "$role" in
-  connector)
+  connector|relay|provisioner)
     test "$#" -eq 0 || {
       usage >&2
       exit 2
@@ -140,25 +143,83 @@ case "$(uname -m)" in
   *) fail "supported architectures are Linux amd64/x86_64 and arm64/aarch64" ;;
 esac
 
-for command_name in awk basename cat chmod chown cmp curl dirname env find flock getent grep groupadd id install ln ls mktemp mv readlink rm rmdir sed sha256sum ssh-keygen stat tar tr uname usermod wc; do
-  command -v "$command_name" >/dev/null 2>&1 || fail "required command is unavailable: $command_name"
+for command_name in awk basename cat chmod chown cmp dirname env find flock getent grep groupadd id install ln ls mktemp mv readlink rm rmdir sed sha256sum stat tar tr uname usermod wc; do
+  command -v "$command_name" >/dev/null 2>&1 ||
+    fail "required host utility is unavailable; install it before retrying: $command_name"
 done
-if test "$role" = connector; then
-  command -v systemctl >/dev/null 2>&1 && command -v useradd >/dev/null 2>&1 &&
-    test -d /run/systemd/system || fail "the connector requires Linux running systemd"
+if test "$role" = connector || test "$role" = relay; then
+  test -d /run/systemd/system || fail "the $role requires Linux running systemd"
+  command -v systemctl >/dev/null 2>&1 ||
+    fail "the $role requires systemctl from the existing systemd installation"
+  command -v useradd >/dev/null 2>&1 ||
+    fail "the $role requires useradd from the existing account-management tools"
 fi
 if test "$role" = client; then
   client_uid=$(id -u "$client_user" 2>/dev/null) || fail "client user does not exist: $client_user"
   test "$client_uid" -gt 0 || fail "client user must be non-root"
 fi
-if test "$role" = connector; then
+if test "$role" = provisioner; then
+  test -f /proc/sys/fs/protected_hardlinks &&
+    test "$(cat /proc/sys/fs/protected_hardlinks)" = 1 ||
+    fail "the provisioner requires fs.protected_hardlinks=1"
+fi
+if test "$role" = connector || test "$role" = relay; then
   for pending_record in \
-    /var/lib/owntransit/package-supervisor/connector.intent \
-    /var/lib/owntransit/package-supervisor/connector.restart; do
+    "/var/lib/owntransit/package-supervisor/$role.intent" \
+    "/var/lib/owntransit/package-supervisor/$role.restart"; do
     if test -e "$pending_record" || test -L "$pending_record"; then
-      fail "pending connector package recovery exists; do not delete its supervisor record; finish authenticated package recovery, then retry"
+      if test "$role" = connector; then
+        fail "pending connector package recovery exists; do not delete its supervisor record; finish authenticated package recovery, then retry"
+      fi
+      fail "pending relay package recovery exists; do not delete its supervisor record; finish authenticated package recovery, then retry"
     fi
   done
+fi
+
+command -v curl >/dev/null 2>&1 || fail "curl is required; install it with the host package manager, then retry"
+command -v ssh-keygen >/dev/null 2>&1 || fail "ssh-keygen is required; install the OpenSSH client tools manually, then retry"
+test -s /etc/ssl/certs/ca-certificates.crt ||
+  fail "the system CA certificate bundle is required; install ca-certificates manually, then retry"
+install_podman=no
+if test "$role" = relay; then
+  standard_podman=
+  if test -x /usr/bin/podman; then
+    standard_podman=$(readlink -f -- /usr/bin/podman 2>/dev/null) ||
+      fail "cannot resolve the required Podman path: /usr/bin/podman"
+    case "$standard_podman" in /*) ;; *) fail "the required Podman path is not canonical" ;; esac
+  fi
+  validate_discovered_podman() {
+    discovered_podman=$1
+    canonical_podman=$(readlink -f -- "$discovered_podman" 2>/dev/null) ||
+      fail "cannot resolve existing Podman path: $discovered_podman"
+    if test -z "$standard_podman" || test "$canonical_podman" != "$standard_podman"; then
+      fail "existing Podman uses an unsupported path: $discovered_podman; OwnTransit requires /usr/bin/podman"
+    fi
+  }
+  caller_podman=$(PATH=$caller_path command -v podman 2>/dev/null || true)
+  if test -n "$caller_podman"; then
+    case "$caller_podman" in
+      /*) ;;
+      *) fail "existing Podman command is not an absolute path: $caller_podman" ;;
+    esac
+    test -x "$caller_podman" || fail "existing Podman command is not executable: $caller_podman"
+    validate_discovered_podman "$caller_podman"
+  fi
+  for discovered_podman in \
+    /bin/podman \
+    /usr/local/bin/podman \
+    /usr/local/sbin/podman \
+    /snap/bin/podman; do
+    test -x "$discovered_podman" || continue
+    validate_discovered_podman "$discovered_podman"
+  done
+  if test -z "$standard_podman"; then
+    install_podman=yes
+  fi
+fi
+if test "$install_podman" = yes; then
+  test -f /etc/debian_version && test -x /usr/bin/apt-get ||
+    fail "automatic Podman installation requires Debian or Ubuntu with /usr/bin/apt-get; install Podman at /usr/bin/podman, then retry"
 fi
 
 require_protected_ancestor() {
@@ -278,6 +339,19 @@ entrypoint=$bundle/packaging/scripts/install.sh
 test -d "$bundle" && test ! -L "$bundle" && test -x "$entrypoint" ||
   fail "authenticated native bundle has no installer"
 
+if test "$install_podman" = yes; then
+  printf '%s\n' 'Installing required package: podman'
+  env -i PATH="$PATH" LC_ALL=C DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l \
+    /usr/bin/apt-get -qq update || fail "apt-get update failed while preparing Podman"
+  env -i PATH="$PATH" LC_ALL=C DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l \
+    /usr/bin/apt-get -y -qq --no-remove --no-install-recommends install podman ||
+    fail "apt-get could not install required package: podman"
+fi
+if test "$role" = relay; then
+  command -v podman >/dev/null 2>&1 && test "$(command -v podman)" = /usr/bin/podman &&
+    test -x /usr/bin/podman || fail "Podman remains unavailable at /usr/bin/podman"
+fi
+
 printf 'Installing OwnTransit %s %s for Linux %s...\n' "$release_version" "$role" "$platform_arch"
 set -- --bundle "$bundle" --assets "$assets" --trust "$trust" --role "$role"
 if test "$role" = client; then
@@ -289,9 +363,16 @@ if ! env -i PATH="$PATH" LC_ALL=C "$entrypoint" "$@" > "$stage/install.log" 2>&1
 fi
 if test "$role" = client; then
   printf 'OwnTransit client installed for %s.\n' "$client_user"
-  printf '%s\n' 'Next: start a new login session, then run: owntransit setup invitation.otinvite'
-else
+  printf 'Next: start a new login session (or run: sudo -iu %s).\n' "$client_user"
+  printf '%s\n' 'Then run owntransit setup with the actual .otinvite file supplied by your administrator. Installation does not create an invitation.'
+elif test "$role" = connector; then
   printf '%s\n' 'Connector package installed. Existing service state was preserved. If this is a fresh connector, enroll it before enabling the service.'
+elif test "$role" = relay; then
+  printf '%s\n' 'Relay package installed. Existing service state was preserved; a fresh relay remains disabled and loopback-only.'
+  printf '%s\n' 'Enrollment and public HTTPS integration are separate: https://github.com/sentrybottale/OwnTransit/blob/main/INSTALL.md'
+else
+  printf '%s\n' 'Provisioner installed as /usr/local/bin/owntransit-provision. No service or endpoint credential was created.'
+  printf '%s\n' 'Generate and keep route-authority keys on the trusted administrator machine, never on the public relay.'
 fi
 }
 
