@@ -60,6 +60,7 @@ while :; do
   path=$(dirname "$path")
 done
 derived=$(ssh-keygen -y -f "$key" </dev/null) || fail 'cannot load the named private key noninteractively'
+derived=$(printf '%s\n' "$derived" | awk 'NR==1 && NF>=2 {print $1 " " $2} END {if(NR!=1) exit 1}') || fail 'invalid derived public key'
 expected=$(awk '{print $1 " " $2}' "$public")
 test "$derived" = "$expected" || fail 'private key does not match the intended public key'
 case "$expected" in 'ssh-ed25519 '*) ;; *) fail 'Ed25519 distribution key required' ;; esac
