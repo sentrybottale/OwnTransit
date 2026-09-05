@@ -30,8 +30,12 @@ const (
 	MaxAdmissionCABytes   = 64 << 10
 	MaxTokenBytes         = 1024
 
-	MaxTokenValidity       = 30 * 24 * time.Hour
-	MaxExpiredRenewalGrace = 7 * 24 * time.Hour
+	MaxTokenValidity = 30 * 24 * time.Hour
+	// Recovery admission covers the receiver authority's two-year lifetime,
+	// including clients returning after weeks offline. It grants no endpoint
+	// authority: data needs a current token and fresh mTLS, and opaque recovery
+	// still needs the retained pairing key and current endpoint authorization.
+	MaxExpiredRenewalGrace = 2 * 365 * 24 * time.Hour
 )
 
 var (

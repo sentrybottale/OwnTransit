@@ -19,13 +19,18 @@ SPKIs, ALPN and fresh exporter-bound leases gate the fixed SSH dial. Relay keys
 cannot forge those checks. Root/endpoint compromise and whole-state rollback or
 cloning remain outside this profile's guarantee.
 
-Local policy locks survive restart. A successful lock acknowledges persistence
+Explicit local security alarms are terminal and survive restart. They cannot
+be cleared to revive old identities; recovery requires a deliberate fresh
+pairing. Ordinary network, relay or authentication failure is transient
+unavailability, not a permanent alarm. A successful alarm acknowledges persistence
 and closure of the local active-worker gate. Peer shutdown can be delayed by a
 malicious relay until the remaining authorization lease expires. It is not a
 guarantee of simultaneous shutdown, termination of SSH-started jobs or erasure
 of bytes already delivered. Source integration tests are not an independent
 security assessment or signed release qualification. CI self-test artifacts are
 explicitly unsigned development outputs and do not replace stable assets.
+The separately signed preview capsules use the isolated development namespace
+documented in [scripts/development/README.md](scripts/development/README.md).
 
 ## Release and assurance status
 

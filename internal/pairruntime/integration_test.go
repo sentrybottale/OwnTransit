@@ -347,6 +347,12 @@ func TestPairThroughRelaySSHRestartClientKillAndReceiverKill(t *testing.T) {
 		t.Fatal("receiver failed to stop")
 	}
 	_, _ = f.start(t)
+	for _, path := range []string{f.serverPath, f.clientPath} {
+		p, e := ReadPolicy(path)
+		if e != nil || p.Locked {
+			t.Fatal("ordinary restart created an alarm")
+		}
+	}
 	f.assertSSH(t)
 	l, release := f.open(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -365,15 +371,22 @@ func TestPairThroughRelaySSHRestartClientKillAndReceiverKill(t *testing.T) {
 	if _, _, err := OpenClient(ctx, f.clientPath, f.dial); err == nil {
 		t.Fatal("locked client opened carrier")
 	}
-	if err := SetLocked(ctx, f.clientPath, false, false); err != nil {
-		t.Fatal(err)
+	if err := SetLocked(ctx, f.clientPath, false, false); err == nil {
+		t.Fatal("terminal client alarm was cleared")
 	}
-	f.assertSSH(t)
-	l, release = f.open(t)
+	// Recovery is a deliberately new tunnel, not re-enabling old identities.
+	rebuilt := newIntegrated(t)
+	_, _ = rebuilt.start(t)
+	rebuilt.pair(t)
+	if rebuilt.attempt.ReceiverID == f.attempt.ReceiverID {
+		t.Fatal("rebuild reused receiver identity")
+	}
+	rebuilt.assertSSH(t)
+	l, release = rebuilt.open(t)
 	defer release()
 	killContext, killCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer killCancel()
-	if err := SetLocked(killContext, f.serverPath, true, true); err != nil {
+	if err := SetLocked(killContext, rebuilt.serverPath, true, true); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -381,13 +394,40 @@ func TestPairThroughRelaySSHRestartClientKillAndReceiverKill(t *testing.T) {
 	case <-killContext.Done():
 		t.Fatal("receiver lock left live carrier")
 	}
-	r, err := receiverpairing.Open(filepath.Join(f.serverPath, "authority"))
+	if err := SetLocked(killContext, rebuilt.serverPath, true, false); err == nil {
+		t.Fatal("terminal receiver alarm was cleared")
+	}
+	r, err := receiverpairing.Open(filepath.Join(rebuilt.serverPath, "authority"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	s, err := r.Status()
-	if err != nil || !s.LocalLocked {
+	if err != nil || !s.LocalLocked || !s.PeerRevoked {
 		t.Fatal("receiver lock was not durable")
+	}
+}
+
+func TestOlderClearablePolicyIsNotAccepted(t *testing.T) {
+	path := privatePath(t, "old-policy")
+	root, err := securefs.CreateRoot(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if err := writeRecord(root, "policy.json", Policy{Schema: "owntransit.paired-policy.v1", Generation: 1}, true); err != nil {
+		t.Fatal(err)
+	}
+	// Current v2 readers reject old clearable state; old v1 readers likewise
+	// reject the v2 schema. There is no automatic trust/policy reinterpretation.
+	var p Policy
+	if err := readRecord(root, "policy.json", &p); err != nil {
+		t.Fatal(err)
+	}
+	if p.Schema == "owntransit.paired-policy.v2" {
+		t.Fatal("old policy silently rewritten")
+	}
+	if _, err := ReadPolicy(path); err == nil {
+		t.Fatal("clearable v1 policy accepted by terminal-alarm runtime")
 	}
 }
 

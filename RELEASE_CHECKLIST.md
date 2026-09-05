@@ -223,6 +223,14 @@ authorities.
 
 ## 5. Tag and publish without granting CI authority
 
+For the separately owner-authorized development-preview lane, follow
+[scripts/development/README.md](scripts/development/README.md). Its versioned
+capsules and `owntransit-development-v1` signatures are explicitly not a stable
+or qualified handoff. That lane may use a plain numeric immutable version with
+GitHub's prerelease flag and a DEVELOPMENT PREVIEW warning; it neither creates
+nor substitutes a production qualification record. The stable and qualification
+prerelease contracts below remain unchanged.
+
 After every hard publish gate passes and every assurance/governance item has an
 honest recorded disposition, a stable release may receive one signed annotated
 tag locally. A stable tag uses the exact canonical `MAJOR.MINOR.PATCH` version

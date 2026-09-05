@@ -44,3 +44,9 @@ exists. Mixed profiles reject before SSH dial. New state uses separate private
 roots. Published 0.1.0 bytes are immutable; rollback selects the old binary and
 its separately retained old state, never interprets pairing state as legacy
 authority. The operator owns cutover and independent recovery access.
+
+The signed 0.1.1 development preview uses strict local policy schema
+`owntransit.paired-policy.v2`: a local alarm is terminal. It rejects earlier
+clearable v1 development policy rather than converting it. Older v1 readers
+reject v2 records, preventing a casual downgrade from clearing the alarm.
+Whole-state rollback/cloning or root compromise remains outside this guarantee.

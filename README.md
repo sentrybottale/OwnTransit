@@ -23,32 +23,45 @@ It can observe addresses, timing and traffic sizes, or deny service. It must
 not read the inner stream, impersonate an endpoint accepted by its peer, or
 choose where the receiver sends traffic.
 
-## Get the executables
+## Install the 0.1.1 development preview
 
-Receiver-owned pairing is available in the **0.1.1-dev self-test builds**.
-Download the artifact for your machine from a successful
-[release-candidate workflow run on main](https://github.com/sentrybottale/OwnTransit/actions/workflows/release-candidate.yml?query=branch%3Amain):
+This is a **signed development preview**, not a stable or production-qualified
+release. It installs separately from 0.1.0 and leaves old credentials and services
+alone. Linux amd64/x86_64 and arm64/aarch64 use the same command.
 
-| Your machine | Download |
-|---|---|
-| Linux x86_64 / amd64 | `owntransit-pairing-linux-amd64` |
-| Linux aarch64 / arm64 | `owntransit-pairing-linux-arm64` |
-| Apple-silicon macOS | `owntransit-pairing-darwin-arm64` |
+On the private SSH server:
 
-Linux archives contain the client, connector and relay executables, plus the
-relay container image. The macOS archive contains the client. Intel macOS is
-not supported.
+```sh
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.1/install-preview-linux.sh | sudo sh -s -- connector
+sudo owntransit-connector-preview pair setup
+```
 
-**These are development outputs, not a signed stable release.** They trust
-GitHub's build and artifact delivery; macOS outputs are not Apple-notarized.
-The existing curl installer still installs 0.1.0 and does not include this
-pairing flow.
+On a Linux client:
 
-Start with the [installation and pairing guide](PAIRING_INSTALL.md) for
-extraction, executable placement and the rootless Podman relay commands.
-It also explains the existing HTTPS prerequisite: forward the exact
-`/connects` WebSocket path to the relay's host-loopback port 9087. OwnTransit
-does not edit your reverse proxy, website, firewall or SSH configuration.
+```sh
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.1/install-preview-linux.sh | sudo sh -s -- client
+owntransit-preview pair setup
+```
+
+On the public relay:
+
+```sh
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.1/install-preview-linux.sh | sudo sh -s -- relay
+```
+
+The relay installer prints its rootless Podman load/start commands. Start the
+relay before running endpoint setup. You need an existing HTTPS WebSocket route
+from `/connects` to host-loopback port 9087; OwnTransit does not edit your
+reverse proxy, website, firewall or SSH configuration.
+
+Apple-silicon macOS uses the [signed client archive](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.1.1).
+Intel macOS is not supported. No Apple signing subscription is required; the
+client is not Apple-notarized.
+
+The initial curl script trusts GitHub delivery, then pins the existing
+distribution key and verifies the signed archive before executing its installer.
+See the [complete guide](PAIRING_INSTALL.md) for the relay commands, verification,
+macOS use and recovery. **Do not use the old 0.1.0 curl command for this flow.**
 
 ## Pair and connect
 
@@ -57,11 +70,11 @@ Once the relay is running and the executables are in place:
 ### 1. On the private SSH server
 
 ```sh
-sudo /usr/local/bin/owntransit-connector pair init --relay wss://relay.example/connects
-sudo /usr/local/bin/owntransit-connector pair serve
+sudo owntransit-connector-preview pair setup
 ```
 
-Replace `relay.example` with your relay's domain. Initialization prints two
+Enter your relay URL, such as `wss://relay.example/connects`, when prompted.
+Setup starts the installed receiver service and enables it for reboot. It prints two
 different values:
 
 - a **public receiver ID** to register at the relay; and
@@ -85,7 +98,7 @@ its relay registration automatically.
 ### 3. On the client
 
 ```sh
-owntransit pair init --relay wss://relay.example/connects
+owntransit-preview pair setup
 ```
 
 Paste the relay code and the private receiver code into the prompts. Do not
@@ -96,7 +109,7 @@ words or approval call are involved.
 Then use your existing SSH user, key and independently verified host identity:
 
 ```sh
-ssh -o 'ProxyCommand=owntransit pair proxy' USER@SSH_ALIAS
+ssh -o 'ProxyCommand=owntransit-preview pair proxy' USER@SSH_ALIAS
 ```
 
 Normal SSH options, including `-i` and `-L`, remain yours. SCP can use the same
@@ -128,30 +141,31 @@ Reconnects use retained identities and fresh authentication. Operational
 certificates refresh automatically. During a live connection, authorization
 leases renew without user prompts; ordinary SSH bytes cannot extend them.
 
-## Emergency lock
+## Emergency security alarm
 
 On the client:
 
 ```sh
-owntransit pair lock
-owntransit pair unlock
+owntransit-preview pair alarm
 ```
 
 Or on the receiver:
 
 ```sh
-sudo /usr/local/bin/owntransit-connector pair lock
-sudo /usr/local/bin/owntransit-connector pair unlock
+sudo owntransit-connector-preview pair alarm
 ```
 
-A lock survives restart, blocks new authorization and closes active local
-workers. Success is reported only after local shutdown is confirmed; a timeout
-can leave the durable lock set without confirming shutdown.
+An explicit local alarm is terminal for that pairing. It survives restart,
+blocks authorization and closes active local workers. It cannot be cleared to
+restore the tunnel. Recovery means deliberately rebuilding and re-pairing with
+fresh OwnTransit identities; SSH keys remain yours and are not changed.
+Success is reported only after local shutdown is confirmed; a timeout can leave
+the durable alarm set without confirming shutdown.
 
 The relay can suppress a kill notification. Remote cutoff is therefore bounded
 by the remaining authorization lease—at most 60 seconds—plus operating-system
-scheduling and shutdown latency. Unlock requires a fresh connection; it never
-replays an old SSH stream. A tunnel kill cannot retract delivered bytes or
+scheduling and shutdown latency. Rebuilding never replays an old SSH stream.
+A tunnel kill cannot retract delivered bytes or
 guarantee that SSH-started jobs stop.
 
 ## Scope and current limits
@@ -163,17 +177,19 @@ Bring your own working SSH setup and independent recovery access. OwnTransit
 never creates or edits SSH keys, accounts, `authorized_keys`, client/server
 configuration, forwarding rules or host recovery.
 
-The development walkthrough runs foreground processes; it does not install
-reboot-start services or migrate an existing installation. Missing network
-traffic fails closed without permanently locking the endpoint. Lost identities
-or expired, uncompleted pairing can require explicit new pairing state; the
-relay cannot authorize a silent reset.
+The connector installer supplies a disabled systemd service; explicit setup
+initializes it and enables reboot startup. No existing installation is migrated.
+Normal restarts, relay outages, failed authentication and missing lease messages
+close affected carriers and retry with retained identities—not a security alarm
+or fresh pairing. A broken carrier may disconnect its current SSH session; its
+bytes are never replayed. Lost identities or expired, uncompleted pairing can
+require explicit new pairing state; the relay cannot authorize a silent reset.
 
 Integrated tests exercise real WebSocket carriage, both TLS boundaries, SSH
 protocol authentication and exec, receiver restart, credential renewal,
-client/receiver lock, unlock/reconnect and profile rejection. This is source
-integration evidence—not an independent security assessment, live-host
-qualification or a claim that a signed 0.1.1 installer has shipped.
+terminal client/receiver alarms, deliberate rebuilding and profile rejection.
+The signed development artifacts do not claim independent security assessment,
+production qualification or a new-machine/reboot certification.
 
 For protocol and threat-model details, read
 [receiver-owned pairing](RECEIVER_PAIRING.md),

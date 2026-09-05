@@ -9,7 +9,9 @@ becomes a publication record only after its authenticated evidence, signed
 qualification record and release decision are complete. Git tags never create
 or publish artifacts automatically.
 
-## [Unreleased — 0.1.1]
+## [0.1.1]
+
+Signed development preview only; not a stable or production-qualified release.
 
 - Added an explicitly versioned receiver-owned pairing profile and local
   `pair` commands for client, connector and relay. Legacy setup is unchanged.
@@ -22,6 +24,10 @@ or publish artifacts automatically.
   root-owned local pipe broker and a dropped-privilege worker.
 - Added integrated SSH exec, restart, renewal, lock/reconnect and protocol
   rejection tests. Published 0.1.0 assets and installers are unchanged.
+- Added isolated signed Linux development installation and a prompted
+  `pair setup` path that starts the receiver's installed reboot-enabled service.
+- Made explicit security alarms terminal: no unlock of the old pairing. Normal
+  restart/network failure remains recoverable without an alarm or trust reset.
 
 ## [0.1.0]
 
