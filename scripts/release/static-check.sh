@@ -34,6 +34,20 @@ require_text install-linux.sh 'Connector package installed. Existing service sta
 require_text install-linux.sh 'ulimit -f 131072'
 require_text install-linux.sh 'env -i PATH="$PATH" LC_ALL=C'
 require_text install-linux.sh 'pending connector package recovery exists; do not delete its supervisor record; finish authenticated package recovery, then retry'
+require_text install-linux.sh 'pending relay package recovery exists; do not delete its supervisor record; finish authenticated package recovery, then retry'
+require_text install-linux.sh 'sudo ./install-linux.sh relay'
+require_text install-linux.sh 'sudo ./install-linux.sh provisioner'
+require_text install-linux.sh '/usr/bin/apt-get -qq update'
+require_text install-linux.sh '--no-install-recommends install podman'
+require_text install-linux.sh 'existing Podman uses an unsupported path:'
+require_text install-linux.sh 'caller_path=${PATH-}'
+require_text install-linux.sh 'caller_podman=$(PATH=$caller_path command -v podman'
+require_text install-linux.sh 'NEEDRESTART_MODE=l'
+require_text install-linux.sh '--no-remove --no-install-recommends install podman'
+require_text install-linux.sh 'install the OpenSSH client tools manually'
+if grep -Eq 'apt-get[^;]*(dist-upgrade|full-upgrade|[[:space:]]upgrade)|^[[:space:]]*(nginx|ufw|iptables|ip6tables|nft|firewall-cmd)[[:space:]]' install-linux.sh; then
+  fail 'simple Linux installer must not upgrade the host or change web-server/firewall configuration'
+fi
 test "$(sed -n '2p' install-linux.sh)" = 'main() {' ||
   fail 'simple Linux installer must defer all executable work into main'
 test "$(tail -n 1 install-linux.sh)" = 'main "$@"' ||
@@ -48,13 +62,19 @@ simple_extract_line=$(grep -nF 'tar --extract --gzip --no-same-owner' install-li
 test -n "$simple_archive_check_line" && test -n "$simple_extract_line" &&
   test "$simple_archive_check_line" -lt "$simple_extract_line" ||
   fail 'simple Linux installer must authenticate the native archive before extraction'
+simple_apt_line=$(grep -nF '/usr/bin/apt-get -qq update' install-linux.sh | cut -d: -f1)
+simple_bundle_ready_line=$(grep -nF 'authenticated native bundle has no installer' install-linux.sh | cut -d: -f1)
+test "$simple_bundle_ready_line" -lt "$simple_apt_line" ||
+  fail 'simple Linux installer must verify and stage its release before installing dependencies'
 if grep -Eq 'systemctl[[:space:]]+(enable|start|restart)|enable[[:space:]]+--now' install-linux.sh; then
   fail 'simple Linux installer must not enable or start a service'
 fi
 if grep -Eq 'curl[^|]*\|[[:space:]]*(sh|bash)' install-linux.sh; then
   fail 'simple Linux installation must not document or implement curl piped to a shell'
 fi
-if ./install-linux.sh relay >/dev/null 2>&1 ||
+if ./install-linux.sh unsupported-role >/dev/null 2>&1 ||
+  ./install-linux.sh relay unexpected >/dev/null 2>&1 ||
+  ./install-linux.sh provisioner unexpected >/dev/null 2>&1 ||
   ./install-linux.sh connector unexpected >/dev/null 2>&1 ||
   ./install-linux.sh client root >/dev/null 2>&1; then
   fail 'simple Linux installer accepted an unsupported role or unsafe arguments'
