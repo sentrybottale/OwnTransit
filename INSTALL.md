@@ -1,5 +1,9 @@
 # Install OwnTransit
 
+> Legacy 0.1.0 guide. These commands do not install the receiver-owned pairing
+> profile. For the current three-role development flow, use
+> [PAIRING_INSTALL.md](PAIRING_INSTALL.md).
+
 ## Linux quick install
 
 Public VPS / server (relay):
