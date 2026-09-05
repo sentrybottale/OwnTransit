@@ -12,19 +12,20 @@ conversation. You keep your existing SSH keys and login rules.
 Client:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/main/install-linux.sh | sudo sh -s -- client
+curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/f1eb0003ad49ff73617d3f3bea0b10f0da2f0a18/install-linux.sh | sudo sh -s -- client
 ```
 
 Connector beside the SSH server:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/main/install-linux.sh | sudo sh -s -- connector
+curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/f1eb0003ad49ff73617d3f3bea0b10f0da2f0a18/install-linux.sh | sudo sh -s -- connector
 ```
 
 The installer selects Linux `amd64` or `arm64`, verifies the exact 0.1.0
 release, and installs only the requested local role. A fresh connector remains
 disabled until enrollment. Continue with the short recipient flow below or the
-complete [installation guide](INSTALL.md).
+complete [installation guide](INSTALL.md). This quick path trusts GitHub to
+deliver the initial installer; see [installation trust](SECURITY.md#installation-trust).
 
 <details>
 <summary>Release scope and pre-release upgrade limits</summary>

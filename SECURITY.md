@@ -138,6 +138,30 @@ exact-pin migration profile has stronger issuer-compromise resistance because a
 new leaf also needs a preinstalled SPKI pin. This tradeoff is explicit, scoped
 to one connector/route, and not hidden behind an empty allowlist.
 
+## Installation trust
+
+There are two installation paths with different bootstrap trust assumptions:
+
+- The Linux quick install trusts the canonical GitHub repository and HTTPS
+  delivery of a commit-pinned bootstrap script. That script runs as root, pins
+  the exact v0.1.0 downloads by size and SHA-256, and invokes the signed native
+  installer. A fixed commit avoids following later changes to `main`, but it
+  does not protect against a compromised GitHub delivery channel replacing
+  the initial script. Such a replacement can run arbitrary root code before
+  any embedded check. Those checks authenticate the downloaded payload only
+  after the bootstrap itself is trusted.
+- The independent/offline handoff authenticates its distribution signer and
+  trust statement through a separately established channel before privileged
+  execution. It remains available for operators who do not accept GitHub as
+  their bootstrap authority. Its instructions are in [INSTALL.md](INSTALL.md).
+
+The quick bootstrap was added after the immutable v0.1.0 release; it is not
+part of that release's signed inventories or qualification record. The
+release binaries, signatures and runtime authorization are unchanged.
+Neither installation path uses an OwnTransit relay as a software authority.
+A compromised installer compromises its endpoint; the malicious-relay
+construction does not protect a compromised endpoint.
+
 ## Release integrity and additional assurance
 
 Every official 0.1.0 artifact handoff must provide authenticated native
@@ -168,8 +192,9 @@ portability to an untested environment. The Linux connector reboot result is
 specific to the two exercised existing hosts, not a clean-host or universal
 recovery claim. Those stronger claims require the additional assurance below.
 
-The OpenSSH distribution signer authorized as `owntransit-release` is the
-privileged package-bootstrap authority: it authenticates the outer asset
+For the independently authenticated handoff, the OpenSSH distribution signer
+authorized as `owntransit-release` is the privileged package-bootstrap
+authority: it authenticates the outer asset
 inventory and the native checksum inventory containing the installer entry
 point. Because the first privileged program cannot retroactively authenticate
 itself, compromise of that distribution key can authenticate malicious root

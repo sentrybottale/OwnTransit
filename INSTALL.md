@@ -5,13 +5,13 @@
 Client computer:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/main/install-linux.sh | sudo sh -s -- client
+curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/f1eb0003ad49ff73617d3f3bea0b10f0da2f0a18/install-linux.sh | sudo sh -s -- client
 ```
 
 Connector beside the SSH server:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/main/install-linux.sh | sudo sh -s -- connector
+curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/f1eb0003ad49ff73617d3f3bea0b10f0da2f0a18/install-linux.sh | sudo sh -s -- connector
 ```
 
 That is the package installation. The same commands work on Linux
@@ -30,8 +30,10 @@ If a retry reports pending connector package recovery, do not delete its
 `.intent` or `.restart` record. When the selected lifecycle is already stable
 0.1.0, run `sudo /usr/libexec/owntransit/roles/connector/current/owntransitctl package-recover --role connector`, then retry the installer.
 
-This quick path uses GitHub as the bootstrap distribution channel. The
-independently authenticated/offline path remains available under step 1 below.
+This quick path trusts GitHub to deliver the initial installer. The URL pins a
+specific source commit; it does not authenticate a compromised GitHub delivery
+channel. The independently authenticated/offline path remains available under
+step 1 below; [installation trust](SECURITY.md#installation-trust) explains the distinction.
 The bootstrap is a convenience script added after v0.1.0; the published
 release binaries and their signatures are unchanged.
 
