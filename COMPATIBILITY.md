@@ -28,3 +28,19 @@ Any future change requires a separately identified wire profile, explicit
 selection on both endpoints, mixed-version and cross-wire tests, downgrade
 analysis, and documented migration and rollback ceremonies. The relay cannot
 choose or negotiate a weaker profile on an endpoint's behalf.
+
+## Receiver-owned profile (0.1.1 development)
+
+Selection is explicit through the `pair` commands, never inferred from a relay
+response. The public WebSocket subprotocol is `owntransit.carrier.v2`, its outer
+TLS ALPN is `owntransit-relay-admission/2`, and the inner TLS ALPN is
+`owntransit-paired-lease/1`. The signed setup profile is
+`owntransit-receiver-pairing/1`. OTLW frames carry SSH DATA and authorization
+controls only inside that authenticated inner session. The existing FGRD READY
+marker remains byte-exact, carried as DATA after authorization and fixed dial.
+
+No v1 fallback, TOFU, implicit pin replacement or automatic enrollment conversion
+exists. Mixed profiles reject before SSH dial. New state uses separate private
+roots. Published 0.1.0 bytes are immutable; rollback selects the old binary and
+its separately retained old state, never interprets pairing state as legacy
+authority. The operator owns cutover and independent recovery access.

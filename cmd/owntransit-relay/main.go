@@ -31,6 +31,7 @@ type relayCommands struct {
 	run          func(string, io.Writer) error
 	runRuntime   func(string, string, int, io.Writer) error
 	runExchange  func(string, io.Writer) error
+	pair         func([]string, io.Writer, io.Writer) int
 }
 
 type relayRuntimeSource struct {
@@ -60,6 +61,7 @@ func productionRelayCommands() relayCommands {
 		run:          runRelay,
 		runRuntime:   runRelayRuntime,
 		runExchange:  runRelayExchange,
+		pair:         runPairCommand,
 	}
 }
 
@@ -68,13 +70,19 @@ func executeRelay(arguments []string, output, diagnostics io.Writer, commands re
 	commandArguments := arguments
 	if len(arguments) > 0 {
 		switch arguments[0] {
-		case "version", "check-config", "run", "exchange":
+		case "version", "check-config", "run", "exchange", "pair":
 			command = arguments[0]
 			commandArguments = arguments[1:]
 		}
 	}
 
 	switch command {
+	case "pair":
+		if commands.pair == nil {
+			fmt.Fprintln(diagnostics, "owntransit-relay pair: operation unavailable")
+			return 1
+		}
+		return commands.pair(commandArguments, output, diagnostics)
 	case "version":
 		if len(commandArguments) != 0 {
 			fmt.Fprintln(diagnostics, "owntransit-relay version: unexpected argument")

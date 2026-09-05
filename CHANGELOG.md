@@ -9,6 +9,20 @@ becomes a publication record only after its authenticated evidence, signed
 qualification record and release decision are complete. Git tags never create
 or publish artifacts automatically.
 
+## [Unreleased — 0.1.1]
+
+- Added an explicitly versioned receiver-owned pairing profile and local
+  `pair` commands for client, connector and relay. Legacy setup is unchanged.
+- Added client-local key generation, receiver-local issuance, exact pinned inner
+  TLS, automatic operational credential renewal, durable one-use pairing and
+  exact retry, and opaque relay registration/bootstrap.
+- Added session-bound mutual authorization leases, persistent local lock/unlock,
+  active-worker shutdown acknowledgement, and fixed-target SSH integration.
+- Isolated receiver authority keys from the Linux network worker using a
+  root-owned local pipe broker and a dropped-privilege worker.
+- Added integrated SSH exec, restart, renewal, lock/reconnect and protocol
+  rejection tests. Published 0.1.0 assets and installers are unchanged.
+
 ## [0.1.0]
 
 ### Added

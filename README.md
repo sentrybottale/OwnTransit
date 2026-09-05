@@ -7,6 +7,18 @@ connection. OwnTransit carries their traffic through a public relay, with a
 separate end-to-end encryption layer that keeps the relay outside the
 conversation. You keep your existing SSH keys and login rules.
 
+## Receiver-owned pairing (0.1.1 development)
+
+The source now includes the three-role flow: initialize the private receiver,
+register its public ID at your relay, then enter the relay code and private
+receiver code on the client. No separate provisioner or comparison-word ceremony
+is involved in this explicitly selected profile. Operational credential renewal,
+fresh authorization leases and local persistent circuit breakers are integrated.
+
+Follow [Try receiver-owned pairing](PAIRING_INSTALL.md) for the exact commands.
+This is not part of the immutable 0.1.0 downloads below. Merging source does not
+replace the signed release or change existing installations.
+
 ## Install on Linux
 
 | Install this role | On this machine |

@@ -1,5 +1,18 @@
 # OwnTransit roadmap
 
+## 0.1.1 receiver-owned integration
+
+The new `pair` commands integrate one-use receiver pairing, receiver-local
+issuance, three-role relay bootstrap, automatic certificate refresh, fresh
+session authorization and persistent local circuit breakers. The source tests
+include real SSH protocol carriage, restart and lock/reconnect. See
+[PAIRING_INSTALL.md](PAIRING_INSTALL.md) for development self-test artifacts.
+The existing signed release is not replaced by merging this source. Service
+installation/upgrade, the signed 0.1.1 handoff and host qualification remain
+separate from these development artifacts; no new-machine requirement is added.
+
+The historical 0.1.0 planning contract follows.
+
 Status: **OwnTransit 0.1.0 release candidate; stable publication is not yet
 evidenced**. The SSH-only implementation and public-source boundary are present,
 and the release tooling can build a signed installable candidate handoff. An

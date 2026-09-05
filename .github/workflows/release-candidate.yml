@@ -121,6 +121,31 @@ jobs:
           sudo -n /usr/bin/env -i PATH=/usr/bin:/bin "$root_test_binary" \
             -test.run '^(TestProvisionerPackageLifecycleAppliesAndRollsBackWithoutRuntimeReader|TestInstalledPackageDirectoriesEnforceRoleProfile)$' \
             -test.count=1
+      - name: Prove the receiver worker cannot read authority state
+        run: |
+          set -eu
+          go test -mod=readonly -c -o "$RUNNER_TEMP/owntransit-pair-broker.test" ./internal/paircmd
+          sudo install -d -m 0755 /usr/local/libexec/owntransit-pair-check
+          sudo install -m 0755 "$RUNNER_TEMP/owntransit-pair-broker.test" /usr/local/libexec/owntransit-pair-check/broker.test
+          sudo /usr/local/libexec/owntransit-pair-check/broker.test -test.run '^TestWorkerDropsIdentityAndCannotReadAuthority$' -test.v
+      - name: Build native pairing self-test executables
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/owntransit-pairing"
+          for role in owntransit owntransit-connector owntransit-relay; do
+            go build -mod=readonly -trimpath -ldflags "-X github.com/sentrybottale/owntransit/internal/buildinfo.Version=0.1.1-dev -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA" -o "$RUNNER_TEMP/owntransit-pairing/$role" "./cmd/$role"
+          done
+          cp PAIRING_INSTALL.md LICENSE THIRD_PARTY_NOTICES.md "$RUNNER_TEMP/owntransit-pairing/"
+          CGO_ENABLED=0 go build -mod=readonly -trimpath -tags=owntransit_relay_container -ldflags "-X github.com/sentrybottale/owntransit/internal/buildinfo.Version=0.1.1-dev -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA" -o "$RUNNER_TEMP/owntransit-pairing/owntransit-relay-container" ./cmd/owntransit-relay
+          docker build --network=none -f deploy/pairing/Containerfile -t owntransit-relay-pair:0.1.1-dev "$RUNNER_TEMP/owntransit-pairing"
+          docker save -o "$RUNNER_TEMP/owntransit-pairing/owntransit-relay-pair-image.tar" owntransit-relay-pair:0.1.1-dev
+      - name: Upload explicitly unreleased Linux self-test binaries
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: owntransit-pairing-linux-${{ matrix.arch }}
+          path: ${{ runner.temp }}/owntransit-pairing/
+          retention-days: 3
+          if-no-files-found: error
 
   go-security-required:
     name: Go security profiles
@@ -167,3 +192,16 @@ jobs:
           homebrew_bin=$(command -v brew)
           test -n "$homebrew_bin"
           OWNTRANSIT_HOMEBREW_BIN="$homebrew_bin" ./scripts/qualify/test-signature-tools.sh
+      - name: Build native Apple-silicon pairing client
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/owntransit-pairing"
+          go build -mod=readonly -trimpath -ldflags "-X github.com/sentrybottale/owntransit/internal/buildinfo.Version=0.1.1-dev -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA" -o "$RUNNER_TEMP/owntransit-pairing/owntransit" ./cmd/owntransit
+          cp PAIRING_INSTALL.md LICENSE THIRD_PARTY_NOTICES.md "$RUNNER_TEMP/owntransit-pairing/"
+      - name: Upload explicitly unreleased Apple-silicon self-test client
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: owntransit-pairing-darwin-arm64
+          path: ${{ runner.temp }}/owntransit-pairing/
+          retention-days: 3
+          if-no-files-found: error

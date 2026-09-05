@@ -15,6 +15,7 @@ import (
 	"github.com/sentrybottale/owntransit/internal/connector"
 	"github.com/sentrybottale/owntransit/internal/enrollment"
 	"github.com/sentrybottale/owntransit/internal/enrollmenttarget"
+	"github.com/sentrybottale/owntransit/internal/paircmd"
 )
 
 const compiledConnectorTarget = "tcp4 " + config.ConnectorSSHTarget
@@ -37,6 +38,9 @@ type connectorRuntimeSource struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "pair" {
+		os.Exit(paircmd.Run(true, os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+	}
 	code := executeConnector(os.Args[1:], os.Stdout, os.Stderr, productionConnectorCommands())
 	if code != 0 {
 		os.Exit(code)

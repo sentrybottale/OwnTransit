@@ -507,6 +507,17 @@ func (root *Root) RemoveDir(name string) error {
 // TryLock obtains a non-blocking exclusive advisory lock on one regular,
 // single-link lock file. The file is created with mode 0600 if absent.
 func (root *Root) TryLock(name string) (*Lock, error) {
+	return root.tryFlock(name, unix.LOCK_EX)
+}
+
+// TrySharedLock holds a process-lifetime admission gate. A kill operation first
+// persists denial, then obtains the exclusive lock to acknowledge that every
+// previously admitted worker has stopped. Lock files must never be replaced.
+func (root *Root) TrySharedLock(name string) (*Lock, error) {
+	return root.tryFlock(name, unix.LOCK_SH)
+}
+
+func (root *Root) tryFlock(name string, operation int) (*Lock, error) {
 	if err := validateComponent(name); err != nil {
 		return nil, err
 	}
@@ -525,7 +536,7 @@ func (root *Root) TryLock(name string) (*Lock, error) {
 			return nil, fmt.Errorf("securefs: sync new lock file %q: %w", name, err)
 		}
 	}
-	if err := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB); err != nil {
+	if err := unix.Flock(fd, operation|unix.LOCK_NB); err != nil {
 		_ = unix.Close(fd)
 		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
 			return nil, ErrLocked

@@ -1,0 +1,9 @@
+# Self-test image built from the same checked source as the native CLI artifacts.
+# Run rootless Podman: container UID 0 maps to the unprivileged host owner.
+FROM scratch
+COPY --chmod=0755 owntransit-relay-container /owntransit-relay
+COPY LICENSE /licenses/Apache-2.0.txt
+COPY THIRD_PARTY_NOTICES.md /licenses/THIRD_PARTY_NOTICES.md
+USER 0:0
+ENTRYPOINT ["/owntransit-relay"]
+CMD ["pair", "serve", "--state", "/state/relay"]

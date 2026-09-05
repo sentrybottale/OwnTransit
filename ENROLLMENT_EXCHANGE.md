@@ -1,5 +1,9 @@
 # Hostile enrollment exchange
 
+This document specifies the unchanged legacy administrator-led profile. The
+separately selected 0.1.1 receiver-owned `pair` commands use
+[RECEIVER_PAIRING.md](RECEIVER_PAIRING.md), not this human comparison procedure.
+
 Status: implemented v1 protocol for the OwnTransit 0.1.0 release-candidate line.
 Canonical signed
 invitations, independent mailbox capabilities and commitments, padded request
