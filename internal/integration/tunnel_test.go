@@ -224,10 +224,7 @@ func runTunnel(t *testing.T, fixture tunnelFixture, dialer carrierDialer) {
 	proxyContext, cancelProxy := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancelProxy()
 	var output bytes.Buffer
-	if err := clientService.Proxy(proxyContext, bytes.NewReader(testSSHPayload), &output); err != nil {
-		cancelConnector()
-		t.Fatalf("proxy SSH bytes: %v", err)
-	}
+	proxyErr := clientService.Proxy(proxyContext, bytes.NewReader(testSSHPayload), &output)
 	if err := local.result(); err != nil {
 		cancelConnector()
 		t.Fatal(err)
@@ -235,6 +232,14 @@ func runTunnel(t *testing.T, fixture tunnelFixture, dialer carrierDialer) {
 	if !bytes.Equal(output.Bytes(), testSSHReply) {
 		cancelConnector()
 		t.Fatalf("SSH reply = %q, want %q", output.Bytes(), testSSHReply)
+	}
+	// net.Pipe reports ErrClosedPipe when the fixture closes immediately after
+	// its complete reply while TLS is finishing its half-close. Only classify
+	// that test-transport shutdown after both exact payload checks succeeded;
+	// truncated data and authentication/protocol errors still fail this test.
+	if proxyErr != nil && !errors.Is(proxyErr, io.ErrClosedPipe) {
+		cancelConnector()
+		t.Fatalf("proxy SSH bytes: %v", proxyErr)
 	}
 	if calls := local.calls.Load(); calls != 1 {
 		cancelConnector()
