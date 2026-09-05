@@ -261,7 +261,7 @@ type previousRelay struct {
 func previous(ctx context.Context) (*previousRelay, error) {
 	var found *previousRelay
 	for _, e := range enginePaths {
-		if _, err := os.Stat(e); err != nil {
+		if _, err := protectedMetadata(e, 256<<20); err != nil {
 			continue
 		}
 		out, err := command(ctx, e, "ps", "-q")
@@ -383,12 +383,14 @@ func Setup(ctx context.Context, inputURL string, output io.Writer) (returnErr er
 	if err != nil {
 		return err
 	}
-	e, err := ensureEngine(ctx, output)
-	if err != nil {
-		return err
-	}
+	var e string
 	if old != nil {
 		e = old.Engine
+	} else {
+		e, err = ensureEngine(ctx, output)
+		if err != nil {
+			return err
+		}
 	}
 	executable, err := os.Executable()
 	if err != nil {
