@@ -423,6 +423,25 @@ func (receiver *Receiver) SetLocalLocked(locked bool) (ReceiverStatus, error) {
 	})
 }
 
+// RetireForReplacement binds local replacement consent to the peer observed
+// before the prompt. A concurrent first pairing must not be silently replaced.
+func (receiver *Receiver) RetireForReplacement(expectedPeer string) (ReceiverStatus, error) {
+	return receiver.updateState(func(state *stateRecord) error {
+		peer := ""
+		if state.Peer != nil {
+			peer = state.Peer.ClientID
+		}
+		if peer != expectedPeer {
+			return errors.New("receiverpairing: peer changed before replacement; repeat local setup")
+		}
+		state.LocalLocked = true
+		if state.Peer != nil {
+			state.Peer.Locked, state.Peer.Revoked = true, true
+		}
+		return nil
+	})
+}
+
 func (receiver *Receiver) SetPeerLocked(locked bool) (ReceiverStatus, error) {
 	return receiver.updateState(func(state *stateRecord) error {
 		if state.Peer == nil {

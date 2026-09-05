@@ -127,7 +127,17 @@ jobs:
           go test -mod=readonly -c -o "$RUNNER_TEMP/owntransit-pair-broker.test" ./internal/paircmd
           sudo install -d -m 0755 /usr/local/libexec/owntransit-pair-check
           sudo install -m 0755 "$RUNNER_TEMP/owntransit-pair-broker.test" /usr/local/libexec/owntransit-pair-check/broker.test
-          sudo /usr/local/libexec/owntransit-pair-check/broker.test -test.run '^TestWorkerDropsIdentityAndCannotReadAuthority$' -test.v
+          sudo systemd-run --wait --pipe --collect \
+            -p User=root -p Group=root -p UMask=0077 \
+            -p 'CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_KILL' \
+            -p AmbientCapabilities=CAP_SETUID -p NoNewPrivileges=yes \
+            -p PrivateDevices=yes -p PrivateTmp=yes -p ProtectHome=yes \
+            -p ProtectSystem=strict -p LockPersonality=yes \
+            -p MemoryDenyWriteExecute=yes -p RestrictNamespaces=yes \
+            -p RestrictRealtime=yes -p 'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6' \
+            -p LimitCORE=0 -p TasksMax=64 -p MemoryMax=256M \
+            /usr/local/libexec/owntransit-pair-check/broker.test \
+            -test.run '^(TestWorkerDropsIdentityAndCannotReadAuthority|TestBrokerCanTerminateDroppedWorker)$' -test.v
       - name: Test isolated development installation in a disposable container
         run: |
           docker run --rm --network=none --cpus=2 --memory=512m \

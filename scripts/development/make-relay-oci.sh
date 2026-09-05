@@ -25,7 +25,7 @@ test "$#" -eq 7 || {
 binary=$1
 output=$2
 architecture=$3
-version=0.1.2
+version=0.1.3
 commit=$4
 source_date_epoch=$5
 project_license=$6
@@ -167,7 +167,7 @@ manifest_size=$(file_size "$manifest")
 install -m 0644 "$manifest" "$layout/blobs/sha256/$manifest_digest"
 
 printf '%s\n' \
-  "{\"schemaVersion\":2,\"manifests\":[{\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"digest\":\"sha256:$manifest_digest\",\"size\":$manifest_size,\"platform\":{\"architecture\":\"$architecture\",\"os\":\"linux\"},\"annotations\":{\"org.opencontainers.image.ref.name\":\"owntransit-relay-pair:0.1.2\"}}]}" \
+  "{\"schemaVersion\":2,\"manifests\":[{\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"digest\":\"sha256:$manifest_digest\",\"size\":$manifest_size,\"platform\":{\"architecture\":\"$architecture\",\"os\":\"linux\"},\"annotations\":{\"org.opencontainers.image.ref.name\":\"owntransit-relay-pair:0.1.3\"}}]}" \
   > "$layout/index.json"
 printf '%s\n' '{"imageLayoutVersion":"1.0.0"}' > "$layout/oci-layout"
 chmod 0644 "$layout/index.json" "$layout/oci-layout" "$layout/blobs/sha256/"*

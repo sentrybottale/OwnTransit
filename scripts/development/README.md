@@ -19,12 +19,18 @@ existing distribution public-key digest, validates the detached inventory
 signature, and checks the selected archive digest before extraction or root
 execution. The inner installer rechecks the platform and exact flat inventory.
 
-Linux installation uses `/opt/owntransit-preview/0.1.2`, separately named
+Linux installation uses `/opt/owntransit-preview/0.1.3`, separately named
 `*-preview` aliases, and one disabled connector service. It preserves every
 legacy install, service, credential and SSH setting. `pair setup` on the
 connector initializes its own identities and explicitly enables its installed
 service; normal restart/network recovery does not require re-pairing. A local
 security alarm is terminal and requires a deliberate rebuild with fresh keys.
+
+Explicitly rerunning receiver `pair setup` creates fresh identities and a fresh
+private code; it is not a service restart. A paired receiver asks before replacing
+its client, and that consent is checked atomically against the current peer.
+The old pairing is locked and drained before atomic state replacement. Setup
+waits for the worker's advertisement acknowledgement and prints exact next steps.
 
 ## Build and publish
 

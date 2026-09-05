@@ -6,7 +6,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -125,9 +127,16 @@ func serveBroker(ctx context.Context, path string, diagnostics io.Writer) error 
 	defer output.Close()
 	cmd.Stderr = diagnostics
 	if err := cmd.Start(); err != nil {
+		fmt.Fprintln(diagnostics, "Receiver worker could not start. The service must retain CAP_SETUID to drop worker privileges; reinstall the current preview connector package.")
 		return err
 	}
-	backend := pairruntime.ReceiverBackend{Path: path}
+	backend := pairruntime.ReceiverBackend{Path: path, OnReady: func() error {
+		if err := notifyReceiverReady(); err != nil {
+			return err
+		}
+		fmt.Fprintln(diagnostics, "Receiver network worker ready; waiting for relay registration or paired client.")
+		return nil
+	}}
 	finished := make(chan error, 1)
 	go func() { finished <- pairruntime.ServeAgent(output, input, backend) }()
 	// This independent watcher can terminate a wedged worker even if its RPC
@@ -150,12 +159,35 @@ func serveBroker(ctx context.Context, path string, diagnostics io.Writer) error 
 	}()
 	select {
 	case <-ctx.Done():
-	case <-finished:
+	case err := <-finished:
+		if err != nil {
+			fmt.Fprintln(diagnostics, "Receiver worker or protected-state channel stopped; retrying does not replace identities.")
+		}
 		cancel()
 	}
 	input.Close()
 	output.Close()
 	return cmd.Wait()
+}
+
+func notifyReceiverReady() error {
+	address := os.Getenv("NOTIFY_SOCKET")
+	if address == "" {
+		return nil
+	} // Explicit foreground pair serve.
+	if len(address) > 107 || (address[0] != '/' && address[0] != '@') {
+		return pairruntime.ErrState
+	}
+	connection, err := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: address, Net: "unixgram"})
+	if err != nil {
+		return err
+	}
+	defer connection.Close()
+	if err := connection.SetWriteDeadline(time.Now().Add(time.Second)); err != nil {
+		return err
+	}
+	_, err = connection.Write([]byte("READY=1\nSTATUS=Receiver network worker ready"))
+	return err
 }
 
 func runWorker(args []string, input io.Reader, output, diagnostics io.Writer) int {
@@ -166,6 +198,7 @@ func runWorker(args []string, input io.Reader, output, diagnostics io.Writer) in
 		return 1
 	}
 	if err := pairruntime.ServeReceiver(context.Background(), &pairruntime.AgentClient{Input: input, Output: output}, nil); err != nil {
+		fmt.Fprintln(diagnostics, "Receiver network worker stopped; no pairing code or private state is included in diagnostics.")
 		return 1
 	}
 	return 0

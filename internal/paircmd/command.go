@@ -93,6 +93,7 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 		clientCommand = "owntransit-preview"
 	}
 	reader := bufio.NewReaderSize(input, 4096)
+	replacementPeer := ""
 	switch operation {
 	case "init", "setup":
 		if operation == "setup" && receiver && *state != "/var/lib/owntransit-pair" {
@@ -101,22 +102,34 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 		}
 		if operation == "setup" && receiver {
 			if _, e := os.Lstat(*state); e == nil {
-				var p pairruntime.Policy
-				p, err = pairruntime.ReadPolicy(*state)
-				if err != nil || p.Locked {
-					err = pairruntime.ErrState
-					break
-				}
-				var s pairruntime.Snapshot
-				s, err = (pairruntime.ReceiverBackend{Path: *state}).Snapshot()
+				var r *receiverpairing.Receiver
+				r, err = receiverpairing.Open(filepath.Join(*state, "authority"))
 				if err != nil {
 					break
 				}
-				err = startInstalledReceiver(ctx)
-				if err == nil {
-					fmt.Fprintf(output, "Receiver running; existing keys and pairing retained.\nPublic receiver ID: %s\n", s.Status.ReceiverID)
+				var s receiverpairing.ReceiverStatus
+				s, err = r.Status()
+				if err != nil {
+					break
 				}
-				break
+				replacementPeer = s.PairedClientID
+				if *origin == "" {
+					*origin = s.RelayOrigin
+				}
+				if s.PairedClientID != "" {
+					fmt.Fprintln(diagnostics, "This replaces the existing tunnel with fresh OwnTransit identities and disconnects its client. Use independent SSH or local-console access; SSH keys are unchanged.")
+					var answer []byte
+					answer, err = readVisibleLine(ctx, input, reader, diagnostics, "Replace this pairing? [y/N]: ", 8)
+					if err != nil {
+						break
+					}
+					if !strings.EqualFold(string(answer), "y") && !strings.EqualFold(string(answer), "yes") {
+						fmt.Fprintln(output, "Existing pairing retained. To inspect it: sudo owntransit-connector-preview pair status")
+						return 0
+					}
+				} else {
+					fmt.Fprintln(diagnostics, "Creating a fresh receiver ID and one-use code; the previous uncompleted pairing will be retired.")
+				}
 			} else if !os.IsNotExist(e) {
 				err = e
 				break
@@ -124,7 +137,7 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 		}
 		if operation == "setup" && *origin == "" {
 			var value []byte
-			value, err = readLine(ctx, input, reader, diagnostics, "Relay URL (wss://your-domain/connects): ", 2048)
+			value, err = readVisibleLine(ctx, input, reader, diagnostics, "Relay URL (wss://your-domain/connects): ", 2048)
 			if err != nil {
 				break
 			}
@@ -138,6 +151,9 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 			fmt.Fprintln(diagnostics, "owntransit pair init: invalid relay URL")
 			return 2
 		}
+		if operation == "setup" {
+			fmt.Fprintf(diagnostics, "Using relay: %s\n", *origin)
+		}
 		if err = os.MkdirAll(filepath.Dir(*state), 0700); err != nil {
 			break
 		}
@@ -149,22 +165,33 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 				break
 			}
 			var attempt receiverpairing.Attempt
-			attempt, err = pairruntime.InitializeReceiver(*state, *origin, info)
-			if err != nil {
-				break
+			if operation == "setup" {
+				bounded, c := context.WithTimeout(ctx, 10*time.Second)
+				attempt, _, err = pairruntime.RebuildReceiver(bounded, *state, *origin, info, replacementPeer)
+				c()
+			} else {
+				attempt, err = pairruntime.InitializeReceiver(*state, *origin, info)
 			}
-			_, err = fmt.Fprintf(output, "Receiver ID (give to relay):\n%s\n\nPrivate one-use pairing code (give only to your client):\n%s\n\nKeep this code private. It expires in 24 hours.\n", attempt.ReceiverID, attempt.Code)
 			if err != nil {
 				break
 			}
 			if operation == "setup" {
 				err = startInstalledReceiver(ctx)
-				if err == nil {
-					fmt.Fprintln(output, "Receiver started and enabled for reboot. Next: register the public receiver ID on your relay. Keep the private code for your client only.")
+				if err != nil {
+					fmt.Fprintln(diagnostics, "Receiver setup is saved, but startup/advertisement was not confirmed. Next: sudo journalctl -u owntransit-connector-pair.service -n 20 --no-pager\nAfter correcting the startup problem, rerun sudo owntransit-connector-preview pair setup for fresh codes.")
+					break
 				}
-			} else {
-				fmt.Fprintf(output, "Next: owntransit-connector pair serve --state %s\n", *state)
 			}
+			_, err = fmt.Fprintf(output, "Receiver ID (public; give to relay):\n%s\n\nPrivate one-use pairing code (give only to your client):\n%s\n\nKeep this code private. It expires in 24 hours.\n", attempt.ReceiverID, attempt.Code)
+			if err != nil {
+				break
+			}
+			if operation == "setup" {
+				fmt.Fprintln(output, "Receiver advertising and enabled for reboot.")
+			} else {
+				fmt.Fprintf(output, "Start this receiver: owntransit-connector pair serve --state %s\n", *state)
+			}
+			fmt.Fprintf(output, "\nNEXT — on your relay:\n  sudo owntransit-relay-preview register %s\nThen on your client:\n  owntransit-preview pair setup\nPaste the relay's code and the private pairing code above when asked.\n", attempt.ReceiverID)
 		} else {
 			var relayCode, privateCode []byte
 			relayCode, err = readLine(ctx, input, reader, diagnostics, "Relay code: ", pairrelaycmd.MaxRegistrationCode)
@@ -230,16 +257,24 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 		return 2
 	}
 	if err != nil {
-		fmt.Fprintln(diagnostics, "owntransit pair: operation failed; no trust was reset. Check the local role state and relay availability. For an interrupted client pairing, use pair resume. A failed lock acknowledgement may still have durably locked the endpoint.")
+		fmt.Fprintln(diagnostics, "owntransit pair: operation failed. Follow the step-specific instructions above. Interrupted client pairing can use pair resume. An explicit replacement or alarm may already have retired the previous pairing.")
 		return 1
 	}
 	return 0
 }
 
 func readLine(ctx context.Context, input io.Reader, reader *bufio.Reader, diagnostics io.Writer, prompt string, limit int) ([]byte, error) {
+	return readPrompt(ctx, input, reader, diagnostics, prompt, limit, true)
+}
+
+func readVisibleLine(ctx context.Context, input io.Reader, reader *bufio.Reader, diagnostics io.Writer, prompt string, limit int) ([]byte, error) {
+	return readPrompt(ctx, input, reader, diagnostics, prompt, limit, false)
+}
+
+func readPrompt(ctx context.Context, input io.Reader, reader *bufio.Reader, diagnostics io.Writer, prompt string, limit int, secret bool) ([]byte, error) {
 	fmt.Fprint(diagnostics, prompt)
 	restore := func() {}
-	if f, ok := input.(*os.File); ok {
+	if f, ok := input.(*os.File); ok && secret {
 		var err error
 		restore, err = hideEcho(f)
 		if err != nil {
@@ -283,6 +318,8 @@ func readLine(ctx context.Context, input io.Reader, reader *bufio.Reader, diagno
 }
 
 func startInstalledReceiver(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)
+	defer cancel()
 	if runtime.GOOS != "linux" || os.Geteuid() != 0 {
 		return pairruntime.ErrState
 	}
@@ -294,10 +331,18 @@ func startInstalledReceiver(ctx context.Context) error {
 	if !ok || stat.Uid != 0 {
 		return pairruntime.ErrState
 	}
-	cmd := exec.CommandContext(ctx, "/usr/bin/systemctl", "enable", "--now", "owntransit-connector-pair.service")
+	cmd := exec.CommandContext(ctx, "/usr/bin/systemctl", "enable", "owntransit-connector-pair.service")
 	cmd.Env = []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL=C"}
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	// Type=notify waits for the dropped-privilege worker's advertisement ACK,
+	// not just fork/exec. Restart also selects the freshly rebuilt local state.
+	cmd = exec.CommandContext(ctx, "/usr/bin/systemctl", "restart", "owntransit-connector-pair.service")
+	cmd.Env = []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL=C"}
+	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
 	return cmd.Run()
 }
 

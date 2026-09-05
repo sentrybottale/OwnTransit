@@ -84,7 +84,7 @@ for name in $expected_files; do
 done
 test "$0" = "$bundle/install-linux.sh" || fail 'installer must run from its exact absolute bundle path'
 
-expected_capsule=$(printf 'schema=owntransit.development-capsule.v1\nversion=0.1.2\nos=linux\narch=%s' "$arch")
+expected_capsule=$(printf 'schema=owntransit.development-capsule.v1\nversion=0.1.3\nos=linux\narch=%s' "$arch")
 test "$(cat "$bundle/CAPSULE")" = "$expected_capsule" || fail 'capsule identity does not match this host'
 
 test "$(wc -l < "$bundle/SHA256SUMS" | tr -d '[:space:]')" = 8 || fail 'SHA256SUMS must contain eight records'
@@ -114,7 +114,7 @@ if test "$role" = connector; then
   test -d /run/systemd/system && test -x /usr/bin/systemctl || fail 'connector preview requires systemd'
 fi
 
-prefix=/opt/owntransit-preview/0.1.2
+prefix=/opt/owntransit-preview/0.1.3
 case "$role" in
   client) binary=owntransit; alias=owntransit-preview ;;
   connector) binary=owntransit-connector; alias=owntransit-connector-preview ;;
@@ -128,7 +128,7 @@ if test -e "$alias_path" || test -L "$alias_path"; then
   previous_alias=$(readlink "$alias_path")
   case "$previous_alias" in
     "$alias_target") ;;
-    "/opt/owntransit-preview/0.1.1/$role/$binary")
+    "/opt/owntransit-preview/0.1.1/$role/$binary"|"/opt/owntransit-preview/0.1.2/$role/$binary")
       test -f "$previous_alias" && test ! -L "$previous_alias" || fail 'unsafe previous preview executable'
       test "$(stat -c %u:%g:%a:%h "$previous_alias")" = 0:0:755:1 || fail 'previous preview executable metadata differs'
       ;;
@@ -189,13 +189,15 @@ if test "$role" = connector; then
   trap cleanup_unit EXIT HUP INT TERM
   cat > "$unit_stage" <<EOF
 [Unit]
-Description=OwnTransit 0.1.2 preview receiver pairing broker
+Description=OwnTransit 0.1.3 preview receiver pairing broker
 After=network-online.target
 Wants=network-online.target
 ConditionPathIsDirectory=/var/lib/owntransit-pair
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
+TimeoutStartSec=30s
 User=root
 Group=root
 UMask=0077
@@ -204,8 +206,8 @@ Restart=on-failure
 RestartSec=5s
 LimitCORE=0
 NoNewPrivileges=yes
-CapabilityBoundingSet=CAP_SETUID CAP_SETGID
-AmbientCapabilities=
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_KILL
+AmbientCapabilities=CAP_SETUID
 PrivateDevices=yes
 PrivateTmp=yes
 ProtectHome=yes
@@ -230,7 +232,17 @@ EOF
     test -f "$unit" && test ! -L "$unit" || fail 'existing preview unit is unsafe'
     test "$(stat -c %u "$unit"):$(stat -c %g "$unit"):$(stat -c %a "$unit"):$(stat -c %h "$unit")" = 0:0:644:1 || fail 'existing preview unit metadata differs'
     if ! cmp -s "$unit_stage" "$unit"; then
-      sed 's/0\.1\.1/0.1.2/g' "$unit" | cmp -s "$unit_stage" - || fail 'refusing to overwrite a different preview unit'
+      # Accept only the exact previous managed template, not a locally edited
+      # service. Keep all confinement; retain the broker's intended UID-drop
+      # capability and its ability to terminate its different-UID worker.
+      sed -e 's/0\.1\.[12]/0.1.3/g' \
+        -e '/^Type=simple$/c\
+Type=notify\
+NotifyAccess=main\
+TimeoutStartSec=30s' \
+        -e 's/^CapabilityBoundingSet=CAP_SETUID CAP_SETGID$/CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_KILL/' \
+        -e 's/^AmbientCapabilities=$/AmbientCapabilities=CAP_SETUID/' \
+        "$unit" | cmp -s "$unit_stage" - || fail 'refusing to overwrite a different preview unit'
       install -o root -g root -m 0644 "$unit_stage" "$unit"
       /usr/bin/systemctl daemon-reload
     fi
@@ -240,15 +252,15 @@ EOF
   fi
   cleanup_unit
   trap - EXIT HUP INT TERM
-  printf 'Installed OwnTransit development preview 0.1.2 role %s for linux/%s.\n' "$role" "$arch"
+  printf 'Installed OwnTransit development preview 0.1.3 role %s for linux/%s.\n' "$role" "$arch"
   printf '%s\n' 'Connector preview package installed; service was not enabled or started.'
   printf '%s\n' 'Next: sudo owntransit-connector-preview pair setup'
 elif test "$role" = client; then
-  printf 'Installed OwnTransit development preview 0.1.2 role %s for linux/%s.\n' "$role" "$arch"
+  printf 'Installed OwnTransit development preview 0.1.3 role %s for linux/%s.\n' "$role" "$arch"
   printf '%s\n' 'Client preview package installed without changing accounts, SSH, or legacy OwnTransit state.'
   printf '%s\n' 'Next: owntransit-preview pair setup'
 else
-  printf 'Installed OwnTransit development preview 0.1.2 role %s for linux/%s.\n' "$role" "$arch"
+  printf 'Installed OwnTransit development preview 0.1.3 role %s for linux/%s.\n' "$role" "$arch"
   printf '%s\n' 'Relay preview package and OCI archive installed; no image, service, listener, or reverse proxy was changed.'
   printf '%s\n' 'Next: sudo owntransit-relay-preview setup'
   printf '%s\n' 'Setup asks for your public URL and handles the container, website route and reboot service.'

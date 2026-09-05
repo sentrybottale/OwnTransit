@@ -83,6 +83,7 @@ func writeRPC(output io.Writer, v rpcMessage) error {
 // unknown method, malformed message or pipe error terminates the worker.
 func ServeAgent(input io.Reader, output io.Writer, backend ReceiverBackend) error {
 	var err error
+	snapshotSent, announced := false, false
 	backend.receiver, err = backend.openReceiver()
 	if err != nil {
 		return err
@@ -97,6 +98,16 @@ func ServeAgent(input io.Reader, output io.Writer, backend ReceiverBackend) erro
 		}
 		result := rpcMessage{Operation: req.Operation}
 		switch req.Operation {
+		case "ready":
+			if len(req.Data) != 0 || req.Generation != 0 || !snapshotSent || announced {
+				return ErrState
+			}
+			announced = true
+			if backend.OnReady != nil {
+				err = backend.OnReady()
+			} else {
+				err = nil
+			}
 		case "snapshot":
 			if len(req.Data) != 0 || req.Generation != 0 {
 				return ErrState
@@ -105,6 +116,7 @@ func ServeAgent(input io.Reader, output io.Writer, backend ReceiverBackend) erro
 			s, err = backend.Snapshot()
 			if err == nil {
 				result.Data, err = json.Marshal(s)
+				snapshotSent = err == nil
 			}
 		case "policy":
 			if len(req.Data) != 0 || req.Generation != 0 {
@@ -188,6 +200,11 @@ func (a *AgentClient) Exchange(t []byte) ([]byte, error) {
 	return r.Data, err
 }
 
+func (a *AgentClient) Ready() error {
+	_, err := a.call(rpcMessage{Operation: "ready"})
+	return err
+}
+
 func pause(ctx context.Context, d time.Duration) error {
 	t := time.NewTimer(d)
 	defer t.Stop()
@@ -233,6 +250,25 @@ func serveReceiver(ctx context.Context, agent ReceiverAgent, dial pairrelay.Dial
 			}
 		}
 	}()
+	// Initial setup waits for advertisement delivery. An already registered
+	// receiver does not require its expired one-use advertisement to reconnect.
+	// A relay acknowledgement is delivery status, never endpoint trust evidence.
+	for len(s.Meta.Token) == 0 {
+		attempt, c := context.WithTimeout(ctx, 10*time.Second)
+		err = public.PublishAdvertisement(attempt, s.Meta.Advertisement)
+		c()
+		if err == nil {
+			break
+		}
+		if err := pause(ctx, time.Second); err != nil {
+			return err
+		}
+	}
+	if ready, ok := agent.(interface{ Ready() error }); ok {
+		if err := ready.Ready(); err != nil {
+			return err
+		}
+	}
 	for len(s.Meta.Token) == 0 {
 		attempt, c := context.WithTimeout(ctx, 10*time.Second)
 		err = public.PublishAdvertisement(attempt, s.Meta.Advertisement)
