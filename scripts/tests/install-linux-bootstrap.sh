@@ -182,6 +182,9 @@ for argument in "$@"; do
   printf ':%s' "$argument" >> "$fixture_bin/events"
 done
 printf '\n' >> "$fixture_bin/events"
+if test -f "$fixture_bin/install-success"; then
+  exit 0
+fi
 exit 94
 INNER
 chmod 0755 "$entrypoint"
@@ -246,7 +249,7 @@ fi
 # reached by the download-failure scenarios. Always shadow their host copies:
 # an accidental future invocation must fail inside the fixture, never operate
 # on the machine running this offline test.
-for command_name in flock getent groupadd useradd usermod systemctl; do
+for command_name in flock getent groupadd useradd usermod systemctl sudo journalctl owntransit owntransit-provision; do
   cat > "$fake_bin/$command_name" <<'EOF'
 #!/bin/sh
 exit 92
@@ -548,7 +551,29 @@ assert_role_reaches_download connector
 assert_role_reaches_download relay
 assert_role_reaches_download provisioner
 
-if grep -Eq '/etc/(nginx|ssh)|iptables|nft[[:space:]]|ufw|firewall-cmd|systemctl[[:space:]]+(enable|start)|--publish' "$source_installer"; then
+# Exercise successful exits too: printed example commands must never run.
+: > "$fake_bin/install-success"
+printf '%s\n' valid > "$fake_bin/curl-mode"
+for tested_role in client connector relay provisioner; do
+  : > "$fake_bin/events"
+  env SUDO_USER=alice SUDO_UID=1000 sh "$authenticated_fixture_installer" "$tested_role" \
+    > "$output_root/$tested_role-success.stdout" 2> "$output_root/$tested_role-success.stderr" ||
+    fail "$tested_role post-install guidance executed an action or failed"
+  assert_authenticated_release_prefix "$fake_bin/events" "$tested_role-success"
+  test "$(wc -l < "$fake_bin/events" | tr -d '[:space:]')" = 19 ||
+    fail "$tested_role guidance performed an extra action"
+  test "$(grep -c '^signed-install:' "$fake_bin/events")" = 1 ||
+    fail "$tested_role guidance repeated installation"
+  assert_clean_temporary_stage "$tested_role-success"
+done
+grep -Fq '"$HOME/owntransit-initial-route/authority"' "$output_root/provisioner-success.stdout" ||
+  fail 'provisioner example expanded the installer root HOME instead of printing a literal user command'
+
+if awk '
+  /^[[:space:]]*cat <<\047EOF\047$/ { help = 1; next }
+  help && /^EOF$/ { help = 0; next }
+  !help { print }
+' "$source_installer" | grep -Eq '/etc/(nginx|ssh)|iptables|nft[[:space:]]|ufw|firewall-cmd|systemctl[[:space:]]+(enable|start)|--publish'; then
   fail "simple bootstrap contains network, reverse-proxy, firewall, SSH, listener, or service-start automation"
 fi
 

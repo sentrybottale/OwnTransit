@@ -363,16 +363,80 @@ if ! env -i PATH="$PATH" LC_ALL=C "$entrypoint" "$@" > "$stage/install.log" 2>&1
 fi
 if test "$role" = client; then
   printf 'OwnTransit client installed for %s.\n' "$client_user"
-  printf 'Next: start a new login session (or run: sudo -iu %s).\n' "$client_user"
-  printf '%s\n' 'Then run owntransit setup with the actual .otinvite file supplied by your administrator. Installation does not create an invitation.'
+  printf 'First refresh your login session: sudo -iu %s\n' "$client_user"
+  cat <<'EOF'
+
+At the new prompt, check the installed client:
+  owntransit version
+
+Your administrator must supply a real invitation file; installation creates none.
+Example setup command (replace the path with that file's actual location):
+  owntransit setup /path/to/your-invitation.otinvite
+
+Continue an interrupted setup:
+  owntransit setup --resume
+
+After enrollment, print an example SSH configuration without changing any files:
+  owntransit ssh-config office
+
+Client instructions:
+  https://github.com/sentrybottale/OwnTransit/blob/main/INSTALL.md
+EOF
 elif test "$role" = connector; then
   printf '%s\n' 'Connector package installed. Existing service state was preserved. If this is a fresh connector, enroll it before enabling the service.'
+  cat <<'EOF'
+
+Check the installed connector and service:
+  sudo /usr/libexec/owntransit/roles/connector/current/owntransit-connector version
+  systemctl status --no-pager owntransit-connector.service
+
+A fresh service is expected to be inactive. Complete enrollment first:
+  https://github.com/sentrybottale/OwnTransit/blob/main/FIRST_DEPLOYMENT.md
+
+Only after enrollment has been applied and verified, start it and enable it at boot:
+  sudo systemctl enable --now owntransit-connector.service
+
+Read recent diagnostics:
+  sudo journalctl -u owntransit-connector.service -n 30 --no-pager
+EOF
 elif test "$role" = relay; then
   printf '%s\n' 'Relay package installed. Existing service state was preserved; a fresh relay remains disabled and loopback-only.'
-  printf '%s\n' 'Enrollment and public HTTPS integration are separate: https://github.com/sentrybottale/OwnTransit/blob/main/INSTALL.md'
+  cat <<'EOF'
+
+Check the installed release and service:
+  sudo /usr/libexec/owntransit/roles/relay/current/owntransitctl version
+  systemctl status --no-pager owntransit-relay.service
+
+A fresh service is expected to be inactive. Complete enrollment and operator-managed
+HTTPS integration first; the installer does not configure Nginx or public ports:
+  https://github.com/sentrybottale/OwnTransit/blob/main/FIRST_DEPLOYMENT.md
+
+Only after enrollment and the documented exchange cutover, start it and enable it at boot:
+  sudo systemctl enable --now owntransit-relay.service
+
+Read recent diagnostics:
+  sudo journalctl -u owntransit-relay.service -n 30 --no-pager
+EOF
 else
   printf '%s\n' 'Provisioner installed as /usr/local/bin/owntransit-provision. No service or endpoint credential was created.'
   printf '%s\n' 'Generate and keep route-authority keys on the trusted administrator machine, never on the public relay.'
+  cat <<'EOF'
+
+Run these as your ordinary administrator account, without sudo:
+  owntransit-provision version
+  owntransit-provision help
+
+For a NEW deployment, create its route authority once:
+  install -d -m 0700 "$HOME/owntransit-initial-route"
+  owntransit-provision init-authority --out "$HOME/owntransit-initial-route/authority"
+
+Keep an existing authority; do not replace it when installing an update.
+To see the invitation command's required inputs:
+  owntransit-provision issue-invitation --help
+
+Full setup and actual invitation creation:
+  https://github.com/sentrybottale/OwnTransit/blob/main/FIRST_DEPLOYMENT.md
+EOF
 fi
 }
 

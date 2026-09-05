@@ -5,25 +5,25 @@
 Public VPS / server (relay):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/1e239516b66d4b3af345d84985ccd0683f10ee26/install-linux.sh | sudo sh -s -- relay
+curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/2a558c56ec90401d4681a8f33043303db93e8060/install-linux.sh | sudo sh -s -- relay
 ```
 
 Client computer:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/1e239516b66d4b3af345d84985ccd0683f10ee26/install-linux.sh | sudo sh -s -- client
+curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/2a558c56ec90401d4681a8f33043303db93e8060/install-linux.sh | sudo sh -s -- client
 ```
 
 Connector beside the SSH server:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/1e239516b66d4b3af345d84985ccd0683f10ee26/install-linux.sh | sudo sh -s -- connector
+curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/2a558c56ec90401d4681a8f33043303db93e8060/install-linux.sh | sudo sh -s -- connector
 ```
 
 Administrator's trusted machine (offline provisioner):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/1e239516b66d4b3af345d84985ccd0683f10ee26/install-linux.sh | sudo sh -s -- provisioner
+curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/2a558c56ec90401d4681a8f33043303db93e8060/install-linux.sh | sudo sh -s -- provisioner
 ```
 
 The provisioner is a command-line tool, not a public service. Generate and keep
@@ -60,6 +60,95 @@ If `curl` is missing on Debian/Ubuntu, install the download prerequisite first:
 ```sh
 sudo apt-get update && sudo apt-get install -y curl ca-certificates
 ```
+
+## After installation
+
+Each installer prints the commands for its role. They are instructions for
+you to run, not actions performed automatically during installation.
+
+### Client
+
+Start a fresh login session as the intended client user, then check the program:
+
+```sh
+owntransit version
+```
+
+Get a real invitation file from the administrator. This setup command is an
+example: replace its path with the location of that actual file.
+
+```sh
+owntransit setup /path/to/your-invitation.otinvite
+```
+
+To continue an interrupted setup, run `owntransit setup --resume`. After
+enrollment, `owntransit ssh-config office` prints an example SSH stanza; it
+does not edit your SSH configuration.
+
+### Connector
+
+Check the installed binary and service (inactive is expected before enrollment):
+
+```sh
+sudo /usr/libexec/owntransit/roles/connector/current/owntransit-connector version
+systemctl status --no-pager owntransit-connector.service
+```
+
+Complete [enrollment and response application](FIRST_DEPLOYMENT.md) before
+starting the service. Once its enrollment is applied and verified:
+
+```sh
+sudo systemctl enable --now owntransit-connector.service
+```
+
+For recent diagnostics:
+
+```sh
+sudo journalctl -u owntransit-connector.service -n 30 --no-pager
+```
+
+### Relay
+
+Check the installed release and service (inactive is expected before enrollment):
+
+```sh
+sudo /usr/libexec/owntransit/roles/relay/current/owntransitctl version
+systemctl status --no-pager owntransit-relay.service
+```
+
+Complete [enrollment, HTTPS integration and exchange cutover](FIRST_DEPLOYMENT.md)
+before starting the full relay. Once those steps are complete:
+
+```sh
+sudo systemctl enable --now owntransit-relay.service
+```
+
+For recent diagnostics:
+
+```sh
+sudo journalctl -u owntransit-relay.service -n 30 --no-pager
+```
+
+### Provisioner
+
+Run as your ordinary administrator account, without sudo:
+
+```sh
+owntransit-provision version
+owntransit-provision help
+```
+
+For a **new deployment only**, create its route authority once:
+
+```sh
+install -d -m 0700 "$HOME/owntransit-initial-route"
+owntransit-provision init-authority --out "$HOME/owntransit-initial-route/authority"
+```
+
+Keep an existing authority when updating the software. For the next steps and
+the real invitation-creation command, continue with
+[First deployment](FIRST_DEPLOYMENT.md). `owntransit-provision issue-invitation --help`
+lists its required inputs; installation does not create an invitation.
 
 ## Where the invitation comes from
 

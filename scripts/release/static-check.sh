@@ -66,7 +66,13 @@ simple_apt_line=$(grep -nF '/usr/bin/apt-get -qq update' install-linux.sh | cut 
 simple_bundle_ready_line=$(grep -nF 'authenticated native bundle has no installer' install-linux.sh | cut -d: -f1)
 test "$simple_bundle_ready_line" -lt "$simple_apt_line" ||
   fail 'simple Linux installer must verify and stage its release before installing dependencies'
-if grep -Eq 'systemctl[[:space:]]+(enable|start|restart)|enable[[:space:]]+--now' install-linux.sh; then
+# Single-quoted help heredocs are literal output, never executable shell code.
+# Keep rejecting service activation in the executable part of the bootstrap.
+if awk '
+  /^[[:space:]]*cat <<\047EOF\047$/ { help = 1; next }
+  help && /^EOF$/ { help = 0; next }
+  !help { print }
+' install-linux.sh | grep -Eq 'systemctl[[:space:]]+(enable|start|restart)|enable[[:space:]]+--now'; then
   fail 'simple Linux installer must not enable or start a service'
 fi
 if grep -Eq 'curl[^|]*\|[[:space:]]*(sh|bash)' install-linux.sh; then
