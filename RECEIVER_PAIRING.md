@@ -114,12 +114,13 @@ There is no user prompt during normal refresh or reconnect.
 
 Use three distinct states:
 
-- **Locally locked:** persistent; only an explicit local operation can clear it.
+- **Local security alarm:** terminal for this pairing; no flag-clear operation
+  can restore it. Recovery creates fresh OwnTransit identities and pairing state.
 - **Authorization unavailable:** close affected traffic and retry automatically
   with the same trusted identity. Packet loss does not create a permanent lock.
-- **Peer explicitly locked at generation G:** close that peer's traffic and
-  reject older grants. A later authenticated peer generation may allow a new
-  connection, but cannot override this endpoint's own local lock.
+- **Peer unavailable:** do not infer a permanent alarm from missing grants or
+  malformed traffic. The relay may suppress a real remote alarm, but an alarmed
+  endpoint never grants or renews its old pairing again.
 
 A local kill operation first blocks admission and renewal under a synchronized
 authorization boundary. It durably records the lock and advances its policy
@@ -130,9 +131,9 @@ a marker only at process startup is insufficient.
 
 An authenticated peer kill notification may accelerate remote shutdown, but a
 malicious relay can suppress it. Short peer-authorization leases therefore bound
-the time before the opposite endpoint must close its side. An initial candidate
-policy is a 60-second maximum lease, renewed every 20 seconds; these are proposed
-values to test, not a measured guarantee or a user-facing setting to babysit.
+the time before the opposite endpoint must close its side. The implemented
+policy is a 60-second maximum lease, renewed every 20 seconds; these do not
+include OS scheduling/shutdown latency and are not user-tuned settings.
 
 Lease requirements:
 
@@ -158,8 +159,8 @@ Lease requirements:
 
 With a functioning endpoint, remote shutdown is bounded by the maximum remaining
 lease plus scheduling/shutdown latency. It is not guaranteed simultaneous or
-instantaneous across a hostile relay. Unlock requires fresh authentication; an
-old allow/unlock message cannot override a newer locked generation.
+instantaneous across a hostile relay. There is no unlock operation: recovery
+deliberately rebuilds and re-pairs. A remote message cannot clear a local alarm.
 
 TLS already authenticates records continuously. TLS 1.3 KeyUpdate changes traffic
 keys; it is not a new endpoint identity check. Each new carrier uses a fresh
@@ -173,7 +174,7 @@ old SSH byte stream into a replacement carrier.
   and per-authenticated-peer quotas before any target dial.
 - Root-protected authority/policy state separated from the unprivileged data
   process; least-privilege endpoint services and a restricted relay container.
-- Local event-only audit records for pairing, expiry, lock, unlock and rejected
+- Local event-only audit records for pairing, expiry, alarm, rebuilding and rejected
   identity changes. No SSH payloads, private codes, keys or bearer-token logs.
 - Explicit peer revocation that closes existing authorization and also blocks
   renewal/recovery routes; code retirement persists through ordinary rollback.

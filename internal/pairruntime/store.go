@@ -67,7 +67,7 @@ func writeRecord(root *securefs.Root, name string, value any, create bool) error
 	return root.ReplaceFile(name, b, 0600)
 }
 func initPolicy(root *securefs.Root) error {
-	return writeRecord(root, "policy.json", Policy{Schema: "owntransit.paired-policy.v1", Generation: 1}, true)
+	return writeRecord(root, "policy.json", Policy{Schema: "owntransit.paired-policy.v2", Generation: 1}, true)
 }
 func ReadPolicy(path string) (Policy, error) {
 	root, err := securefs.OpenRoot(path)
@@ -79,7 +79,7 @@ func ReadPolicy(path string) (Policy, error) {
 	if err := readRecord(root, "policy.json", &p); err != nil {
 		return p, err
 	}
-	if p.Schema != "owntransit.paired-policy.v1" || p.Generation == 0 {
+	if p.Schema != "owntransit.paired-policy.v2" || p.Generation == 0 {
 		return Policy{}, ErrState
 	}
 	return p, nil
@@ -147,6 +147,12 @@ func Admission(path string) (*securefs.Lock, error) {
 // SetLocked writes durable denial before waiting for active workers. A timeout
 // reports failure to confirm shutdown, but deliberately leaves the lock set.
 func SetLocked(ctx context.Context, path string, receiver bool, locked bool) error {
+	// A security alarm is terminal for this pairing, not a maintenance pause.
+	// v2 policy deliberately fails closed in older development binaries whose
+	// v1 policy could clear the flag. Recovery creates fresh pairing state.
+	if !locked {
+		return errors.New("pairruntime: a security alarm cannot be cleared; rebuild and re-pair the tunnel")
+	}
 	if receiver {
 		r, err := receiverpairing.Open(filepath.Join(path, "authority"))
 		if err != nil {
@@ -155,6 +161,15 @@ func SetLocked(ctx context.Context, path string, receiver bool, locked bool) err
 		if locked {
 			if _, err := r.SetLocalLocked(true); err != nil {
 				return err
+			}
+			status, err := r.Status()
+			if err != nil {
+				return err
+			}
+			if status.PairedClientID != "" {
+				if _, err := r.RevokePeer(); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -170,17 +185,6 @@ func SetLocked(ctx context.Context, path string, receiver bool, locked bool) err
 		return nil
 	}); err != nil {
 		return err
-	}
-	if !locked {
-		if receiver {
-			r, err := receiverpairing.Open(filepath.Join(path, "authority"))
-			if err != nil {
-				return err
-			}
-			_, err = r.SetLocalLocked(false)
-			return err
-		}
-		return nil
 	}
 	root, err := securefs.OpenRoot(path)
 	if err != nil {

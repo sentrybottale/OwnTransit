@@ -128,6 +128,12 @@ jobs:
           sudo install -d -m 0755 /usr/local/libexec/owntransit-pair-check
           sudo install -m 0755 "$RUNNER_TEMP/owntransit-pair-broker.test" /usr/local/libexec/owntransit-pair-check/broker.test
           sudo /usr/local/libexec/owntransit-pair-check/broker.test -test.run '^TestWorkerDropsIdentityAndCannotReadAuthority$' -test.v
+      - name: Test isolated development installation in a disposable container
+        run: |
+          docker run --rm --network=none --cpus=2 --memory=512m \
+            --volume="$PWD:/src:ro" \
+            docker.io/library/golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514 \
+            sh -ceu 'install -m 0755 /src/scripts/development/support/systemctl /usr/bin/systemctl; sh /src/scripts/development/test-install-linux.sh'
       - name: Build native pairing self-test executables
         run: |
           set -eu
