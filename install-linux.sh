@@ -6,8 +6,8 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 LC_ALL=C
 export LC_ALL
-IFS=' 	
-'
+IFS=$(printf ' \t\n.')
+IFS=${IFS%.}
 unset CDPATH ENV BASH_ENV GZIP TAR_OPTIONS POSIXLY_CORRECT
 umask 077
 
