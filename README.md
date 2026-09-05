@@ -19,25 +19,25 @@ conversation. You keep your existing SSH keys and login rules.
 Public VPS / server:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/1e239516b66d4b3af345d84985ccd0683f10ee26/install-linux.sh | sudo sh -s -- relay
+curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/2a558c56ec90401d4681a8f33043303db93e8060/install-linux.sh | sudo sh -s -- relay
 ```
 
 Client computer:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/1e239516b66d4b3af345d84985ccd0683f10ee26/install-linux.sh | sudo sh -s -- client
+curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/2a558c56ec90401d4681a8f33043303db93e8060/install-linux.sh | sudo sh -s -- client
 ```
 
 Connector beside the SSH server:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/1e239516b66d4b3af345d84985ccd0683f10ee26/install-linux.sh | sudo sh -s -- connector
+curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/2a558c56ec90401d4681a8f33043303db93e8060/install-linux.sh | sudo sh -s -- connector
 ```
 
 Administrator's machine:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/1e239516b66d4b3af345d84985ccd0683f10ee26/install-linux.sh | sudo sh -s -- provisioner
+curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/2a558c56ec90401d4681a8f33043303db93e8060/install-linux.sh | sudo sh -s -- provisioner
 ```
 
 The installer selects Linux `amd64` or `arm64`, verifies the exact 0.1.0
@@ -52,6 +52,9 @@ including the command that creates the actual invitation file. If someone else
 operates the relay, install only the client and use the invitation they give you.
 See [INSTALL.md](INSTALL.md) for prerequisites and next steps. This quick path trusts GitHub to
 deliver the initial installer; see [installation trust](SECURITY.md#installation-trust).
+
+Every installer prints [example commands for its role](INSTALL.md#after-installation),
+including installation checks and the steps to take after enrollment.
 
 <details>
 <summary>Release scope and pre-release upgrade limits</summary>
