@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/sentrybottale/owntransit/internal/identity"
@@ -45,11 +46,33 @@ type stateMaterial struct {
 	tls      pairrelay.TLSMaterial
 }
 
-// Init creates a brand-new root-owned relay state containing only the token
+// Init creates brand-new private state owned by the invoking UID, with only the token
 // HMAC key and relay TLS CA/leaf material. It creates no endpoint issuer,
 // advertisement, route registration, listener, or SSH state.
 func Init(statePath string, now time.Time) ([]byte, error) {
-	return initState(statePath, now, true)
+	return initState(statePath, now, false)
+}
+
+// StateInfo exposes only the local relay's public identity. The store must be
+// private and owned by the current UID, including an unprivileged container UID.
+func StateInfo(statePath string) ([]byte, error) {
+	m, err := loadState(statePath, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	defer clear(m.tokenKey)
+	leaf := m.tls.Certificate.Leaf
+	if leaf == nil {
+		leaf, err = x509.ParseCertificate(m.tls.Certificate.Certificate[0])
+		if err != nil {
+			return nil, err
+		}
+	}
+	pin, err := identity.SPKIPin(leaf)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(pairrelay.ServerInfo{ServerName: m.tls.ServerName, CAPEM: m.tls.CAPEM, LeafSPKISHA256: pin})
 }
 
 func initState(statePath string, now time.Time, requireRoot bool) ([]byte, error) {
@@ -183,6 +206,18 @@ func validateStateInventory(statePath string) error {
 		if _, ok := expected[entry.Name()]; ok {
 			if entry.Type()&os.ModeType != 0 {
 				return errors.New("pairrelaycmd: durable state contains a non-regular member")
+			}
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			stat, ok := info.Sys().(*syscall.Stat_t)
+			mode := os.FileMode(0600)
+			if entry.Name() == relayCAFile || entry.Name() == relayCertFile {
+				mode = 0644
+			}
+			if !ok || stat.Uid != uint32(os.Geteuid()) || stat.Nlink != 1 || info.Mode().Perm() != mode {
+				return errors.New("pairrelaycmd: state member ownership or permissions are invalid")
 			}
 			delete(expected, entry.Name())
 			continue

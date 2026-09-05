@@ -1,5 +1,24 @@
 # OwnTransit security policy
 
+## Managed relay setup
+
+The explicit relay setup command is local administration. It accepts the public
+URL, selects a recognized site configuration, verifies container ownership before
+replacement, and tests the actual v2 WebSocket endpoint against the local relay
+identity. That is routing verification, not endpoint enrollment authority.
+
+The managed container runs as UID/GID 65532 with no capabilities, no privilege
+gain, a read-only root filesystem and a loopback-only host port. Docker or Podman
+may be invoked by the root setup/service process; the relay itself is non-root.
+No SSH account is created. Private state ownership and local control-socket peer
+credentials must match the relay UID even when it is unprivileged.
+
+Existing correct routing is reused. Recognized Nginx, Apache and Caddy sites may
+receive one selected-site route after a private backup and configuration check.
+Failed public verification restores the previous relay and modified site; errors
+during rollback are reported. Custom configurations and unrelated port owners
+are not silently replaced. The setup stores no endpoint issuer material.
+
 ## Receiver-owned pairing development profile
 
 The `pair` commands implement a separately selected 0.1.1 development profile;

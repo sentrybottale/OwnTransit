@@ -45,8 +45,8 @@ type controlRequest struct {
 // and serves the v2 WebSocket handler only on fixed IPv4 loopback. It never
 // edits a reverse proxy, firewall, website, SSH configuration, or service.
 func Serve(ctx context.Context, statePath string, diagnostics io.Writer) error {
-	if ctx == nil || diagnostics == nil || os.Geteuid() != 0 {
-		return errors.New("pairrelaycmd: root context and diagnostics are required")
+	if ctx == nil || diagnostics == nil {
+		return errors.New("pairrelaycmd: context and diagnostics are required")
 	}
 	stateRoot, err := securefs.OpenRoot(statePath)
 	if err != nil {
@@ -225,8 +225,8 @@ func handleControl(connection *net.UnixConn, relay *pairrelay.Relay) {
 // Register asks the running local relay to create the initial stateless token
 // for one advertised public receiver ID. It never reads the token HMAC key.
 func Register(ctx context.Context, statePath string, receiverID protocol.ID) (string, error) {
-	if ctx == nil || os.Geteuid() != 0 || zeroID(receiverID) {
-		return "", errors.New("pairrelaycmd: root and receiver ID are required")
+	if ctx == nil || zeroID(receiverID) {
+		return "", errors.New("pairrelaycmd: context and receiver ID are required")
 	}
 	root, err := securefs.OpenRoot(statePath)
 	if err != nil {

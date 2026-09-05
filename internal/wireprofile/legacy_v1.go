@@ -6,6 +6,9 @@
 package wireprofile
 
 const (
+	// LegacyV1RelayArtifactName identifies the retired relay only during an
+	// explicit local migration. It is not a name for newly created artifacts.
+	LegacyV1RelayArtifactName    = "forthgate-relay"
 	LegacyV1Protocol             = "forthgate/1"
 	LegacyV1RelayALPN            = "forthgate-relay/1"
 	LegacyV1RelayDNSName         = "relay.forthgate.invalid"

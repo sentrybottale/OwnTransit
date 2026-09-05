@@ -22,16 +22,21 @@ import (
 )
 
 func TestInitServeRegisterAndRestart(t *testing.T) {
-	if os.Geteuid() != 0 {
-		t.Skip("relay control ownership test requires the pinned root builder")
-	}
 	probe, err := net.Listen("tcp4", HTTPListen)
 	if err != nil {
 		t.Skipf("fixed relay qualification port is unavailable: %v", err)
 	}
 	_ = probe.Close()
 	now := time.Now().UTC().Truncate(time.Second)
-	parent := t.TempDir()
+	base, err := filepath.EvalSymlinks("/tmp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := os.MkdirTemp(base, "ot-relay-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(parent) })
 	statePath := filepath.Join(parent, "relay-state")
 	summaryBytes, err := Init(statePath, now)
 	if err != nil {
@@ -58,7 +63,7 @@ func TestInitServeRegisterAndRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	attempt, err := receiver.CreateAttempt(now.Add(time.Second), time.Hour)
+	attempt, err := receiver.CreateAttempt(now, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}

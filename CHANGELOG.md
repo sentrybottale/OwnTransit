@@ -9,6 +9,18 @@ becomes a publication record only after its authenticated evidence, signed
 qualification record and release decision are complete. Git tags never create
 or publish artifacts automatically.
 
+## [0.1.2]
+
+Signed development preview only; not a stable or production-qualified release.
+
+- Added one managed VPS setup with a visible public-URL prompt, automatic
+  container-engine selection, an unprivileged container and reboot service.
+- Added site-specific route adapters for standard Nginx, Apache and Caddy
+  configurations, genuine public WebSocket verification and rollback.
+- Preserved an existing paired relay's identity during managed adoption.
+- Added direct receiver registration without container commands and automatic
+  relay setup after interactive installation.
+
 ## [0.1.1]
 
 Signed development preview only; not a stable or production-qualified release.

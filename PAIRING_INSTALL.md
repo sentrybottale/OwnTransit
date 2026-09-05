@@ -1,4 +1,4 @@
-# Test OwnTransit 0.1.1
+# Test OwnTransit 0.1.2
 
 This is the **signed development preview**, installed separately from 0.1.0.
 It is not a stable or production-qualified release. Keep another access path.
@@ -9,18 +9,46 @@ The three roles are client, public relay and private receiver/connector.
 On Linux amd64 or arm64:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.1/install-preview-linux.sh | sudo sh -s -- relay
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.2/install-preview-linux.sh | sudo sh -s -- relay
 ```
 
-The installer prints the exact rootless Podman load, initialize and start
-commands. Run them as a normal account with rootless Podman available. The
-image is installed at
-`/opt/owntransit-preview/0.1.1/relay/owntransit-relay.oci.tar`.
+Enter the full public URL at the visible prompt, such as
+`wss://relay.example/connects`. If the server hosts several websites, that
+hostname selects exactly which HTTPS site receives the route.
 
-The container publishes only host `127.0.0.1:9087`. You need an existing public
-HTTPS reverse proxy forwarding the exact `/connects` WebSocket path there.
-OwnTransit does not touch Nginx, websites, firewall rules or SSH. If an old relay
-occupies that port, make an explicit cutover; the installer does not stop it.
+You can also pass the URL in the same installation command:
+
+```sh
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.2/install-preview-linux.sh | sudo sh -s -- relay wss://relay.example/connects
+```
+
+Setup detects Docker or Podman, installs Podman through a supported package
+manager if needed, loads the authenticated image, creates its private state,
+runs the relay as an unprivileged container user, and enables the systemd
+service. You do not create an operating-system account or type container commands.
+
+It first checks existing HTTPS routing. If routing is missing, it selects the
+matching Nginx, Apache or Caddy site, keeps a private backup, adds only the exact
+`/connects` route, validates the server configuration and reloads it. Other sites
+and locations are retained. The relay's host port is `127.0.0.1:9087`.
+
+Only an identified OwnTransit relay is eligible for automatic replacement.
+Its previous state is preserved; an existing paired relay's keys are adopted.
+If the public WebSocket check fails, setup stops its new service and restores
+the previous relay and any site configuration it changed. A rollback error is
+reported explicitly.
+
+Supported managed setup requires Linux with systemd and an existing HTTPS site.
+It understands standard local Nginx/Apache/Caddy layouts and can reuse a correct
+route provided by any other proxy. Custom layouts, conflicting services and a
+domain without an HTTPS site are reported without silently rewriting them.
+No SSH, website content, database, account or provider firewall settings are edited.
+
+If the package is already installed, the same setup is available directly:
+
+```sh
+sudo owntransit-relay-preview setup
+```
 
 Keep the relay running before setting up either endpoint.
 
@@ -30,7 +58,7 @@ These commands work on both supported Linux architectures, including a 64-bit
 Raspberry Pi:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.1/install-preview-linux.sh | sudo sh -s -- connector
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.2/install-preview-linux.sh | sudo sh -s -- connector
 sudo owntransit-connector-preview pair setup
 ```
 
@@ -53,7 +81,7 @@ network connections are outbound. Its SSH target is fixed to
 In another relay terminal, replace `RECEIVER_ID` with the public ID:
 
 ```sh
-podman exec owntransit-relay-pair /owntransit-relay pair register --state /state/relay RECEIVER_ID
+sudo owntransit-relay-preview register RECEIVER_ID
 ```
 
 Copy the printed relay code to the client. The running receiver picks up its
@@ -62,7 +90,7 @@ registration automatically; you do not paste that code back into the receiver.
 ## 4. Install and pair a Linux client
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.1/install-preview-linux.sh | sudo sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.2/install-preview-linux.sh | sudo sh -s -- client
 owntransit-preview pair setup
 ```
 
@@ -78,8 +106,8 @@ owntransit-preview pair resume
 
 ### Apple-silicon macOS client
 
-Download `owntransit-preview-0.1.1-darwin-arm64.tar.gz` from the
-[0.1.1 development release](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.1.1).
+Download `owntransit-preview-0.1.2-darwin-arm64.tar.gz` from the
+[0.1.2 development release](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.1.2).
 Verify its digest against the signed `DEVELOPMENT-SHA256SUMS`, then extract it.
 The archive contains the client, capsule identity, checksums and license notices.
 It does not alter your Mac or require Apple notarization.
@@ -143,7 +171,7 @@ clearable-lock development state is rejected rather than silently converted.
 
 ## What installation changes
 
-Only the requested role is installed below `/opt/owntransit-preview/0.1.1`,
+Only the requested role is installed below `/opt/owntransit-preview/0.1.2`,
 with a separately named `*-preview` alias. An exact reinstall is idempotent;
 an unmanaged conflicting file is not overwritten. The connector installer
 creates a disabled service; only your explicit `pair setup` enables it.
@@ -154,8 +182,9 @@ The default receiver state is `/var/lib/owntransit-pair`. Client state is
 the installed receiver service deliberately uses its fixed default state.
 
 The old 0.1.0 install and credentials are preserved. Do not use its installer
-or enrollment workflow for this preview. No automatic migration, account
-management, SSH changes or proxy/firewall changes are performed.
+or enrollment workflow for this preview. Relay setup can explicitly migrate an identified older relay and configure
+only the selected site's route. No account management, SSH or provider firewall
+changes are performed.
 
 ## Verification and assurance
 

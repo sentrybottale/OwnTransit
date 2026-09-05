@@ -3,6 +3,10 @@ set -eu
 umask 077
 GOMAXPROCS=2
 export GOMAXPROCS
+GOFLAGS=
+GOWORK=off
+GOENV=off
+export GOFLAGS GOWORK GOENV
 fail() { printf 'development-build: %s\n' "$*" >&2; exit 1; }
 test "$#" -eq 2 || fail 'usage: build.sh ABSOLUTE_GO1267 ABSOLUTE_NEW_OUTPUT'
 go_bin=$1
@@ -24,7 +28,7 @@ test -n "$tar_bin" || fail 'GNU tar is required'
 install -d -m 0700 "$output"
 scratch=$(mktemp -d "$output/build.XXXXXXXX")
 sha() { shasum -a 256 "$1" | awk '{print $1}'; }
-version=0.1.1
+version=0.1.2
 ldflags="-buildid= -X github.com/sentrybottale/owntransit/internal/buildinfo.Version=$version -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$commit -X github.com/sentrybottale/owntransit/internal/buildinfo.Dirty=false"
 
 for platform in linux-amd64 linux-arm64 darwin-arm64; do
@@ -55,8 +59,8 @@ for platform in linux-amd64 linux-arm64 darwin-arm64; do
   chmod 0644 "$output/$top.tar.gz"
 done
 install -m 0644 install-preview-linux.sh "$output/install-preview-linux.sh"
-printf 'OwnTransit 0.1.1 DEVELOPMENT PREVIEW\nsource_commit=%s\nsource_date_epoch=%s\n\nNot stable or production-qualified. No existing release or state is replaced.\nDistribution signatures authenticate these exact development bytes, not a platform qualification claim.\n' "$commit" "$epoch" > "$output/DEVELOPMENT.txt"
+printf 'OwnTransit 0.1.2 DEVELOPMENT PREVIEW\nsource_commit=%s\nsource_date_epoch=%s\n\nNot stable or production-qualified. Published releases are immutable. Explicit relay setup can replace an identified old relay and update the selected website route, with rollback on failure.\nDistribution signatures authenticate these exact development bytes, not a platform qualification claim.\n' "$commit" "$epoch" > "$output/DEVELOPMENT.txt"
 chmod 0644 "$output/DEVELOPMENT.txt"
-(cd "$output"; for member in DEVELOPMENT.txt install-preview-linux.sh owntransit-preview-0.1.1-darwin-arm64.tar.gz owntransit-preview-0.1.1-linux-amd64.tar.gz owntransit-preview-0.1.1-linux-arm64.tar.gz; do printf '%s  %s\n' "$(sha "$member")" "$member"; done) > "$output/DEVELOPMENT-SHA256SUMS"
+(cd "$output"; for member in DEVELOPMENT.txt install-preview-linux.sh owntransit-preview-0.1.2-darwin-arm64.tar.gz owntransit-preview-0.1.2-linux-amd64.tar.gz owntransit-preview-0.1.2-linux-arm64.tar.gz; do printf '%s  %s\n' "$(sha "$member")" "$member"; done) > "$output/DEVELOPMENT-SHA256SUMS"
 chmod 0644 "$output/DEVELOPMENT-SHA256SUMS"
 printf 'Built exact development capsules in %s\nBuild intermediates retained in %s\n' "$output" "$scratch"
