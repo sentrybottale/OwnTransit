@@ -28,9 +28,14 @@ func TestCodeInputBoundAndNoEcho(t *testing.T) {
 	}
 }
 
-func TestCodePromptCancellationDoesNotWaitForInput(t *testing.T){
-	in,out:=io.Pipe();defer in.Close();defer out.Close()
-	ctx,cancel:=context.WithCancel(context.Background());cancel()
+func TestCodePromptCancellationDoesNotWaitForInput(t *testing.T) {
+	in, out := io.Pipe()
+	defer in.Close()
+	defer out.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 	var diagnostics bytes.Buffer
-	if _,err:=readLine(ctx,in,bufio.NewReader(in),&diagnostics,"Code: ",32);err!=context.Canceled{t.Fatalf("cancel = %v",err)}
+	if _, err := readLine(ctx, in, bufio.NewReader(in), &diagnostics, "Code: ", 32); err != context.Canceled {
+		t.Fatalf("cancel = %v", err)
+	}
 }

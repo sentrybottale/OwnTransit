@@ -347,7 +347,12 @@ func TestPairThroughRelaySSHRestartClientKillAndReceiverKill(t *testing.T) {
 		t.Fatal("receiver failed to stop")
 	}
 	_, _ = f.start(t)
-	for _,path:=range []string{f.serverPath,f.clientPath}{p,e:=ReadPolicy(path);if e!=nil||p.Locked{t.Fatal("ordinary restart created an alarm")}}
+	for _, path := range []string{f.serverPath, f.clientPath} {
+		p, e := ReadPolicy(path)
+		if e != nil || p.Locked {
+			t.Fatal("ordinary restart created an alarm")
+		}
+	}
 	f.assertSSH(t)
 	l, release := f.open(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -403,7 +408,7 @@ func TestPairThroughRelaySSHRestartClientKillAndReceiverKill(t *testing.T) {
 }
 
 func TestOlderClearablePolicyIsNotAccepted(t *testing.T) {
-	path:=privatePath(t,"old-policy")
+	path := privatePath(t, "old-policy")
 	root, err := securefs.CreateRoot(path)
 	if err != nil {
 		t.Fatal(err)
@@ -421,7 +426,9 @@ func TestOlderClearablePolicyIsNotAccepted(t *testing.T) {
 	if p.Schema == "owntransit.paired-policy.v2" {
 		t.Fatal("old policy silently rewritten")
 	}
-	if _,err:=ReadPolicy(path);err==nil{t.Fatal("clearable v1 policy accepted by terminal-alarm runtime")}
+	if _, err := ReadPolicy(path); err == nil {
+		t.Fatal("clearable v1 policy accepted by terminal-alarm runtime")
+	}
 }
 
 func TestCredentialRenewalPersistsAndRejectsWrongCSRScope(t *testing.T) {
