@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sentrybottale/owntransit/internal/pairrelay"
+	"github.com/sentrybottale/owntransit/internal/pairrelaycmd"
 )
 
 // This test intentionally uses the real root paths, only in a marked,
@@ -138,4 +139,46 @@ func TestManagedSetupAndFailedRouteRollback(t *testing.T) {
 			}
 		})
 	}
+	t.Run("adopt exact keys and reject symlinks", func(t *testing.T) {
+		parent := t.TempDir()
+		source := filepath.Join(parent, "relay")
+		if _, err := pairrelaycmd.Init(source, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		c := containerInfo{}
+		c.Mounts = []struct{ Type, Source, Destination string }{{"bind", parent, "/state"}}
+		dataDir := filepath.Join(managedRoot, "adoption-data")
+		if err := os.Mkdir(dataDir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := adoptState(c, dataDir); err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range []string{"token-hmac.key", "relay-ca-cert.pem", "relay-ca-key.pem", "relay-cert.pem", "relay-key.pem"} {
+			before, e := os.ReadFile(filepath.Join(source, name))
+			if e != nil {
+				t.Fatal(e)
+			}
+			after, e := os.ReadFile(filepath.Join(dataDir, "relay", name))
+			if e != nil || !bytes.Equal(before, after) {
+				t.Fatal("adoption changed a relay identity")
+			}
+		}
+		badDir := filepath.Join(managedRoot, "bad-adoption-data")
+		if err := os.Mkdir(badDir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(filepath.Join(source, "relay-key.pem")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink("/etc/passwd", filepath.Join(source, "relay-key.pem")); err != nil {
+			t.Fatal(err)
+		}
+		if err := adoptState(c, badDir); err == nil {
+			t.Fatal("adoption followed a relay-controlled symlink")
+		}
+		if _, err := os.Stat(filepath.Join(badDir, "relay")); !os.IsNotExist(err) {
+			t.Fatal("failed adoption published partial state")
+		}
+	})
 }

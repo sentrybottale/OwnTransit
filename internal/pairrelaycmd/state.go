@@ -46,7 +46,7 @@ type stateMaterial struct {
 	tls      pairrelay.TLSMaterial
 }
 
-// Init creates a brand-new root-owned relay state containing only the token
+// Init creates brand-new private state owned by the invoking UID, with only the token
 // HMAC key and relay TLS CA/leaf material. It creates no endpoint issuer,
 // advertisement, route registration, listener, or SSH state.
 func Init(statePath string, now time.Time) ([]byte, error) {

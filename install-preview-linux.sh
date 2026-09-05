@@ -70,7 +70,7 @@ fetch() {
 }
 
 printf 'Installing signed OwnTransit %s DEVELOPMENT preview (%s, Linux %s).\n' "$version" "$role" "$arch"
-printf '%s\n' 'This is a test build, not the stable release. Existing 0.1.0 files, services and credentials are left alone.'
+printf '%s\n' 'This is a development build. Endpoint credentials are preserved. Explicit relay setup may replace an identified old relay, with rollback on failure.'
 fetch distribution-public.key 4096
 test "$(sha256sum "$stage/distribution-public.key" | awk '{print $1}')" = 55d97d90f4b81628aa534ba28960b63685ea5d1d4eeef489ffb28de632dc0a9e || fail 'distribution key does not match the pinned authority'
 awk 'NF >= 2 && $1 == "ssh-ed25519" {print "owntransit-development " $1 " " $2; count++} END {if(count!=1) exit 1}' "$stage/distribution-public.key" > "$stage/allowed_signers"
