@@ -9,22 +9,48 @@ conversation. You keep your existing SSH keys and login rules.
 
 ## Install on Linux
 
-Client:
+| Install this role | On this machine |
+|---|---|
+| `relay` | Your public VPS: the Internet-facing transit server |
+| `connector` | The private machine running your SSH server |
+| `client` | The computer you connect from |
+| `provisioner` | The administrator's trusted machine: creates invitations and approves enrollment |
+
+Public VPS / server:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/f1eb0003ad49ff73617d3f3bea0b10f0da2f0a18/install-linux.sh | sudo sh -s -- client
+curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/1e239516b66d4b3af345d84985ccd0683f10ee26/install-linux.sh | sudo sh -s -- relay
+```
+
+Client computer:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/1e239516b66d4b3af345d84985ccd0683f10ee26/install-linux.sh | sudo sh -s -- client
 ```
 
 Connector beside the SSH server:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/f1eb0003ad49ff73617d3f3bea0b10f0da2f0a18/install-linux.sh | sudo sh -s -- connector
+curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/1e239516b66d4b3af345d84985ccd0683f10ee26/install-linux.sh | sudo sh -s -- connector
+```
+
+Administrator's machine:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/1e239516b66d4b3af345d84985ccd0683f10ee26/install-linux.sh | sudo sh -s -- provisioner
 ```
 
 The installer selects Linux `amd64` or `arm64`, verifies the exact 0.1.0
-release, and installs only the requested local role. A fresh connector remains
-disabled until enrollment. Continue with the short recipient flow below or the
-complete [installation guide](INSTALL.md). This quick path trusts GitHub to
+release, and installs only the requested local role. On Debian/Ubuntu it installs
+Podman if the relay needs it. Fresh relay and connector services stay stopped
+until enrollment. It does not edit Nginx, websites, firewall rules or SSH
+configuration. Public HTTPS routing to the relay's loopback port is managed
+separately by the VPS operator. Keep the route authority off the public relay.
+
+Setting up your own deployment? Follow [First deployment](FIRST_DEPLOYMENT.md),
+including the command that creates the actual invitation file. If someone else
+operates the relay, install only the client and use the invitation they give you.
+See [INSTALL.md](INSTALL.md) for prerequisites and next steps. This quick path trusts GitHub to
 deliver the initial installer; see [installation trust](SECURITY.md#installation-trust).
 
 <details>
