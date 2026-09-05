@@ -40,7 +40,11 @@ case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; *
 for command_name in awk cat chmod curl dirname env grep id install mktemp mv rm sha256sum sort ssh-keygen stat tar tr uname wc; do
   command -v "$command_name" >/dev/null 2>&1 || fail "required command missing: $command_name"
 done
-test -s /etc/ssl/certs/ca-certificates.crt || fail 'install ca-certificates first'
+system_ca_found=no
+for ca_path in /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/ca-bundle.pem /etc/ssl/cert.pem; do
+  if test -s "$ca_path"; then system_ca_found=yes; break; fi
+done
+test "$system_ca_found" = yes || fail 'install the distribution ca-certificates package first'
 for path in / /var /var/lib; do
   test -d "$path" && test ! -L "$path" && test "$(stat -c %u "$path")" = 0 || fail 'unsafe download staging ancestor'
   mode=$(stat -c %a "$path")

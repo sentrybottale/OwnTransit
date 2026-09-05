@@ -241,7 +241,7 @@ func ownsPort(c containerInfo) bool {
 }
 func ownRelay(c containerInfo) bool {
 	name := strings.TrimPrefix(c.Name, "/")
-	if name != managedContainer && name != "owntransit-relay-pair" && name != "owntransit-relay" && name != wireprofile.LegacyV1RelayArtifactName {
+	if name != managedContainer && name != "owntransit-relay-pair" && name != "owntransit-relay" && name != wireprofile.LegacyV1RelayArtifactName && c.Config.Labels["org.opencontainers.image.title"] != "OwnTransit Relay" {
 		return false
 	}
 	if len(c.Config.Entrypoint) != 1 {
@@ -403,7 +403,30 @@ func Setup(ctx context.Context, inputURL string, output io.Writer) (returnErr er
 		return errors.New("the authenticated relay image is missing beside the installed executable")
 	}
 	fmt.Fprintf(output, "Selected endpoint: %s\nContainer engine: %s\n", publicURL, filepath.Base(e))
-	if _, err := command(ctx, e, "load", "--input", archive); err != nil {
+	loadArchive := archive
+	if filepath.Base(e) == "docker" {
+		input, err := os.Open(archive)
+		if err != nil {
+			return err
+		}
+		converted, err := os.CreateTemp(managedRoot, "docker-load-*.tar")
+		if err != nil {
+			input.Close()
+			return err
+		}
+		defer os.Remove(converted.Name())
+		err = DockerArchive(input, converted, imageTag)
+		input.Close()
+		closed := converted.Close()
+		if err != nil {
+			return err
+		}
+		if closed != nil {
+			return closed
+		}
+		loadArchive = converted.Name()
+	}
+	if _, err := command(ctx, e, "load", "--input", loadArchive); err != nil {
 		return err
 	}
 	// Do not alter state or the listener if a pre-existing same-name container
@@ -416,6 +439,9 @@ func Setup(ctx context.Context, inputURL string, output io.Writer) (returnErr er
 		return err
 	}
 	image := strings.TrimSpace(string(imageBytes))
+	if len(image) == 64 {
+		image = "sha256:" + image
+	}
 	if !validImage(image) {
 		return errors.New("image did not resolve to an immutable ID")
 	}
