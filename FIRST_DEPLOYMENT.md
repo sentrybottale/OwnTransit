@@ -1,5 +1,8 @@
 # First Linux deployment
 
+> Legacy 0.1.0 guide. For receiver-owned pairing with three roles, use
+> [PAIRING_INSTALL.md](PAIRING_INSTALL.md) instead. Do not mix the two protocols.
+
 These steps use the shipped OwnTransit
 0.1.0 commands for exactly one public relay, one private connector, one route,
 and one Linux client. They cover the actual invitation creation command and

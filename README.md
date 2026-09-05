@@ -7,319 +7,190 @@ connection. OwnTransit carries their traffic through a public relay, with a
 separate end-to-end encryption layer that keeps the relay outside the
 conversation. You keep your existing SSH keys and login rules.
 
-## Receiver-owned pairing (0.1.1 development)
+## Three roles. One private connection.
 
-The source now includes the three-role flow: initialize the private receiver,
-register its public ID at your relay, then enter the relay code and private
-receiver code on the client. No separate provisioner or comparison-word ceremony
-is involved in this explicitly selected profile. Operational credential renewal,
-fresh authorization leases and local persistent circuit breakers are integrated.
+| Role | Where it runs | What it does |
+|---|---|---|
+| Client | The computer you connect from | Carries your existing SSH connection |
+| Receiver / connector | The private machine running your SSH server | Authorizes its paired client and delivers traffic to local SSH |
+| Relay | Your public VPS | Joins the two outbound connections and carries encrypted bytes |
 
-Follow [Try receiver-owned pairing](PAIRING_INSTALL.md) for the exact commands.
-This is not part of the immutable 0.1.0 downloads below. Merging source does not
-replace the signed release or change existing installations.
+Both endpoints connect outward. Neither exposes an OwnTransit listener or
+needs a public address. The relay is the only publicly reachable component.
 
-## Install on Linux
+The relay is assumed compromised—not trusted because you happen to own it.
+It can observe addresses, timing and traffic sizes, or deny service. It must
+not read the inner stream, impersonate an endpoint accepted by its peer, or
+choose where the receiver sends traffic.
 
-| Install this role | On this machine |
+## Get the executables
+
+Receiver-owned pairing is available in the **0.1.1-dev self-test builds**.
+Download the artifact for your machine from a successful
+[release-candidate workflow run on main](https://github.com/sentrybottale/OwnTransit/actions/workflows/release-candidate.yml?query=branch%3Amain):
+
+| Your machine | Download |
 |---|---|
-| `relay` | Your public VPS: the Internet-facing transit server |
-| `connector` | The private machine running your SSH server |
-| `client` | The computer you connect from |
-| `provisioner` | The administrator's trusted machine: creates invitations and approves enrollment |
+| Linux x86_64 / amd64 | `owntransit-pairing-linux-amd64` |
+| Linux aarch64 / arm64 | `owntransit-pairing-linux-arm64` |
+| Apple-silicon macOS | `owntransit-pairing-darwin-arm64` |
 
-Public VPS / server:
+Linux archives contain the client, connector and relay executables, plus the
+relay container image. The macOS archive contains the client. Intel macOS is
+not supported.
+
+**These are development outputs, not a signed stable release.** They trust
+GitHub's build and artifact delivery; macOS outputs are not Apple-notarized.
+The existing curl installer still installs 0.1.0 and does not include this
+pairing flow.
+
+Start with the [installation and pairing guide](PAIRING_INSTALL.md) for
+extraction, executable placement and the rootless Podman relay commands.
+It also explains the existing HTTPS prerequisite: forward the exact
+`/connects` WebSocket path to the relay's host-loopback port 9087. OwnTransit
+does not edit your reverse proxy, website, firewall or SSH configuration.
+
+## Pair and connect
+
+Once the relay is running and the executables are in place:
+
+### 1. On the private SSH server
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/1e239516b66d4b3af345d84985ccd0683f10ee26/install-linux.sh | sudo sh -s -- relay
+sudo /usr/local/bin/owntransit-connector pair init --relay wss://relay.example/connects
+sudo /usr/local/bin/owntransit-connector pair serve
 ```
 
-Client computer:
+Replace `relay.example` with your relay's domain. Initialization prints two
+different values:
+
+- a **public receiver ID** to register at the relay; and
+- a **private, one-use pairing code** to give directly to your client.
+
+Never give the private code to the relay. Transfer it through your existing
+authenticated SSH or local-console access. Possession authorizes one device;
+the code expires after 24 hours and is spent when pairing commits.
+
+### 2. On the relay
+
+In another terminal, register the public receiver ID:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/1e239516b66d4b3af345d84985ccd0683f10ee26/install-linux.sh | sudo sh -s -- client
+podman exec owntransit-relay-pair /owntransit-relay pair register --state /state/relay RECEIVER_ID
 ```
 
-Connector beside the SSH server:
+Copy the printed relay code to the client. The running receiver retrieves
+its relay registration automatically.
+
+### 3. On the client
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/1e239516b66d4b3af345d84985ccd0683f10ee26/install-linux.sh | sudo sh -s -- connector
+owntransit pair init --relay wss://relay.example/connects
 ```
 
-Administrator's machine:
+Paste the relay code and the private receiver code into the prompts. Do not
+put either in shell arguments or environment variables. The endpoints generate
+their own keys, authenticate the exchange and save the pairing. No comparison
+words or approval call are involved.
+
+Then use your existing SSH user, key and independently verified host identity:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sentrybottale/OwnTransit/1e239516b66d4b3af345d84985ccd0683f10ee26/install-linux.sh | sudo sh -s -- provisioner
+ssh -o 'ProxyCommand=owntransit pair proxy' USER@SSH_ALIAS
 ```
 
-The installer selects Linux `amd64` or `arm64`, verifies the exact 0.1.0
-release, and installs only the requested local role. On Debian/Ubuntu it installs
-Podman if the relay needs it. Fresh relay and connector services stay stopped
-until enrollment. It does not edit Nginx, websites, firewall rules or SSH
-configuration. Public HTTPS routing to the relay's loopback port is managed
-separately by the VPS operator. Keep the route authority off the public relay.
+Normal SSH options, including `-i` and `-L`, remain yours. SCP can use the same
+ProxyCommand. OwnTransit does not create an SSH alias, choose your SSH key or
+change your login policy.
 
-Setting up your own deployment? Follow [First deployment](FIRST_DEPLOYMENT.md),
-including the command that creates the actual invitation file. If someone else
-operates the relay, install only the client and use the invitation they give you.
-See [INSTALL.md](INSTALL.md) for prerequisites and next steps. This quick path trusts GitHub to
-deliver the initial installer; see [installation trust](SECURITY.md#installation-trust).
+The current pairing profile supports one client per receiver. See the
+[full walkthrough](PAIRING_INSTALL.md) for custom state paths, interrupted
+pairing, SCP syntax and restart instructions.
 
-<details>
-<summary>Release scope and pre-release upgrade limits</summary>
+## Encryption and authorization
 
-> [!IMPORTANT]
-> OwnTransit 0.1.0 is published for Apple-silicon macOS
-> (`arm64`), 64-bit x86 Linux (`amd64`, also called `x86_64`), and 64-bit ARM
-> Linux (`arm64`, also called `aarch64`) within the SSH-only boundary described
-> here. Intel macOS is outside the 0.1.0 support matrix. Its independently
-> verified signed qualification record has
-> `schema=owntransit.qualification.v1`,
-> `gate_set=owntransit-0.1.0-minimal.v1`, and overall `status=PASS`. That status
-> requires zero unresolved Critical/High defects and four bounded PASS results:
-> source/security/publication, release signatures, supported-artifact
-> execution, and a live SSH-and-SCP path through the untrusted relay. This is
-> bounded release evidence, not an independent external security certification.
-> Keep an operator-owned alternative access and recovery path throughout
-> qualification and deployment canarying.
+Each endpoint has an outer TLS 1.3 mutually authenticated connection to the
+relay. Inside those two connections, the endpoints establish a separate,
+end-to-end TLS 1.3 mutually authenticated stream. SSH runs inside that stream,
+with its own independent encryption and host/user authentication.
 
-The public `0.1.0-rc.*` packages were qualification artifacts, not supported
-in-place predecessors of stable `0.1.0`. Their non-purging uninstall preserves
-the old lifecycle and trust state, and the stable installer fails closed on
-that retained role state. No destructive RC trust-reset is currently
-implemented. This compatibility restriction does not require a new machine for
-release qualification: routine releases reuse retained, authenticated hosts and
-make no pristine-host claim. Clean-host/bootstrap testing is periodic
-additional assurance, not a recurring publication gate.
+The receiver owns its route-scoped issuance keys. They remain in a protected
+local authority process, separate from the unprivileged network worker.
+The client generates its operational private keys locally; the relay receives
+no endpoint issuer or signing authority.
 
-The bounded supported-artifact result executes the exact native binaries,
-authenticates and inspects the relay OCI archives and Darwin launcher, records
-the launcher's expected fail-closed direct-invocation rejection, and performs no
-macOS system mutation. On both Linux architectures it also installs and
-activates the exact signed connector, proves
-enabled-service restart, performs an actual host reboot and direct host
-reacquisition, confirms the connector is running or retrying post-boot, checks
-the exact running binary and systemd confinement, and confirms that OwnTransit
-owns no listener. It does not claim stable macOS client lifecycle activation,
-macOS provisioner package lifecycle, or Linux client, provisioner, or relay
-package lifecycle. The separate live result proves the exact signed Mac
-client and connector over real SSH and SCP while using the pre-existing
-operator-supplied client configuration and SSH key. It performs no macOS system
-mutation and requires those client inputs plus the deployed connector
-configuration and endpoint credentials to remain unchanged.
+Before the receiver opens **build-fixed `tcp4 127.0.0.1:22`**, the inner
+handshake must verify the exact peer identity and key, and both endpoints must
+grant fresh, session-bound authorization. The relay cannot select another
+target or negotiate a weaker endpoint profile.
 
-</details>
+Reconnects use retained identities and fresh authentication. Operational
+certificates refresh automatically. During a live connection, authorization
+leases renew without user prompts; ordinary SSH bytes cannot extend them.
 
-## Installed operator experience
+## Emergency lock
 
-OwnTransit is for the practical IT person who can install a package and use
-SSH. They should not have to understand certificates, JSON, system groups or
-the relay protocol. After an authenticated installation, the intended normal
-path is:
+On the client:
 
-1. run `owntransit setup office.otinvite`;
-2. make one short verified call and compare three words in each direction; and
-3. run the exact OpenSSH command supplied separately, or an SSH alias that IT
-   already installed.
-
-This describes the shipped workflow, not broader qualification than the signed
-record contains. For 0.1.0, the exact Mac client transport is exercised in the
-live SSH/SCP result, but stable native macOS client lifecycle activation remains
-explicitly unqualified additional assurance because retained RC7 state is not a
-supported stable predecessor. Keep independent access while canarying it.
-
-OwnTransit never edits SSH configuration or handles SSH keys. The detailed
-recipient walkthrough is in [INSTALL.md](INSTALL.md); the machinery below is
-for deployers and reviewers.
-
-OwnTransit lets an SSH client and a hidden SSH server talk through a public
-relay without trusting that relay with the conversation. The relay may carry
-the sealed traffic, observe its shape, or refuse to carry it; it must not be
-able to read it, forge either endpoint, or choose where the connector sends
-it.
-
-## The problem
-
-An SSH server is often safest when it has no public listener. The client may
-also be on an outbound-only network. OwnTransit gives those two buried
-endpoints a narrow meeting path without making the public meeting point a
-trusted man in the middle.
-
-Both endpoint roles dial outward:
-
-1. the SSH client starts an OwnTransit client as a `ProxyCommand`;
-2. a connector beside the SSH server maintains an outbound relay connection;
-3. the public relay pairs the two outbound legs and copies opaque bytes; and
-4. the connector can deliver an authenticated stream only to the build-fixed
-   literal `tcp4 127.0.0.1:22` target.
-
-Neither endpoint exposes an OwnTransit listener or needs a public address. The
-relay is the only publicly reachable OwnTransit component.
-
-## The security construction
-
-```text
-operator-owned OpenSSH client
-  -> OwnTransit client
-  -> outer TLS 1.3 carrier
-  -> fully untrusted relay
-  -> outer TLS 1.3 carrier
-  -> end-to-end inner TLS 1.3 mTLS
-  -> connector
-  -> build-fixed tcp4 127.0.0.1:22
-  -> operator-owned OpenSSH server
+```sh
+owntransit pair lock
+owntransit pair unlock
 ```
 
-The transport is encrypted twice from the network's perspective: each relay
-leg has an outer TLS carrier, and the endpoints create a separate inner TLS 1.3
-stream that passes through the relay without terminating there. SSH then runs
-inside that carrier with its own independent encryption and host/user
-authentication.
+Or on the receiver:
 
-Assume the relay host, reverse proxy, process, configuration and keys are fully
-compromised. A malicious relay can observe endpoint addresses, timing, sizes
-and route correlation. It can cross-wire attempts, delay traffic, exhaust its
-own service or deny access. It must not decrypt the inner stream, forge an
-endpoint accepted by the other endpoint, select a different connector target,
-issue credentials or authorize software and policy changes.
+```sh
+sudo /usr/local/bin/owntransit-connector pair lock
+sudo /usr/local/bin/owntransit-connector pair unlock
+```
 
-## Connector authorization without a client list
+A lock survives restart, blocks new authorization and closes active local
+workers. Success is reported only after local shutdown is confirmed; a timeout
+can leave the durable lock set without confirming shutdown.
 
-The v1 capability profile does not install a positive client allowlist on the
-connector. Instead, an offline issuer exists for one connector and one route.
-The connector accepts an unrevoked client leaf only when it:
+The relay can suppress a kill notification. Remote cutoff is therefore bounded
+by the remaining authorization lease—at most 60 seconds—plus operating-system
+scheduling and shutdown latency. Unlock requires a fresh connection; it never
+replays an old SSH stream. A tunnel kill cannot retract delivered bytes or
+guarantee that SSH-started jobs stop.
 
-- chains to that exact locally installed route-capability CA;
-- has the strict Ed25519 client-auth certificate profile;
-- uses the capability profile's distinct ALPN; and
-- has one exact DNS SAN binding the client installation, connector
-  installation, route and credential epoch.
+## Scope and current limits
 
-The connector still has locally activated state derived from a signed
-deployment: its own credentials, route, capability root, revocation
-tombstones, limits and relay information. The user does not maintain a
-per-client connector configuration.
+OwnTransit carries SSH byte streams only. It is not a VPN, subnet router, DNS
+layer, identity provider, dashboard or general-purpose proxy.
 
-This deliberately moves trust from a list of client leaves to a narrowly
-scoped offline CA. Theft of that CA can mint capabilities for its one
-connector/route, so OwnTransit must never use a global client-capability issuer.
-OpenSSH remains the independent authority that decides whether a capability
-holder may log in.
+Bring your own working SSH setup and independent recovery access. OwnTransit
+never creates or edits SSH keys, accounts, `authorized_keys`, client/server
+configuration, forwarding rules or host recovery.
 
-## Initial trust and enrollment
+The development walkthrough runs foreground processes; it does not install
+reboot-start services or migrate an existing installation. Missing network
+traffic fails closed without permanently locking the endpoint. Lost identities
+or expired, uncompleted pairing can require explicit new pairing state; the
+relay cannot authorize a silent reset.
 
-OwnTransit has no online controller. Initial issuer certificates, the
-deployment-verification key and the expected release identity may arrive
-tentatively in the invitation, but they become trusted only after the exact
-invitation/request transcript is confirmed with the real administrator through
-an independently established, bidirectionally authenticated contact procedure.
-The relay is never a trust-bootstrap channel, and OwnTransit does not use TOFU
-for these authorities.
+Integrated tests exercise real WebSocket carriage, both TLS boundaries, SSH
+protocol authentication and exec, receiver restart, credential renewal,
+client/receiver lock, unlock/reconnect and profile rejection. This is source
+integration evidence—not an independent security assessment, live-host
+qualification or a claim that a signed 0.1.1 installer has shipped.
 
-The source implements the target-local cryptographic enrollment and guided
-client exchange:
+For protocol and threat-model details, read
+[receiver-owned pairing](RECEIVER_PAIRING.md),
+[security](SECURITY.md) and [wire compatibility](COMPATIBILITY.md).
 
-- target-local unique outer and inner key generation;
-- signed CSRs and a target-bound request;
-- offline leaf-only issuance;
-- a signed response encrypted to a one-request target recipient;
-- strict role, installation, route, SAN, key, issuer, runtime and sequence
-  verification; and
-- durable record creation followed by atomic activation;
-- strict signed invitations, independent mailbox capabilities, padded request
-  encryption and exact response/request-set cross-binding;
-- durable target and operator sessions with target-first, gated two-way word
-  comparison and crash-safe resume; and
-- a carrier-only `READY` proof followed by local-authoritative retirement of
-  one-time mailbox and response authority.
+## Earlier release
 
-For a brand-new deployment, the authenticated relay artifact first runs in a
-temporary **exchange-only** mode. That mode exposes only the fixed bounded
-opaque enrollment mailbox on `/connects/enrollment`; it has no carrier,
-endpoint credentials, runtime state, issuer, signer, persistence, or target
-selection. After the client has durably applied its bound response, the
-operator replaces that process with the enrolled relay on the same loopback
-port, starts the connector, and the client resumes to authenticated `READY`.
-The relay remains untrusted throughout both phases.
-
-The 0.1.0 initial-route workflow installs exactly one relay, one connector,
-one route, and one client. Adding another client to an existing route is not
-implemented in 0.1.0; route rotation is not a substitute for client
-enrollment. This limit is fail-closed and documented in the roadmap.
-
-The machines move only opaque encrypted requests and responses. The invitation
-is the only setup file the client recipient handles. They never manually move
-generated keys, certificates, enrollment requests, enrollment responses or
-runtime configuration, and OwnTransit never edits their SSH configuration.
-The words are only a human view of a full transcript digest; they never
-authorize enrollment. The relay remains an opaque hostile mailbox. The exact
-protocol and disclosed external-review status are documented in
-[ENROLLMENT_EXCHANGE.md](ENROLLMENT_EXCHANGE.md).
-
-## What OwnTransit does not own
-
-OwnTransit transports SSH bytes. It never creates, selects, stores or edits SSH
-host keys, user keys, accounts, `authorized_keys`, client or server
-configuration, forwarding rules, login policy or host recovery.
-
-Bring your own working OpenSSH setup and your own out-of-band host recovery.
-An OwnTransit carrier proof is not an SSH login proof, and an SSH login is not
-OwnTransit enrollment authority.
-
-OwnTransit is not a VPN, TUN interface, subnet router, DNS layer, service mesh,
-identity provider, dashboard, general reverse proxy or remotely managed policy
-plane.
-
-## OwnTransit 0.1.0 artifact contract
-
-- `owntransit` for macOS arm64, Linux amd64/x86_64, and Linux arm64/aarch64;
-- `owntransit-launcher` for the authenticated macOS arm64 client boundary;
-- `owntransit-connector` for Linux amd64/x86_64 and Linux arm64/aarch64,
-  compiled only for the fixed SSH target;
-- `owntransit-relay` as separate digest-addressed Linux amd64 and arm64 images;
-- `owntransitctl` for target-local lifecycle transactions on all three
-  supported platform/architecture targets; and
-- `owntransit-provision` for offline approval and signing on all three
-  supported platform/architecture targets.
-
-Those builds form fourteen separately authenticated artifact records: four for
-macOS arm64 and five for each supported Linux architecture.
-
-The installed client flow is: authenticate the release and native handoff, run
-`owntransit setup INVITATION.otinvite`, compare the two three-word groups with
-the known administrator, let the offline provisioner approve the request,
-prove the OwnTransit carrier, and then invoke it from operator-owned SSH
-configuration. Interrupted setup resumes with `owntransit setup --resume`; an
-unapplied setup can be abandoned with `owntransit setup --cancel`. It requires
-no TUN device, DNS takeover or background client daemon.
-
-User-facing `READY` requires a live carrier-only probe through the relay, inner
-mTLS and authenticated connector, including the build-fixed loopback SSH-port
-dial. It does not prove an OpenSSH host key, user key, account or login.
-
-The rendezvous protocol retains a frozen authenticated legacy wire profile; it
-is not a public product name. The route-capability inner profile is separately
-versioned and cannot silently downgrade to the older exact-pin profile. The
-byte-exact boundary is documented in [COMPATIBILITY.md](COMPATIBILITY.md).
-
-Read [ARCHITECTURE.md](ARCHITECTURE.md), [SECURITY.md](SECURITY.md),
-[COMPATIBILITY.md](COMPATIBILITY.md), [CREDENTIALS.md](CREDENTIALS.md) and
-[ENROLLMENT_EXCHANGE.md](ENROLLMENT_EXCHANGE.md)
-before evaluating the design. Release integrity requirements and additional
-assurance work are tracked in [ROADMAP.md](ROADMAP.md) and
-[OWNTRANSIT_SHIPPING_PLAN.md](OWNTRANSIT_SHIPPING_PLAN.md). The immutable
-handoff and review criteria for the recommended outside assessment are in
-[SECURITY_REVIEW.md](SECURITY_REVIEW.md). Candidate freeze, versioning,
-signing, tagging and publication order are in
-[RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
+The immutable [0.1.0 release](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.1.0)
+uses an older setup protocol. Its [installation](INSTALL.md) and
+[first-deployment](FIRST_DEPLOYMENT.md) guides are retained for that release
+only. Do not mix those instructions or credentials with receiver-owned pairing.
 
 ## Contributing and disclosure
 
-Development and review requirements are in [CONTRIBUTING.md](CONTRIBUTING.md).
-Independent-development and contributor rules are in
-[PROVENANCE.md](PROVENANCE.md).
-Report suspected vulnerabilities through the private process in
-[SECURITY.md](SECURITY.md), not a public issue.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and
+[PROVENANCE.md](PROVENANCE.md) for contributor requirements. Report suspected
+vulnerabilities through the private process in [SECURITY.md](SECURITY.md),
+not a public issue.
 
-OwnTransit is licensed under the [Apache License 2.0](LICENSE). The canonical
-public source location is `github.com/sentrybottale/owntransit`.
+OwnTransit is licensed under the [Apache License 2.0](LICENSE).
