@@ -1,5 +1,10 @@
 # OwnTransit architecture
 
+Relay installation now has one provider-independent local setup interface. The
+public URL selects a website, while Docker/Podman and supported webserver adapters
+handle its host integration. Runtime relay protocol, endpoint authorization and
+the fixed SSH target are independent of that installation interface.
+
 The receiver-owned 0.1.1 development profile is explicitly selected by the
 `pair` commands and specified in [RECEIVER_PAIRING.md](RECEIVER_PAIRING.md).
 Its command flow is in [PAIRING_INSTALL.md](PAIRING_INSTALL.md). The legacy

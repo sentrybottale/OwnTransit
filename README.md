@@ -23,38 +23,46 @@ It can observe addresses, timing and traffic sizes, or deny service. It must
 not read the inner stream, impersonate an endpoint accepted by its peer, or
 choose where the receiver sends traffic.
 
-## Install the 0.1.1 development preview
+## Install the 0.1.2 development preview
 
 This is a **signed development preview**, not a stable or production-qualified
-release. It installs separately from 0.1.0 and leaves old credentials and services
-alone. Linux amd64/x86_64 and arm64/aarch64 use the same command.
+release. It installs separately from 0.1.0. Explicit relay setup can replace an
+identified old relay while preserving its rollback state. Linux amd64/x86_64 and
+arm64/aarch64 use the same command.
 
 On the private SSH server:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.1/install-preview-linux.sh | sudo sh -s -- connector
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.2/install-preview-linux.sh | sudo sh -s -- connector
 sudo owntransit-connector-preview pair setup
 ```
 
 On a Linux client:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.1/install-preview-linux.sh | sudo sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.2/install-preview-linux.sh | sudo sh -s -- client
 owntransit-preview pair setup
 ```
 
 On the public relay:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.1/install-preview-linux.sh | sudo sh -s -- relay
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.2/install-preview-linux.sh | sudo sh -s -- relay
 ```
 
-The relay installer prints its rootless Podman load/start commands. Start the
-relay before running endpoint setup. You need an existing HTTPS WebSocket route
-from `/connects` to host-loopback port 9087; OwnTransit does not edit your
-reverse proxy, website, firewall or SSH configuration.
+The relay installer starts one setup workflow and asks for the full public URL,
+for example `wss://relay.example/connects`. That selects the website when the VPS
+hosts several domains. Setup detects Docker or Podman, starts an unprivileged
+relay container, enables its reboot service and verifies the public WebSocket
+route. Existing routing is reused; a missing route in a recognized Nginx, Apache
+or Caddy site is backed up, added only to that site, validated and reloaded.
 
-Apple-silicon macOS uses the [signed client archive](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.1.1).
+The same interface works across providers on supported Linux/systemd hosts with
+an existing HTTPS site. Bespoke proxy layouts or a missing HTTPS site produce a
+specific setup error; they are not guessed. Failed cutover restores the previous
+relay and any route changed by setup. Start the relay before endpoint setup.
+
+Apple-silicon macOS uses the [signed client archive](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.1.2).
 Intel macOS is not supported. No Apple signing subscription is required; the
 client is not Apple-notarized.
 
@@ -89,7 +97,7 @@ the code expires after 24 hours and is spent when pairing commits.
 In another terminal, register the public receiver ID:
 
 ```sh
-podman exec owntransit-relay-pair /owntransit-relay pair register --state /state/relay RECEIVER_ID
+sudo owntransit-relay-preview register RECEIVER_ID
 ```
 
 Copy the printed relay code to the client. The running receiver retrieves

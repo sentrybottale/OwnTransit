@@ -36,7 +36,7 @@ test -d "$bundle" && test ! -L "$bundle" || fail 'bundle must be a non-symlink d
 resolved=$(CDPATH= cd -P -- "$bundle" && pwd) || fail 'cannot resolve bundle'
 test "$resolved" = "$bundle" || fail 'bundle path must be canonical without symlink components'
 
-for command_name in awk basename cat chmod chown cmp dirname find id install ln mktemp mv readlink rm sha256sum sort stat tr uname wc; do
+for command_name in awk basename cat chmod chown cmp dirname find id install ln mktemp mv readlink rm sed sha256sum sort stat tr uname wc; do
   command -v "$command_name" >/dev/null 2>&1 || fail "required command is unavailable: $command_name"
 done
 
@@ -84,7 +84,7 @@ for name in $expected_files; do
 done
 test "$0" = "$bundle/install-linux.sh" || fail 'installer must run from its exact absolute bundle path'
 
-expected_capsule=$(printf 'schema=owntransit.development-capsule.v1\nversion=0.1.1\nos=linux\narch=%s' "$arch")
+expected_capsule=$(printf 'schema=owntransit.development-capsule.v1\nversion=0.1.2\nos=linux\narch=%s' "$arch")
 test "$(cat "$bundle/CAPSULE")" = "$expected_capsule" || fail 'capsule identity does not match this host'
 
 test "$(wc -l < "$bundle/SHA256SUMS" | tr -d '[:space:]')" = 8 || fail 'SHA256SUMS must contain eight records'
@@ -114,7 +114,7 @@ if test "$role" = connector; then
   test -d /run/systemd/system && test -x /usr/bin/systemctl || fail 'connector preview requires systemd'
 fi
 
-prefix=/opt/owntransit-preview/0.1.1
+prefix=/opt/owntransit-preview/0.1.2
 case "$role" in
   client) binary=owntransit; alias=owntransit-preview ;;
   connector) binary=owntransit-connector; alias=owntransit-connector-preview ;;
@@ -122,8 +122,18 @@ case "$role" in
 esac
 alias_path=/usr/local/bin/$alias
 alias_target=$prefix/$role/$binary
+previous_alias=
 if test -e "$alias_path" || test -L "$alias_path"; then
-  test -L "$alias_path" && test "$(readlink "$alias_path")" = "$alias_target" || fail "refusing to overwrite unmanaged alias: $alias_path"
+  test -L "$alias_path" && test "$(stat -c %u "$alias_path")" = 0 || fail "refusing to overwrite unmanaged alias: $alias_path"
+  previous_alias=$(readlink "$alias_path")
+  case "$previous_alias" in
+    "$alias_target") ;;
+    "/opt/owntransit-preview/0.1.1/$role/$binary")
+      test -f "$previous_alias" && test ! -L "$previous_alias" || fail 'unsafe previous preview executable'
+      test "$(stat -c %u:%g:%a:%h "$previous_alias")" = 0:0:755:1 || fail 'previous preview executable metadata differs'
+      ;;
+    *) fail "refusing to overwrite unmanaged alias: $alias_path" ;;
+  esac
 fi
 ensure_directory() {
   directory=$1
@@ -164,8 +174,9 @@ fi
 install_exact "$bundle/$binary" "$prefix/$role/$binary" 755
 
 if test -e "$alias_path" || test -L "$alias_path"; then
-  test -L "$alias_path" && test "$(readlink "$alias_path")" = "$alias_target" || fail "refusing to overwrite unmanaged alias: $alias_path"
-else
+  test -L "$alias_path" && test "$(readlink "$alias_path")" = "$previous_alias" || fail "alias changed during installation: $alias_path"
+fi
+if test "$previous_alias" != "$alias_target"; then
   alias_stage=$alias_path.$$.new
   test ! -e "$alias_stage" && test ! -L "$alias_stage" || fail 'alias staging name already exists'
   ln -s "$alias_target" "$alias_stage"
@@ -178,7 +189,7 @@ if test "$role" = connector; then
   trap cleanup_unit EXIT HUP INT TERM
   cat > "$unit_stage" <<EOF
 [Unit]
-Description=OwnTransit 0.1.1 preview receiver pairing broker
+Description=OwnTransit 0.1.2 preview receiver pairing broker
 After=network-online.target
 Wants=network-online.target
 ConditionPathIsDirectory=/var/lib/owntransit-pair
@@ -218,26 +229,27 @@ EOF
   if test -e "$unit" || test -L "$unit"; then
     test -f "$unit" && test ! -L "$unit" || fail 'existing preview unit is unsafe'
     test "$(stat -c %u "$unit"):$(stat -c %g "$unit"):$(stat -c %a "$unit"):$(stat -c %h "$unit")" = 0:0:644:1 || fail 'existing preview unit metadata differs'
-    cmp -s "$unit_stage" "$unit" || fail 'refusing to overwrite a different preview unit'
+    if ! cmp -s "$unit_stage" "$unit"; then
+      sed 's/0\.1\.1/0.1.2/g' "$unit" | cmp -s "$unit_stage" - || fail 'refusing to overwrite a different preview unit'
+      install -o root -g root -m 0644 "$unit_stage" "$unit"
+      /usr/bin/systemctl daemon-reload
+    fi
   else
     install -o root -g root -m 0644 "$unit_stage" "$unit"
     /usr/bin/systemctl daemon-reload
   fi
   cleanup_unit
   trap - EXIT HUP INT TERM
-  printf 'Installed OwnTransit development preview 0.1.1 role %s for linux/%s.\n' "$role" "$arch"
+  printf 'Installed OwnTransit development preview 0.1.2 role %s for linux/%s.\n' "$role" "$arch"
   printf '%s\n' 'Connector preview package installed; service was not enabled or started.'
   printf '%s\n' 'Next: sudo owntransit-connector-preview pair setup'
 elif test "$role" = client; then
-  printf 'Installed OwnTransit development preview 0.1.1 role %s for linux/%s.\n' "$role" "$arch"
+  printf 'Installed OwnTransit development preview 0.1.2 role %s for linux/%s.\n' "$role" "$arch"
   printf '%s\n' 'Client preview package installed without changing accounts, SSH, or legacy OwnTransit state.'
   printf '%s\n' 'Next: owntransit-preview pair setup'
 else
-  printf 'Installed OwnTransit development preview 0.1.1 role %s for linux/%s.\n' "$role" "$arch"
+  printf 'Installed OwnTransit development preview 0.1.2 role %s for linux/%s.\n' "$role" "$arch"
   printf '%s\n' 'Relay preview package and OCI archive installed; no image, service, listener, or reverse proxy was changed.'
-  printf 'Load image: %s\n' "podman load --input $prefix/relay/owntransit-relay.oci.tar"
-  printf 'Create private parent: %s\n' 'install -d -m 0700 "$HOME/.local/state/owntransit-pair"'
-  printf 'Initialize once: %s\n' 'podman run --rm --network none --cap-drop all --security-opt no-new-privileges --read-only --volume "$HOME/.local/state/owntransit-pair:/state:rw" owntransit-relay-pair:0.1.1 pair init --state /state/relay'
-  printf 'Run loopback relay: %s\n' 'podman run --detach --name owntransit-relay-pair --user 0:0 --network bridge --publish 127.0.0.1:9087:9087/tcp --cap-drop all --security-opt no-new-privileges --read-only --volume "$HOME/.local/state/owntransit-pair:/state:rw" --memory 256m --pids-limit 64 --restart unless-stopped owntransit-relay-pair:0.1.1 pair serve --state /state/relay'
-  printf 'Register receiver: %s\n' 'podman exec owntransit-relay-pair /owntransit-relay pair register --state /state/relay RECEIVER_ID'
+  printf '%s\n' 'Next: sudo owntransit-relay-preview setup'
+  printf '%s\n' 'Setup asks for your public URL and handles the container, website route and reboot service.'
 fi

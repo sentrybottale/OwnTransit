@@ -134,6 +134,13 @@ jobs:
             --volume="$PWD:/src:ro" \
             docker.io/library/golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514 \
             sh -ceu 'install -m 0755 /src/scripts/development/support/systemctl /usr/bin/systemctl; sh /src/scripts/development/test-install-linux.sh'
+      - name: Test managed VPS cutover and selected-site rollback
+        run: |
+          go test -mod=readonly -c -o "$RUNNER_TEMP/relay-setup.test" ./internal/relaysetup
+          docker run --rm --network=none --cpus=2 --memory=512m \
+            --volume="$RUNNER_TEMP:/fixture:ro" \
+            docker.io/library/golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514 \
+            sh -ceu 'mkdir -p /usr/local/libexec/owntransit-relay-setup-check; install -m 0755 /fixture/relay-setup.test /usr/local/libexec/owntransit-relay-setup-check/host.test; touch /owntransit-relay-setup-fixture; /usr/local/libexec/owntransit-relay-setup-check/host.test -test.run TestManagedSetupAndFailedRouteRollback -test.v'
       - name: Build native pairing self-test executables
         run: |
           set -eu

@@ -19,7 +19,7 @@ existing distribution public-key digest, validates the detached inventory
 signature, and checks the selected archive digest before extraction or root
 execution. The inner installer rechecks the platform and exact flat inventory.
 
-Linux installation uses `/opt/owntransit-preview/0.1.1`, separately named
+Linux installation uses `/opt/owntransit-preview/0.1.2`, separately named
 `*-preview` aliases, and one disabled connector service. It preserves every
 legacy install, service, credential and SSH setting. `pair setup` on the
 connector initializes its own identities and explicitly enables its installed
@@ -43,7 +43,7 @@ security alarm is terminal and requires a deliberate rebuild with fresh keys.
 4. Verify signatures and archive digests independently. Execute the exact native
    client and Linux installer capsules in available bounded environments. No
    new-machine, host reboot or independent external review claim is made.
-5. Create and verify one immutable signed `v0.1.1` tag. Create a draft GitHub
+5. Create and verify one immutable signed version tag. Create a draft GitHub
    release with the prerelease flag, never `latest`. Upload only the five signed
    inventory members, the inventory, its detached signature, and the existing
    distribution public key. Download the entire draft and reverify it before
@@ -54,6 +54,17 @@ flag and explicit development capsule/signature formats distinguish them from
 the stable lane. A later corrected build gets a new version, never overwritten
 assets or a moved tag. This owner-authorized lane does not satisfy or relax the
 stable release gates.
+
+Relay bootstrap can launch managed setup interactively or accept the public URL
+as its second argument. The selected URL is visible and is not a secret. Managed
+setup uses a non-root relay container and supports recognized Nginx, Apache and
+Caddy sites, plus reuse of routing supplied by other proxies. It requires Linux
+with systemd and an existing HTTPS site. Source-defined fixture tests exercise
+cutover/rollback and actual provider configuration syntax without touching a VPS.
+
+Provider references: [Nginx reverse proxy](https://docs.nginx.com/nginx/admin-guide/web-server/reverse-proxy/),
+[Caddy reverse proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy),
+[Apache WebSocket proxy](https://httpd.apache.org/docs/2.4/mod/mod_proxy_wstunnel.html).
 
 ## Installer tests
 

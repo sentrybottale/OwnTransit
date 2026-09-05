@@ -42,6 +42,9 @@ type relayRuntimeSource struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "setup" || os.Args[1] == "register") {
+		os.Exit(runManagedRelay(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+	}
 	code := executeRelay(os.Args[1:], os.Stdout, os.Stderr, productionRelayCommands())
 	if code != 0 {
 		os.Exit(code)

@@ -25,7 +25,7 @@ test "$#" -eq 7 || {
 binary=$1
 output=$2
 architecture=$3
-version=0.1.1
+version=0.1.2
 commit=$4
 source_date_epoch=$5
 project_license=$6
@@ -133,8 +133,8 @@ layer="$temporary/layer.tar"
   --sort=name \
   --format=ustar \
   --mtime="@$source_date_epoch" \
-  --owner=0 \
-  --group=0 \
+  --owner=65532 \
+  --group=65532 \
   --numeric-owner \
   -cf "$layer" \
   -C "$rootfs" \
@@ -152,7 +152,7 @@ install -m 0644 "$layer" "$layout/blobs/sha256/$layer_digest"
 
 config="$temporary/config.json"
 printf '%s\n' \
-  "{\"architecture\":\"$architecture\",\"config\":{\"Cmd\":[\"pair\",\"serve\",\"--state\",\"/state/relay\"],\"Entrypoint\":[\"/owntransit-relay\"],\"Labels\":{\"org.opencontainers.image.licenses\":\"Apache-2.0\",\"org.opencontainers.image.revision\":\"$commit\",\"org.opencontainers.image.title\":\"OwnTransit Relay\",\"org.opencontainers.image.version\":\"$version\",\"org.opencontainers.image.vendor\":\"OwnTransit\",\"owntransit.development\":\"true\"},\"User\":\"0:0\",\"WorkingDir\":\"/\"},\"os\":\"linux\",\"rootfs\":{\"diff_ids\":[\"sha256:$layer_digest\"],\"type\":\"layers\"}}" \
+  "{\"architecture\":\"$architecture\",\"config\":{\"Cmd\":[\"pair\",\"serve\",\"--state\",\"/state/relay\"],\"Entrypoint\":[\"/owntransit-relay\"],\"Labels\":{\"org.opencontainers.image.licenses\":\"Apache-2.0\",\"org.opencontainers.image.revision\":\"$commit\",\"org.opencontainers.image.title\":\"OwnTransit Relay\",\"org.opencontainers.image.version\":\"$version\",\"org.opencontainers.image.vendor\":\"OwnTransit\",\"owntransit.development\":\"true\"},\"User\":\"65532:65532\",\"WorkingDir\":\"/\"},\"os\":\"linux\",\"rootfs\":{\"diff_ids\":[\"sha256:$layer_digest\"],\"type\":\"layers\"}}" \
   > "$config"
 config_digest=$(sha256_file "$config")
 config_size=$(file_size "$config")
@@ -167,7 +167,7 @@ manifest_size=$(file_size "$manifest")
 install -m 0644 "$manifest" "$layout/blobs/sha256/$manifest_digest"
 
 printf '%s\n' \
-  "{\"schemaVersion\":2,\"manifests\":[{\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"digest\":\"sha256:$manifest_digest\",\"size\":$manifest_size,\"platform\":{\"architecture\":\"$architecture\",\"os\":\"linux\"},\"annotations\":{\"org.opencontainers.image.ref.name\":\"owntransit-relay-pair:0.1.1\"}}]}" \
+  "{\"schemaVersion\":2,\"manifests\":[{\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"digest\":\"sha256:$manifest_digest\",\"size\":$manifest_size,\"platform\":{\"architecture\":\"$architecture\",\"os\":\"linux\"},\"annotations\":{\"org.opencontainers.image.ref.name\":\"owntransit-relay-pair:0.1.2\"}}]}" \
   > "$layout/index.json"
 printf '%s\n' '{"imageLayoutVersion":"1.0.0"}' > "$layout/oci-layout"
 chmod 0644 "$layout/index.json" "$layout/oci-layout" "$layout/blobs/sha256/"*
