@@ -29,7 +29,7 @@ install -d -m 0700 "$output"
 scratch=$(mktemp -d "$output/build.XXXXXXXX")
 sha() { shasum -a 256 "$1" | awk '{print $1}'; }
 version=0.2.0
-ldflags="-buildid= -X github.com/sentrybottale/owntransit/internal/buildinfo.Version=$version -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$commit -X github.com/sentrybottale/owntransit/internal/buildinfo.Dirty=false"
+ldflags="-buildid= -X github.com/sentrybottale/owntransit/internal/buildinfo.Version=$version -X github.com/sentrybottale/owntransit/internal/buildinfo.Release=owntransit-receiver-$version -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$commit -X github.com/sentrybottale/owntransit/internal/buildinfo.Dirty=false"
 
 for platform in linux-amd64 linux-arm64 darwin-arm64; do
   target_os=${platform%-*}
