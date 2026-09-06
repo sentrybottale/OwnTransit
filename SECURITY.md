@@ -1,5 +1,16 @@
 # OwnTransit security policy
 
+## 0.1.8 active-carrier lifetime fix
+
+The relay's pending-receiver timeout previously ended the receiver's HTTP
+handler even after a client claimed that leg, aborting active carriers within
+the pending window. The fix makes expiry and promotion a single mutex-protected
+ownership decision. Unclaimed legs still expire and release capacity; claimed
+handlers wait for exchange completion or relay shutdown. Their socket deadlines
+still enforce the earlier token expiry and applicable session-lifetime limit.
+Pairing exchanges retain their own short deadline. No authentication, quota,
+endpoint lease, clock check or security-alarm rule is relaxed.
+
 ## 0.1.5 candidate hardening
 
 The receiver-owned relay bounds its initial frame and outer admission handshake

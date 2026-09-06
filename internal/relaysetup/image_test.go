@@ -48,7 +48,7 @@ func TestDockerConversionPreservesAuthenticatedBytesAndRejectsTamper(t *testing.
 		}
 		w.Close()
 		var output bytes.Buffer
-		err := DockerArchive(&input, &output, "owntransit-relay-pair:0.1.7")
+		err := DockerArchive(&input, &output, "owntransit-relay-pair:0.1.8")
 		if tamper {
 			if err == nil {
 				t.Fatal("tampered OCI blob converted")

@@ -631,12 +631,25 @@ func (relay *Relay) waitLeg(key routeKey, leg *waitingLeg, pairing bool) error {
 		relay.removeLeg(key, leg, pairing)
 		return ErrAlreadyClosed
 	case <-timer.C:
-		relay.removeLeg(key, leg, pairing)
-		return ErrUnavailable
+		if relay.removeLeg(key, leg, pairing) {
+			return ErrUnavailable
+		}
+		// takeLeg won the race under relay.mu: the exchange now owns this
+		// connection. Returning here would let ServeHTTP abort a live carrier.
+		// Its promoted socket deadline (session/token expiry, or pairing
+		// exchange expiry) still bounds it; relay shutdown also remains final.
+		select {
+		case err := <-leg.done:
+			return err
+		case <-relay.ctx.Done():
+			return ErrAlreadyClosed
+		}
 	}
 }
 
-func (relay *Relay) removeLeg(key routeKey, leg *waitingLeg, pairing bool) {
+// removeLeg retires only a still-pending leg. Its result makes expiry and
+// promotion one atomic ownership decision, without extending any deadline.
+func (relay *Relay) removeLeg(key routeKey, leg *waitingLeg, pairing bool) bool {
 	relay.mu.Lock()
 	defer relay.mu.Unlock()
 	queue, global, perRoute := relay.runtime, &relay.runtimePending, relay.runtimePerRoute
@@ -656,9 +669,10 @@ func (relay *Relay) removeLeg(key routeKey, leg *waitingLeg, pairing bool) {
 				delete(perRoute, key)
 			}
 			_ = leg.connection.Close()
-			return
+			return true
 		}
 	}
+	return false
 }
 
 func (relay *Relay) takeLeg(key routeKey, pairing bool, claims TokenClaims) (*waitingLeg, error) {
