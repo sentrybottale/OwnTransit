@@ -19,6 +19,8 @@ Receiver-owned stabilization release under the bounded 0.2.0 shipping contract.
   checks, retained pairing state and safe command aliases alongside preview names.
 - Keep unrelated legacy commands and every operator SSH setting unchanged.
 - Replace generic runtime failures with fixed, non-secret diagnostic categories.
+- Serialize simultaneous client startups within the existing opening deadline,
+  instead of failing immediately when another SSH startup holds the local lock.
 - Add concurrent quiet SSH/restart regressions and native/isolated installer
   tamper, reinstall, removal and state-preservation tests.
 - Retain existing cryptographic formats and production security limits. The

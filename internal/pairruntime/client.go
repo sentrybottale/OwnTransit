@@ -278,7 +278,7 @@ func OpenClient(ctx context.Context, path string, dial pairrelay.DialFunc) (*lea
 		return nil, nil, err
 	}
 	defer root.Close()
-	lock, err := root.TryLock("client-operation.lock")
+	lock, err := clientOperationLock(ctx, root)
 	if err != nil {
 		release()
 		return nil, nil, err

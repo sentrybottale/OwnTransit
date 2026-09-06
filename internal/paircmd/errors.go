@@ -11,6 +11,7 @@ import (
 	"github.com/sentrybottale/owntransit/internal/leasewire"
 	"github.com/sentrybottale/owntransit/internal/pairrelay"
 	"github.com/sentrybottale/owntransit/internal/pairruntime"
+	"github.com/sentrybottale/owntransit/internal/securefs"
 )
 
 // Only fixed local categories reach diagnostics. Never print err.Error(): it
@@ -24,6 +25,8 @@ func failureMessage(operation string, err error) string {
 		return "Cancelled. Completed local steps remain in effect; check pair status before retrying."
 	case errors.Is(err, leasewire.ErrLocked), errors.Is(err, leasewire.ErrPeerLock):
 		return "Pairing alarmed. This tunnel cannot be unlocked; recovery requires deliberate fresh pairing."
+	case errors.Is(err, securefs.ErrLocked):
+		return "Another local OwnTransit operation is running. Retry shortly; do not reset pairing state."
 	case errors.Is(err, leasewire.ErrExpired), errors.Is(err, leasewire.ErrClock), errors.Is(err, context.DeadlineExceeded):
 		return "Connection timed out or authorization freshness was lost. Check connectivity and the clock, then start a new SSH connection."
 	case errors.Is(err, pairrelay.ErrTransport):

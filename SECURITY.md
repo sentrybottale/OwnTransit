@@ -22,6 +22,10 @@ timers; production authorization leases, clock checks, pending/session limits an
 terminal alarm semantics are unchanged. Extended soak and independent security
 assessment are not claimed for this bounded release.
 
+Concurrent client startups wait only on the known busy local operation lock,
+inside the existing opening deadline and policy watcher. Ownership/permission
+errors are not retried. Cancellation or a local alarm still terminates the wait.
+
 ## 0.1.8 active-carrier lifetime fix
 
 The relay's pending-receiver timeout previously ended the receiver's HTTP
