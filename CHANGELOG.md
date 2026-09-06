@@ -9,6 +9,24 @@ becomes a publication record only after its authenticated evidence, signed
 qualification record and release decision are complete. Git tags never create
 or publish artifacts automatically.
 
+## [0.1.7]
+
+Signed development patch candidate; existing release bytes remain immutable.
+
+- Fix long hidden-code pastes on macOS and Linux by bypassing canonical terminal
+  line limits before displaying the prompt. Keep bounded input and strict code
+  validation; do not change pairing or wire authentication.
+- Support Enter, Backspace/Delete, Ctrl-U, Ctrl-D and cancellation without echo.
+  Restore the exact terminal settings on success, failure and handled signals;
+  discard queued input on exit. Ctrl-Z cancels instead of suspending hidden input.
+- Shorten client setup to source-specific prompts and a three-line success
+  message. Print the current executable and selected state in the SSH example,
+  with shell/SSH-token quoting, instead of assuming a working PATH.
+- Add isolated real-PTY regressions on macOS and Linux for long paste, bounds,
+  no echo, editing, cancellation and exact terminal restoration.
+- Accept 0.1.6 package upgrades. Existing identities are preserved; no new
+  pairing, SSH changes or relay upgrade is required for the client input fix.
+
 ## [0.1.6]
 
 Signed development patch candidate; existing release bytes remain immutable.

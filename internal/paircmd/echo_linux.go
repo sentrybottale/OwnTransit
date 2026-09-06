@@ -8,18 +8,18 @@ import (
 	"os"
 )
 
-func hideEcho(f *os.File) (func(), error) {
+func secretTerminal(f *os.File) (func() error, bool, error) {
 	t, err := unix.IoctlGetTermios(int(f.Fd()), unix.TCGETS)
 	if errors.Is(err, unix.ENOTTY) {
-		return func() {}, nil
+		return nil, false, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	old := *t
-	t.Lflag &^= unix.ECHO
+	configureSecretTerminal(t)
 	if err := unix.IoctlSetTermios(int(f.Fd()), unix.TCSETS, t); err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return func() { _ = unix.IoctlSetTermios(int(f.Fd()), unix.TCSETS, &old) }, nil
+	return func() error { return unix.IoctlSetTermios(int(f.Fd()), unix.TCSETSF, &old) }, true, nil
 }

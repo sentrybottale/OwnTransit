@@ -88,9 +88,15 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	clientCommand := "owntransit"
-	if filepath.Base(os.Args[0]) == "owntransit-preview" {
-		clientCommand = "owntransit-preview"
+	clientCommand := os.Args[0]
+	if path, e := exec.LookPath(clientCommand); e == nil {
+		if absolute, e := filepath.Abs(path); e == nil {
+			clientCommand = absolute
+		}
+	}
+	selectedState := ""
+	if *state != base {
+		selectedState = *state
 	}
 	reader := bufio.NewReaderSize(input, 4096)
 	replacementPeer := ""
@@ -112,9 +118,9 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 					return 1
 				}
 				if pending {
-					fmt.Fprintf(output, "A saved pairing request is waiting. NEXT: %s pair resume\nIf you selected --state, include the same path. No new code is needed.\n", clientCommand)
+					fmt.Fprintf(output, "Pairing pending. Resume (no new codes):\n  %s\n", pairCommand(clientCommand, "resume", selectedState))
 				} else {
-					fmt.Fprintf(output, "OwnTransit is already paired; installation preserved its keys. NEXT:\n  ssh -o 'ProxyCommand=%s pair proxy' USER@SSH_ALIAS\nUse your existing SSH account/key and independently verified host identity. If you selected --state, include that same path in the ProxyCommand. For a deliberate different pairing, use a separate --state path.\n", clientCommand)
+					printConnect(output, "Already paired; keys unchanged.", clientCommand, selectedState)
 				}
 				return 0
 			} else if !os.IsNotExist(e) {
@@ -122,9 +128,10 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 			}
 		}
 		if operation == "setup" {
-			fmt.Fprintln(diagnostics, "OwnTransit setup — answer the prompts below; do not enter shell commands here.")
 			if !receiver {
-				fmt.Fprintln(diagnostics, "Have ready: (1) your public relay URL, (2) the code from your VPS, (3) the private code from the receiving SSH machine. Code input is hidden; paste once and press Enter. Ctrl-C cancels.")
+				fmt.Fprintln(diagnostics, "OwnTransit setup — paste each code, then Enter. Input is hidden. Ctrl-C cancels.")
+			} else {
+				fmt.Fprintln(diagnostics, "OwnTransit receiver setup — answer the prompts below.")
 			}
 		}
 		if operation == "setup" && receiver && *state != "/var/lib/owntransit-pair" {
@@ -168,7 +175,7 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 		}
 		if operation == "setup" && *origin == "" {
 			var value []byte
-			value, err = promptValidated(ctx, input, reader, diagnostics, "Step 1 — Public relay URL: ", "Enter the URL you configured on the VPS, for example wss://relay.example/connects — not a shell command. The example is not your actual relay.", 2048, false, func(v []byte) error { _, e := pairrelay.NewPublicClient(string(v), nil); return e })
+			value, err = promptValidated(ctx, input, reader, diagnostics, "Public relay URL: ", "Enter your VPS URL, not a shell command (example only: wss://relay.example/connects).", 2048, false, func(v []byte) error { _, e := pairrelay.NewPublicClient(string(v), nil); return e })
 			if err != nil {
 				break
 			}
@@ -183,7 +190,7 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 			return 2
 		}
 		if operation == "setup" {
-			fmt.Fprintf(diagnostics, "Using relay: %s\n", *origin)
+			fmt.Fprintf(diagnostics, "Relay: %s\n", *origin)
 		}
 		if err = os.MkdirAll(filepath.Dir(*state), 0700); err != nil {
 			break
@@ -225,8 +232,7 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 			fmt.Fprintf(output, "\nNEXT — on your relay:\n  sudo owntransit-relay-preview register %s\nThen on your client:\n  owntransit-preview pair setup\nPaste the relay's code and the private pairing code above when asked.\n", attempt.ReceiverID)
 		} else {
 			var relayCode, privateCode []byte
-			fmt.Fprintln(diagnostics, "Step 2 — On your public VPS, receiver registration prints a code starting with otrelay1. This is NOT the private code from your SSH machine.")
-			relayCode, err = promptValidated(ctx, input, reader, diagnostics, "Paste the VPS registration code (hidden): ", "A complete VPS registration code starting with otrelay1. is required. Run owntransit-relay-preview register RECEIVER_ID on the VPS to get it.", pairrelaycmd.MaxRegistrationCode, true, func(v []byte) error { _, e := pairrelaycmd.DecodeRegistration(string(v)); return e })
+			relayCode, err = promptValidated(ctx, input, reader, diagnostics, "VPS registration code (otrelay1., hidden): ", "Get the complete otrelay1. code from: sudo owntransit-relay-preview register RECEIVER_ID on the VPS.", pairrelaycmd.MaxRegistrationCode, true, func(v []byte) error { _, e := pairrelaycmd.DecodeRegistration(string(v)); return e })
 			if err != nil {
 				break
 			}
@@ -235,8 +241,7 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 				err = e
 				break
 			}
-			fmt.Fprintln(diagnostics, "Step 3 — Receiver setup on your private SSH machine prints the one-use code starting with otpair1. Never give this code to the VPS.")
-			privateCode, err = promptValidated(ctx, input, reader, diagnostics, "Paste the PRIVATE SSH-machine code (hidden): ", "A complete, unexpired receiver code starting with otpair1. is required. Get it from setup on the receiving SSH machine, not the VPS.", receiverpairing.MaxCodeSize, true, func(v []byte) error { return receiverpairing.ValidateCodeInput(v, time.Now()) })
+			privateCode, err = promptValidated(ctx, input, reader, diagnostics, "Private SSH-machine code (otpair1., hidden): ", "Get the complete, unexpired otpair1. code from receiver setup on your SSH machine. Never give it to the VPS.", receiverpairing.MaxCodeSize, true, func(v []byte) error { return receiverpairing.ValidateCodeInput(v, time.Now()) })
 			if err != nil {
 				break
 			}
@@ -247,7 +252,7 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 				privateCode[i] = 0
 			}
 			if err == nil {
-				fmt.Fprintf(output, "OwnTransit paired. NEXT — connect using your existing SSH user, key and verified host identity:\n  ssh -o 'ProxyCommand=%s pair proxy' USER@SSH_ALIAS\nReplace USER and SSH_ALIAS with your SSH account and receiving host label. Pairing does not grant SSH login: Permission denied (publickey) means SSH needs an authorized key, not another pairing code.\nIf you selected --state, include that same path in the ProxyCommand.\n", clientCommand)
+				printConnect(output, "OwnTransit paired.", clientCommand, selectedState)
 			} else {
 				fmt.Fprintln(diagnostics, "Pairing could not complete. Check that the receiver is running and both codes belong to its current pairing. If the request was saved, next run: owntransit-preview pair resume. Do not regenerate keys just because the network failed.")
 			}
@@ -260,7 +265,7 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 		err = pairruntime.ResumeClient(bounded, *state, nil)
 		c()
 		if err == nil {
-			fmt.Fprintln(output, "Pairing saved. Ready to open an SSH carrier.")
+			printConnect(output, "OwnTransit paired.", clientCommand, selectedState)
 		}
 	case "proxy":
 		if receiver {
@@ -306,17 +311,32 @@ func readVisibleLine(ctx context.Context, input io.Reader, reader *bufio.Reader,
 	return readPrompt(ctx, input, reader, diagnostics, prompt, limit, false)
 }
 
-func readPrompt(ctx context.Context, input io.Reader, reader *bufio.Reader, diagnostics io.Writer, prompt string, limit int, secret bool) ([]byte, error) {
-	fmt.Fprint(diagnostics, prompt)
-	restore := func() {}
+func readPrompt(ctx context.Context, input io.Reader, reader *bufio.Reader, diagnostics io.Writer, prompt string, limit int, secret bool) (value []byte, err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if f, ok := input.(*os.File); ok && secret {
-		var err error
-		restore, err = hideEcho(f)
-		if err != nil {
-			return nil, err
+		restore, terminal, setupErr := secretTerminal(f)
+		if setupErr != nil {
+			return nil, setupErr
+		}
+		if terminal {
+			defer func() {
+				if e := restore(); e != nil {
+					clear(value)
+					value, err = nil, e
+					fmt.Fprintln(diagnostics, "Could not restore terminal settings; run: stty sane")
+				}
+				fmt.Fprintln(diagnostics)
+			}()
+			// Make input safe before announcing that the user can paste.
+			if _, err := fmt.Fprint(diagnostics, prompt); err != nil {
+				return nil, err
+			}
+			return readSecretTerminal(ctx, f, reader, limit)
 		}
 	}
-	defer restore()
+	fmt.Fprint(diagnostics, prompt)
 	defer fmt.Fprintln(diagnostics)
 	type result struct {
 		data []byte
