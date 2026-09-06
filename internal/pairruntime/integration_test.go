@@ -30,6 +30,7 @@ import (
 	"github.com/sentrybottale/owntransit/internal/protocol"
 	"github.com/sentrybottale/owntransit/internal/receiverpairing"
 	"github.com/sentrybottale/owntransit/internal/securefs"
+	"github.com/sentrybottale/owntransit/internal/transport"
 )
 
 type integrated struct {
@@ -99,9 +100,7 @@ func newIntegrated(t *testing.T) *integrated {
 		if err != nil {
 			return nil, err
 		}
-		connection := websocket.NetConn(ctx, ws, websocket.MessageBinary)
-		ws.SetReadLimit(2 << 20)
-		return connection, nil
+		return transport.WrapWebSocket(ctx, ws, 2<<20)
 	}
 	public, err := pairrelay.NewPublicClient("wss://relay.example/connects", f.dial)
 	if err != nil {
@@ -143,6 +142,10 @@ func (f *integrated) start(t *testing.T) (context.CancelFunc, <-chan error) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	a, b := net.Pipe()
+	// Match the real broker's cancellation: close IPC independently of worker
+	// completion so a pending RPC cannot delay shutdown. Use the production WS
+	// adapter above, including its abort-on-context-cancellation behavior.
+	stopIPC := context.AfterFunc(ctx, func() { _ = b.Close() })
 	go func() {
 		defer a.Close()
 		err := ServeAgent(a, a, ReceiverBackend{Path: f.serverPath})
@@ -175,7 +178,7 @@ func (f *integrated) start(t *testing.T) (context.CancelFunc, <-chan error) {
 		}
 		done <- err
 	}()
-	t.Cleanup(func() { cancel(); b.Close() })
+	t.Cleanup(func() { cancel(); b.Close(); stopIPC() })
 	return cancel, done
 }
 
