@@ -17,11 +17,12 @@ import (
 )
 
 type upgradeIntent struct {
-	Schema   string      `json:"schema"`
-	Previous savedConfig `json:"previous"`
-	Next     savedConfig `json:"next"`
-	Enabled  bool        `json:"enabled"`
-	Running  bool        `json:"running"`
+	Schema       string      `json:"schema"`
+	Previous     savedConfig `json:"previous"`
+	Next         savedConfig `json:"next"`
+	Enabled      bool        `json:"enabled"`
+	Running      bool        `json:"running"`
+	PreviousUnit []byte      `json:"previous_unit,omitempty"`
 }
 
 func validSaved(c savedConfig) bool {
@@ -67,11 +68,21 @@ func verifyRunningRelay(ctx context.Context, c savedConfig, timeout time.Duratio
 // The journal contains only protected local software selection and service
 // state. Relay identity files are neither rewritten nor restored by upgrades.
 func restoreManaged(ctx context.Context, root *securefs.Root, j upgradeIntent) error {
-	if !validSaved(j.Previous) || !validSaved(j.Next) || j.Schema != "owntransit.relay-upgrade.v1" || j.Previous.URL != j.Next.URL || j.Previous.Engine != j.Next.Engine {
+	if !validSaved(j.Previous) || !validSaved(j.Next) || (j.Schema != "owntransit.relay-upgrade.v1" && j.Schema != "owntransit.relay-upgrade.v2") || j.Previous.URL != j.Next.URL || j.Previous.Engine != j.Next.Engine {
 		return errors.New("invalid relay upgrade journal")
 	}
+	previousUnit := j.PreviousUnit
+	if j.Schema == "owntransit.relay-upgrade.v1" {
+		if len(previousUnit) != 0 {
+			return errors.New("invalid legacy journal")
+		}
+		previousUnit = legacyUnit(j.Previous.Image, j.Previous.Engine)
+	}
+	if !knownUnit(previousUnit, j.Previous) {
+		return errors.New("invalid previous unit in upgrade journal")
+	}
 	current, _, err := protectedFile(unitPath)
-	if err != nil || (!bytes.Equal(current, unit(j.Previous.Image, j.Previous.Engine)) && !bytes.Equal(current, unit(j.Next.Image, j.Next.Engine))) {
+	if err != nil || (!bytes.Equal(current, previousUnit) && !knownUnit(current, j.Next)) {
 		return errors.New("managed unit changed outside upgrade; rollback refused")
 	}
 	drops, err := command(ctx, "/usr/bin/systemctl", "show", managedUnit, "--property=DropInPaths", "--value")
@@ -85,7 +96,10 @@ func restoreManaged(ctx context.Context, root *securefs.Root, j upgradeIntent) e
 	if _, err := command(ctx, "/usr/bin/systemctl", "stop", managedUnit); err != nil {
 		return err
 	}
-	if err := writeAtomic(unitPath, unit(j.Previous.Image, j.Previous.Engine), 0644); err != nil {
+	if err := cleanupStopped(ctx, j.Previous.Engine, []string{j.Previous.Image, j.Next.Image}); err != nil {
+		return err
+	}
+	if err := writeAtomic(unitPath, previousUnit, 0644); err != nil {
 		return err
 	}
 	encoded, _ := json.Marshal(j.Previous)
@@ -144,7 +158,7 @@ func upgradeManaged(ctx context.Context, root *securefs.Root, previous, next sav
 		return errors.New("use the existing relay URL and engine for an in-place upgrade")
 	}
 	original, _, err := protectedFile(unitPath)
-	if err != nil || !bytes.Equal(original, unit(previous.Image, previous.Engine)) {
+	if err != nil || !knownUnit(original, previous) {
 		return errors.New("existing relay unit is not the saved managed configuration; no service was changed")
 	}
 	drops, err := command(ctx, "/usr/bin/systemctl", "show", managedUnit, "--property=DropInPaths", "--value")
@@ -159,7 +173,7 @@ func upgradeManaged(ctx context.Context, root *securefs.Root, previous, next sav
 			return errors.New("running relay does not match saved managed image; no service was changed")
 		}
 	}
-	if previous == next && activeErr == nil {
+	if previous == next && activeErr == nil && bytes.Equal(original, unit(next.Image, next.Engine)) {
 		if err := verifyRunningRelay(ctx, next, routeProbeTimeout); err != nil {
 			return errors.Join(errors.New("existing relay left running; check its public route"), err)
 		}
@@ -174,7 +188,7 @@ func upgradeManaged(ctx context.Context, root *securefs.Root, previous, next sav
 	if _, err := command(ctx, previous.Engine, "image", "inspect", "--format", "{{.Id}}", previous.Image); err != nil {
 		return errors.New("previous image is unavailable for rollback; relay left unchanged")
 	}
-	j := upgradeIntent{"owntransit.relay-upgrade.v1", previous, next, enabledErr == nil, activeErr == nil}
+	j := upgradeIntent{"owntransit.relay-upgrade.v2", previous, next, enabledErr == nil, activeErr == nil, original}
 	encoded, _ := json.Marshal(j)
 	if err := root.CreateExclusive("upgrade.json", encoded, 0600); err != nil {
 		return err
@@ -192,6 +206,9 @@ func upgradeManaged(ctx context.Context, root *securefs.Root, previous, next sav
 	}()
 	fmt.Fprintln(output, "Upgrading the existing relay container. Active tunnels may reconnect; relay keys, pairings and website routing are preserved.")
 	if _, err := command(ctx, "/usr/bin/systemctl", "stop", managedUnit); err != nil {
+		return err
+	}
+	if err := cleanupStopped(ctx, previous.Engine, []string{previous.Image}); err != nil {
 		return err
 	}
 	if err := writeAtomic(unitPath, unit(next.Image, next.Engine), 0644); err != nil {

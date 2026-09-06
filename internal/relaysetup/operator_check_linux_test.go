@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"github.com/sentrybottale/owntransit/internal/pairrelay"
 	"golang.org/x/sys/unix"
@@ -46,6 +47,11 @@ func TestAuthorizedOperatorRelayCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer lock.Close()
+	if os.Getenv("OWNTRANSIT_OPERATOR_RELAY_STAGE") == "recover" {
+		if err := recoverManaged(ctx, root, os.Stdout); err != nil {
+			t.Fatal(err)
+		}
+	}
 	current, err := loadConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +64,7 @@ func TestAuthorizedOperatorRelayCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Log("Real engine inspection normalized successfully; saved image is running and public protocol verification passed.")
-	if os.Getenv("OWNTRANSIT_OPERATOR_RELAY_STAGE") == "inspect" {
+	if os.Getenv("OWNTRANSIT_OPERATOR_RELAY_STAGE") == "inspect" || os.Getenv("OWNTRANSIT_OPERATOR_RELAY_STAGE") == "recover" {
 		return
 	}
 	if os.Getenv("OWNTRANSIT_OPERATOR_RELAY_STAGE") != "rollback" {
@@ -117,6 +123,10 @@ func TestAuthorizedOperatorRelayCheck(t *testing.T) {
 		return out
 	}
 	before := snapshot()
+	hashes, _ := json.Marshal(before)
+	if err := os.WriteFile(filepath.Join(backup, "hashes.json"), hashes, 0600); err != nil {
+		t.Fatal(err)
+	}
 	originalProbe, originalTimeout := probeServer, routeProbeTimeout
 	routeProbeTimeout = 2 * time.Second
 	probeServer = func(context.Context, string) (pairrelay.ServerInfo, error) {

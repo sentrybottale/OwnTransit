@@ -6,6 +6,11 @@ The three roles are client, public relay and private receiver/connector.
 
 ## 1. Install and start the relay
 
+The 0.1.6 patch supports real Docker and Podman inspection formats and explicitly
+cleans up stopped managed instances during restart/upgrade. It does not depend
+solely on the engine's auto-remove behavior and will not force-remove a running
+or unrelated container. Old images remain available for rollback.
+
 On Linux amd64 or arm64:
 
 ```sh

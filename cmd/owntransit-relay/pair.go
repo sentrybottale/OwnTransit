@@ -62,6 +62,16 @@ func runManagedRelay(arguments []string, input io.Reader, output, diagnostics io
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+	if arguments[0] == "cleanup-container" {
+		if len(arguments) != 3 {
+			return 2
+		}
+		if err := relaysetup.CleanupManaged(ctx, arguments[1], arguments[2]); err != nil {
+			fmt.Fprintln(diagnostics, err)
+			return 1
+		}
+		return 0
+	}
 	if arguments[0] == "register" {
 		if len(arguments) != 2 {
 			return 2

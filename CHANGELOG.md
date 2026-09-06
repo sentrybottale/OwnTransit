@@ -18,6 +18,12 @@ Signed development patch candidate; existing release bytes remain immutable.
   comparison, including rollback verification.
 - Reject malformed inspection types and prevent multi-command string
   entrypoints from being mistaken for the OwnTransit executable.
+- Clean up stopped managed container instances explicitly instead of relying
+  only on engine auto-removal. Service pre/post hooks and upgrade rollback
+  verify the exact name, image, executable and state bind before removing a
+  container; they never force-remove running containers, images or volumes.
+- Preserve the exact previous service template in a v2 upgrade journal while
+  retaining recovery support for earlier v1 journals.
 - Add representation-specific regressions and an explicit operator-authorized
   check for real engine inspection and forced-failure rollback. The latter is
   opt-in only and never runs against an operator host through ordinary CI.

@@ -340,6 +340,18 @@ func previous(ctx context.Context) (*previousRelay, error) {
 }
 
 func unit(image, engine string) []byte {
+	base := string(legacyUnit(image, engine))
+	hook := fmt.Sprintf("/usr/local/bin/owntransit-relay-preview cleanup-container %s %s", engine, image)
+	base = strings.Replace(base, "Type=simple\n", "Type=simple\nExecStartPre="+hook+"\n", 1)
+	base = strings.Replace(base, "Restart=on-failure\n", "ExecStopPost="+hook+"\nRestart=on-failure\n", 1)
+	return []byte(base)
+}
+
+func knownUnit(data []byte, c savedConfig) bool {
+	return bytes.Equal(data, unit(c.Image, c.Engine)) || bytes.Equal(data, legacyUnit(c.Image, c.Engine))
+}
+
+func legacyUnit(image, engine string) []byte {
 	return []byte(fmt.Sprintf(`[Unit]
 Description=OwnTransit managed relay
 After=network-online.target
