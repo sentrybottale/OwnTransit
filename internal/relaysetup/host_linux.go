@@ -30,7 +30,7 @@ const managedRoot = "/var/lib/owntransit-relay-setup"
 const managedContainer = "owntransit-relay-managed"
 const managedUnit = "owntransit-relay-managed.service"
 const unitPath = "/etc/systemd/system/" + managedUnit
-const imageTag = "owntransit-relay-pair:0.1.5"
+const imageTag = "owntransit-relay-pair:0.1.6"
 
 type boundedBuffer struct {
 	bytes.Buffer
@@ -208,7 +208,7 @@ type containerInfo struct {
 	Image  string `json:"Image"`
 	Name   string `json:"Name"`
 	Config struct {
-		Entrypoint []string
+		Entrypoint inspectionEntrypoint
 		Cmd        []string
 		Labels     map[string]string
 	} `json:"Config"`
@@ -224,10 +224,48 @@ func inspect(ctx context.Context, engine, name string) (containerInfo, error) {
 	if err != nil {
 		return containerInfo{}, err
 	}
+	return decodeInspection(data)
+}
+
+// Docker emits an argv array; Podman 4.9 emits a string. Never shell-split or
+// execute the inspection value: it is only used for exact program recognition.
+type inspectionEntrypoint []string
+
+func (entry *inspectionEntrypoint) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		*entry = nil
+		return nil
+	}
+	var single string
+	if json.Unmarshal(data, &single) == nil {
+		if single == "" {
+			*entry = nil
+		} else {
+			*entry = []string{single}
+		}
+		return nil
+	}
+	var argv []string
+	if err := json.Unmarshal(data, &argv); err != nil {
+		return errors.New("invalid inspected entrypoint type")
+	}
+	*entry = argv
+	return nil
+}
+
+func decodeInspection(data []byte) (containerInfo, error) {
 	var list []containerInfo
 	if json.Unmarshal(data, &list) != nil || len(list) != 1 {
 		return containerInfo{}, errors.New("invalid container inspection")
 	}
+	image := list[0].Image
+	if len(image) == 64 {
+		image = "sha256:" + image
+	}
+	if !validImage(image) {
+		return containerInfo{}, errors.New("invalid inspected container image ID")
+	}
+	list[0].Image = image
 	return list[0], nil
 }
 func ownsPort(c containerInfo) bool {
@@ -246,6 +284,9 @@ func ownRelay(c containerInfo) bool {
 		return false
 	}
 	if len(c.Config.Entrypoint) != 1 {
+		return false
+	}
+	if strings.ContainsAny(c.Config.Entrypoint[0], " \t\r\n\x00\"'") {
 		return false
 	}
 	entry := filepath.Base(c.Config.Entrypoint[0])

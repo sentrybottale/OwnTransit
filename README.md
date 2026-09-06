@@ -23,7 +23,7 @@ It can observe addresses, timing and traffic sizes, or deny service. It must
 not read the inner stream, impersonate an endpoint accepted by its peer, or
 choose where the receiver sends traffic.
 
-## Install the 0.1.5 development preview
+## Install the 0.1.6 development preview
 
 This is a **signed development preview**, not a stable or production-qualified
 release. It installs separately from 0.1.0. Explicit relay setup can replace an
@@ -33,19 +33,19 @@ arm64/aarch64 use the same command.
 First, on the public VPS (installation starts relay setup):
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.5/install-preview-linux.sh | sudo sh -s -- relay
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.6/install-preview-linux.sh | sudo sh -s -- relay
 ```
 
 Then install the package on the private SSH server:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.5/install-preview-linux.sh | sudo sh -s -- connector
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.6/install-preview-linux.sh | sudo sh -s -- connector
 ```
 
 On a Linux client:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.5/install-preview-linux.sh | sudo sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.6/install-preview-linux.sh | sudo sh -s -- client
 ```
 
 For a new pairing, follow **Pair and connect** below once both packages are
@@ -64,7 +64,7 @@ an existing HTTPS site. Bespoke proxy layouts or a missing HTTPS site produce a
 specific setup error; they are not guessed. Failed cutover restores the previous
 relay and any route changed by setup. Start the relay before endpoint setup.
 
-Apple-silicon macOS uses the [signed client archive](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.1.5).
+Apple-silicon macOS uses the [signed client archive](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.1.6).
 Intel macOS is not supported. No Apple signing subscription is required; the
 client is not Apple-notarized.
 
@@ -75,8 +75,8 @@ macOS use and recovery. **Do not use the old 0.1.0 curl command for this flow.**
 
 ## Upgrade an existing preview
 
-Use the same 0.1.5 installer above for each installed role. It preserves pairing
-state and accepts known 0.1.1/0.1.2/0.1.3 preview packages; stable 0.1.0 remains
+Use the same 0.1.6 installer above for each installed role. It preserves pairing
+state and accepts known 0.1.1/0.1.2/0.1.3/0.1.5 preview packages; stable 0.1.0 remains
 separate. On the relay, supply the existing URL. Managed upgrade restarts onto
 the new image, verifies it and the public route, and rolls back on failure;
 it does not rewrite website routing or relay keys. Rerunning after an interrupted

@@ -9,6 +9,21 @@ becomes a publication record only after its authenticated evidence, signed
 qualification record and release decision are complete. Git tags never create
 or publish artifacts automatically.
 
+## [0.1.6]
+
+Signed development patch candidate; existing release bytes remain immutable.
+
+- Accept Docker's entrypoint arrays and Podman 4.9's entrypoint strings without
+  shell interpretation. Normalize bare SHA-256 image IDs before exact image
+  comparison, including rollback verification.
+- Reject malformed inspection types and prevent multi-command string
+  entrypoints from being mistaken for the OwnTransit executable.
+- Add representation-specific regressions and an explicit operator-authorized
+  check for real engine inspection and forced-failure rollback. The latter is
+  opt-in only and never runs against an operator host through ordinary CI.
+- Accept upgrades from the published 0.1.5 packages. No protocol, endpoint
+  credential or SSH authorization changes.
+
 ## [0.1.5]
 
 Signed development candidate for the next stable qualification, not a stable
