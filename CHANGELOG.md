@@ -9,6 +9,22 @@ becomes a publication record only after its authenticated evidence, signed
 qualification record and release decision are complete. Git tags never create
 or publish artifacts automatically.
 
+## [0.1.8]
+
+Signed development patch candidate; existing release bytes remain immutable.
+
+- Fix the relay's pending-receiver timer closing an already active carrier.
+  Promotion and expiry now resolve ownership atomically; a claimed handler
+  stays alive until its exchange ends or the relay shuts down.
+- Preserve pending expiry, admission/active quotas, token/session deadlines,
+  endpoint authentication, authorization leases and terminal alarm behavior.
+  This is an availability fix, not a new wire profile or trust reset.
+- Add a real-WebSocket regression that fails on the previous implementation,
+  pending/claimed expiry and shutdown tests, a promotion/expiry race test, and
+  explicit session-lifetime/token-bound assertions.
+- Upgrade the relay to apply the fix; existing compatible clients and receivers
+  need no update or re-pairing. The installer accepts 0.1.7 packages as well.
+
 ## [0.1.7]
 
 Signed development patch candidate; existing release bytes remain immutable.

@@ -1,5 +1,13 @@
 # OwnTransit roadmap
 
+## 0.1.8 — sustained-session regression
+
+Fix the relay pending-waiter timer surviving promotion into an active carrier.
+Require real-WebSocket traffic beyond that deadline plus pending expiry,
+claim/expiry races, shutdown and unchanged active lifetime limits. A brief SSH
+login is not evidence of a sustained tunnel; live retesting must cross multiple
+authorization renewals with independent recovery access retained.
+
 ## 0.1.7 — concise setup and native terminal input
 
 Fix long hidden-code paste without operator terminal workarounds. Exercise

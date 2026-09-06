@@ -34,6 +34,7 @@ func TestPublicRegistrationPairingRuntimeAndRenewal(t *testing.T) {
 	fixture := newRelayFixture(t)
 	defer fixture.relay.Close()
 	fixture.relay.limits.HandshakeTimeout = 2 * time.Second
+	fixture.relay.limits.PairingTimeout = 3 * time.Second
 	httpServer := httptest.NewServer(fixture.relay)
 	defer httpServer.Close()
 	realDial := func(ctx context.Context, _ string) (net.Conn, error) {
@@ -133,9 +134,10 @@ func TestPublicRegistrationPairingRuntimeAndRenewal(t *testing.T) {
 	}
 	defer clientConnection.Close()
 	defer received.connection.Close()
-	// The real WebSocket stream must outlive the short setup deadline after
-	// authenticated promotion; otherwise quiet legitimate SSH sessions break.
-	time.Sleep(2200 * time.Millisecond)
+	// Promotion must retire BOTH initial admission and pending-receiver
+	// deadlines. A waiter timer must not close the HTTP/WebSocket handler of
+	// an already active carrier, even when the SSH stream is quiet.
+	time.Sleep(3200 * time.Millisecond)
 	payload := []byte("opaque-inner-tls-stream")
 	writeDone := make(chan error, 1)
 	go func() { _, err := clientConnection.Write(payload); writeDone <- err }()

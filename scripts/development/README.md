@@ -19,7 +19,7 @@ existing distribution public-key digest, validates the detached inventory
 signature, and checks the selected archive digest before extraction or root
 execution. The inner installer rechecks the platform and exact flat inventory.
 
-Linux installation uses `/opt/owntransit-preview/0.1.7`, separately named
+Linux installation uses `/opt/owntransit-preview/0.1.8`, separately named
 `*-preview` aliases, and one disabled connector service. It preserves every
 legacy install, service, credential and SSH setting. `pair setup` on the
 connector initializes its own identities and explicitly enables its installed
@@ -32,7 +32,7 @@ its client, and that consent is checked atomically against the current peer.
 The old pairing is locked and drained before atomic state replacement. Setup
 waits for the worker's advertisement acknowledgement and prints exact next steps.
 
-For 0.1.7, existing connector installation prints a service restart command instead
+For 0.1.8, existing connector installation prints a service restart command instead
 of a new-pairing command. Client setup recognizes a retained pairing/request and
 prints its connection/resume step without changing identity. A managed relay
 upgrade uses the same setup URL and a protected rollback journal; it does not
