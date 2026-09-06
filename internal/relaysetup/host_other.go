@@ -9,6 +9,9 @@ import (
 )
 
 func Setup(context.Context, string, io.Writer) error { return errors.New("VPS setup runs on Linux") }
+func CleanupManaged(context.Context, string, string) error {
+	return errors.New("VPS cleanup runs on Linux")
+}
 func RegisterManaged(context.Context, string) (string, error) {
 	return "", errors.New("VPS registration runs on Linux")
 }

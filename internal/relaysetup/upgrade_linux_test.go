@@ -61,6 +61,7 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 				t.Fatal(err)
 			}
 			currentImage := prev.Image
+			present := true
 			running, enabled := true, true
 			if scenario == "stopped-disabled" {
 				running, enabled = false, false
@@ -93,6 +94,10 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 					case "stop":
 						running = false
 					case "start":
+						if present {
+							return nil, errors.New("orphan container name blocks start")
+						}
+						present = true
 						running = true
 						selected, _, _ := protectedFile(unitPath)
 						if bytes.Equal(selected, unit(next.Image, next.Engine)) && scenario != "stale-running-image" {
@@ -108,9 +113,26 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 				if args[0] == "image" {
 					return []byte(prev.Image), nil
 				}
+				if args[0] == "ps" {
+					if present {
+						return []byte(strings.Repeat("c", 64)), nil
+					}
+					return nil, nil
+				}
+				if args[0] == "rm" {
+					if running {
+						return nil, errors.New("refusing to remove running container")
+					}
+					present = false
+					return nil, nil
+				}
 				if args[0] == "container" {
-					c := containerInfo{Name: "/" + managedContainer, Image: currentImage}
+					if !present {
+						return nil, errors.New("container absent")
+					}
+					c := containerInfo{ID: strings.Repeat("c", 64), Name: "/" + managedContainer, Image: currentImage}
 					c.Config.Entrypoint = []string{"/owntransit-relay"}
+					c.Mounts = []struct{ Type, Source, Destination string }{{"bind", managedRoot + "/data", "/state"}}
 					c.State.Running = running
 					return json.Marshal([]containerInfo{c})
 				}
@@ -132,7 +154,7 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 				}
 			}
 			if scenario == "interrupted" {
-				journal, _ := json.Marshal(upgradeIntent{"owntransit.relay-upgrade.v1", prev, next, true, true})
+				journal, _ := json.Marshal(upgradeIntent{"owntransit.relay-upgrade.v1", prev, next, true, true, nil})
 				if err := root.CreateExclusive("upgrade.json", journal, 0600); err != nil {
 					t.Fatal(err)
 				}

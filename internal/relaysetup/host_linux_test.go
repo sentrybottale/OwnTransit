@@ -89,7 +89,7 @@ func TestManagedSetupAndFailedRouteRollback(t *testing.T) {
 				case "ps":
 					return []byte(strings.Repeat("a", 64)), nil
 				case "container":
-					c := containerInfo{ID: strings.Repeat("a", 64), Name: "/owntransit-relay"}
+					c := containerInfo{ID: strings.Repeat("a", 64), Image: "sha256:" + strings.Repeat("c", 64), Name: "/owntransit-relay"}
 					c.Config.Entrypoint = []string{"/owntransit-relay"}
 					c.Config.Cmd = []string{"run"}
 					c.State.Running = true

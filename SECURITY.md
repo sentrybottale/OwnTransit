@@ -30,6 +30,12 @@ not invoke the website route editor for an already managed installation.
 
 ## Managed relay setup
 
+Managed service pre/post hooks clean up only a stopped container whose name,
+image, executable and state bind match the managed relay. Cleanup never uses
+force removal and never deletes volumes or images. Upgrade bridges also handle
+stopped containers left by older units. Rollback retains the exact previous
+unit template in a v2 local journal; recovery still accepts earlier v1 journals.
+
 The explicit relay setup command is local administration. It accepts the public
 URL, selects a recognized site configuration, verifies container ownership before
 replacement, and tests the actual v2 WebSocket endpoint against the local relay
