@@ -320,6 +320,16 @@ func hasExactSubprotocol(header http.Header) bool {
 	return len(tokens) == 1 && strings.TrimSpace(tokens[0]) == WebSocketSubprotocol
 }
 
+// WrapWebSocket constructs a bounded adapter for the explicitly selected
+// pairing profile. Legacy option limits remain unchanged. Construct before
+// exposing the connection to any reader: NetConn resets the library limit.
+func WrapWebSocket(ctx context.Context, ws *websocket.Conn, maximum int64) (net.Conn, error) {
+	if ctx == nil || ws == nil || maximum <= 0 || maximum > 2<<20 {
+		return nil, ErrInvalidMessageLimit
+	}
+	return newWebSocketStream(ctx, ws, maximum), nil
+}
+
 func newWebSocketStream(
 	ctx context.Context,
 	ws *websocket.Conn,

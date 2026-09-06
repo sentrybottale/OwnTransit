@@ -58,6 +58,24 @@ func readClient(root *securefs.Root) (clientRecord, error) {
 	return s, nil
 }
 
+// ClientSetupSummary exposes no private material and never changes state.
+func ClientSetupSummary(path string) (origin string, pending, locked bool, err error) {
+	root, err := securefs.OpenRoot(path)
+	if err != nil {
+		return "", false, false, err
+	}
+	defer root.Close()
+	p, err := ReadPolicy(path)
+	if err != nil {
+		return "", false, false, err
+	}
+	s, err := readClient(root)
+	if err != nil {
+		return "", false, false, err
+	}
+	return s.Origin, len(s.Pending) > 0, p.Locked, nil
+}
+
 // PairClient saves the exact request and locally generated private keys before
 // sending anything. Retry with ResumeClient; never generate a second request.
 func PairClient(ctx context.Context, path, origin string, code []byte, registration pairrelay.Registration, dial pairrelay.DialFunc) error {

@@ -96,6 +96,37 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 	replacementPeer := ""
 	switch operation {
 	case "init", "setup":
+		if operation == "setup" && !receiver {
+			if _, e := os.Lstat(*state); e == nil {
+				saved, pending, locked, e := pairruntime.ClientSetupSummary(*state)
+				if e != nil {
+					fmt.Fprintln(diagnostics, "Existing client state could not be read; it was not replaced.")
+					return 1
+				}
+				if locked {
+					fmt.Fprintln(diagnostics, "This pairing has a terminal security alarm. Rebuild with fresh endpoint identities; do not reuse or unlock the old state.")
+					return 1
+				}
+				if *origin != "" && *origin != saved {
+					fmt.Fprintln(diagnostics, "This client state belongs to a different relay. It was not replaced. Select a separate --state path for a deliberate new pairing.")
+					return 1
+				}
+				if pending {
+					fmt.Fprintf(output, "A saved pairing request is waiting. NEXT: %s pair resume\nIf you selected --state, include the same path. No new code is needed.\n", clientCommand)
+				} else {
+					fmt.Fprintf(output, "OwnTransit is already paired; installation preserved its keys. NEXT:\n  ssh -o 'ProxyCommand=%s pair proxy' USER@SSH_ALIAS\nUse your existing SSH account/key and independently verified host identity. If you selected --state, include that same path in the ProxyCommand. For a deliberate different pairing, use a separate --state path.\n", clientCommand)
+				}
+				return 0
+			} else if !os.IsNotExist(e) {
+				return 1
+			}
+		}
+		if operation == "setup" {
+			fmt.Fprintln(diagnostics, "OwnTransit setup — answer the prompts below; do not enter shell commands here.")
+			if !receiver {
+				fmt.Fprintln(diagnostics, "Have ready: (1) your public relay URL, (2) the code from your VPS, (3) the private code from the receiving SSH machine. Code input is hidden; paste once and press Enter. Ctrl-C cancels.")
+			}
+		}
 		if operation == "setup" && receiver && *state != "/var/lib/owntransit-pair" {
 			fmt.Fprintln(diagnostics, "owntransit pair setup: the installed service uses the default state; custom paths use pair init and pair serve")
 			return 2
@@ -137,7 +168,7 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 		}
 		if operation == "setup" && *origin == "" {
 			var value []byte
-			value, err = readVisibleLine(ctx, input, reader, diagnostics, "Relay URL (wss://your-domain/connects): ", 2048)
+			value, err = promptValidated(ctx, input, reader, diagnostics, "Step 1 — Public relay URL: ", "Enter the URL you configured on the VPS, for example wss://relay.example/connects — not a shell command. The example is not your actual relay.", 2048, false, func(v []byte) error { _, e := pairrelay.NewPublicClient(string(v), nil); return e })
 			if err != nil {
 				break
 			}
@@ -194,7 +225,8 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 			fmt.Fprintf(output, "\nNEXT — on your relay:\n  sudo owntransit-relay-preview register %s\nThen on your client:\n  owntransit-preview pair setup\nPaste the relay's code and the private pairing code above when asked.\n", attempt.ReceiverID)
 		} else {
 			var relayCode, privateCode []byte
-			relayCode, err = readLine(ctx, input, reader, diagnostics, "Relay code: ", pairrelaycmd.MaxRegistrationCode)
+			fmt.Fprintln(diagnostics, "Step 2 — On your public VPS, receiver registration prints a code starting with otrelay1. This is NOT the private code from your SSH machine.")
+			relayCode, err = promptValidated(ctx, input, reader, diagnostics, "Paste the VPS registration code (hidden): ", "A complete VPS registration code starting with otrelay1. is required. Run owntransit-relay-preview register RECEIVER_ID on the VPS to get it.", pairrelaycmd.MaxRegistrationCode, true, func(v []byte) error { _, e := pairrelaycmd.DecodeRegistration(string(v)); return e })
 			if err != nil {
 				break
 			}
@@ -203,7 +235,8 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 				err = e
 				break
 			}
-			privateCode, err = readLine(ctx, input, reader, diagnostics, "Private receiver pairing code: ", receiverpairing.MaxCodeSize)
+			fmt.Fprintln(diagnostics, "Step 3 — Receiver setup on your private SSH machine prints the one-use code starting with otpair1. Never give this code to the VPS.")
+			privateCode, err = promptValidated(ctx, input, reader, diagnostics, "Paste the PRIVATE SSH-machine code (hidden): ", "A complete, unexpired receiver code starting with otpair1. is required. Get it from setup on the receiving SSH machine, not the VPS.", receiverpairing.MaxCodeSize, true, func(v []byte) error { return receiverpairing.ValidateCodeInput(v, time.Now()) })
 			if err != nil {
 				break
 			}
@@ -214,7 +247,9 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 				privateCode[i] = 0
 			}
 			if err == nil {
-				fmt.Fprintf(output, "Paired. Use your existing SSH identity and host-key policy with:\n  ssh -o 'ProxyCommand=%s pair proxy' USER@SSH_ALIAS\nIf you selected --state, include that same path in the ProxyCommand.\n", clientCommand)
+				fmt.Fprintf(output, "OwnTransit paired. NEXT — connect using your existing SSH user, key and verified host identity:\n  ssh -o 'ProxyCommand=%s pair proxy' USER@SSH_ALIAS\nReplace USER and SSH_ALIAS with your SSH account and receiving host label. Pairing does not grant SSH login: Permission denied (publickey) means SSH needs an authorized key, not another pairing code.\nIf you selected --state, include that same path in the ProxyCommand.\n", clientCommand)
+			} else {
+				fmt.Fprintln(diagnostics, "Pairing could not complete. Check that the receiver is running and both codes belong to its current pairing. If the request was saved, next run: owntransit-preview pair resume. Do not regenerate keys just because the network failed.")
 			}
 		}
 	case "resume":
@@ -298,11 +333,7 @@ func readPrompt(ctx context.Context, input io.Reader, reader *bufio.Reader, diag
 			}
 			if b == '\n' {
 				out = []byte(strings.TrimSuffix(string(out), "\r"))
-				if len(out) == 0 {
-					finished <- result{nil, pairruntime.ErrState}
-				} else {
-					finished <- result{out, nil}
-				}
+				finished <- result{out, nil}
 				return
 			}
 			out = append(out, b)

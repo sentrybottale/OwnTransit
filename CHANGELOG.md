@@ -9,6 +9,25 @@ becomes a publication record only after its authenticated evidence, signed
 qualification record and release decision are complete. Git tags never create
 or publish artifacts automatically.
 
+## [0.1.5]
+
+Signed development candidate for the next stable qualification, not a stable
+or independently security-assessed release. The planned fixes move directly
+to 0.1.5; there is no 0.1.4 artifact release.
+
+- Bound initial unauthenticated admission and public response writes; add
+  bounded global/per-TCP-peer admission concurrency and rate accounting.
+- Restore WebSocket message limits after adapter construction on both paths,
+  preserve bounded stream writes, and test whole/fragmented oversize rejection.
+- Add actual managed relay upgrades with exact unit/image validation, retained
+  keys/routing, same-version no-op, rollback and interrupted-cutover recovery.
+- Add numbered, source-specific prompts with hidden-input explanations,
+  actionable retries and preserved existing-client setup state.
+- Document exact install versus upgrade/restart steps; no routine software
+  upgrade requires regenerating receiver pairing codes.
+- Add focused admission, transport, input, install/upgrade and rollback tests.
+  Multi-tunnel profiles remain separately queued; SSH policy stays operator-owned.
+
 ## [0.1.3]
 
 Signed development preview only; not a stable or production-qualified release.

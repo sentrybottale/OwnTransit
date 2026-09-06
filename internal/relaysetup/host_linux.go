@@ -30,7 +30,7 @@ const managedRoot = "/var/lib/owntransit-relay-setup"
 const managedContainer = "owntransit-relay-managed"
 const managedUnit = "owntransit-relay-managed.service"
 const unitPath = "/etc/systemd/system/" + managedUnit
-const imageTag = "owntransit-relay-pair:0.1.3"
+const imageTag = "owntransit-relay-pair:0.1.5"
 
 type boundedBuffer struct {
 	bytes.Buffer
@@ -205,6 +205,7 @@ func ensureEngine(ctx context.Context, output io.Writer) (string, error) {
 
 type containerInfo struct {
 	ID     string `json:"Id"`
+	Image  string `json:"Image"`
 	Name   string `json:"Name"`
 	Config struct {
 		Entrypoint []string
@@ -379,12 +380,24 @@ func Setup(ctx context.Context, inputURL string, output io.Writer) (returnErr er
 		return err
 	}
 	defer lock.Close()
+	if err := recoverManaged(ctx, root, output); err != nil {
+		return err
+	}
+	saved, savedErr := loadConfig()
+	if savedErr != nil && !errors.Is(savedErr, os.ErrNotExist) {
+		return savedErr
+	}
 	old, err := previous(ctx)
 	if err != nil {
 		return err
 	}
 	var e string
-	if old != nil {
+	if savedErr == nil {
+		e = saved.Engine
+		if saved.URL != publicURL || (old != nil && old.Engine != e) {
+			return errors.New("use the existing relay URL and container engine for an upgrade")
+		}
+	} else if old != nil {
 		e = old.Engine
 	} else {
 		e, err = ensureEngine(ctx, output)
@@ -452,6 +465,17 @@ func Setup(ctx context.Context, inputURL string, output io.Writer) (returnErr er
 		return errors.New("relay image does not select the required unprivileged identity")
 	}
 	dataDir := filepath.Join(managedRoot, "data")
+	if savedErr == nil {
+		info, err := os.Lstat(filepath.Join(dataDir, "relay"))
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return errors.New("existing relay identity state is missing or unsafe; no new keys were created")
+		}
+		if err := upgradeManaged(ctx, root, saved, savedConfig{"owntransit.relay-setup.v1", publicURL, e, image}, output); err != nil {
+			return err
+		}
+		fmt.Fprintf(output, "Relay ready at %s. NEXT: continue with your existing receiver/client; for a new receiver, run its pair setup and register its public ID here.\n", publicURL)
+		return nil
+	}
 	if info, err := os.Lstat(dataDir); errors.Is(err, os.ErrNotExist) {
 		if err := os.Mkdir(dataDir, 0700); err != nil {
 			return err
@@ -503,7 +527,7 @@ func Setup(ctx context.Context, inputURL string, output io.Writer) (returnErr er
 	}()
 	contents := unit(image, e)
 	if existing, _, err := protectedFile(unitPath); err == nil && !bytes.Equal(existing, contents) {
-		return errors.New("an existing managed service differs; explicit upgrade is required")
+		return errors.New("managed service has no matching saved setup state; no service was stopped. Restore its setup.json backup before retrying")
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}

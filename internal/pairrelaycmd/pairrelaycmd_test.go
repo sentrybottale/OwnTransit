@@ -202,8 +202,9 @@ func loopbackWebSocketDial(ctx context.Context, _ string) (net.Conn, error) {
 		}
 		return nil, err
 	}
+	connection := websocket.NetConn(ctx, ws, websocket.MessageBinary)
 	ws.SetReadLimit(pairrelay.MaxPairingBytes + pairrelay.MaxAdmissionCABytes + pairrelay.MaxTokenBytes + 256)
-	return websocket.NetConn(ctx, ws, websocket.MessageBinary), nil
+	return connection, nil
 }
 
 const testHTTPDialAddress = "127.0.0.1:9087"

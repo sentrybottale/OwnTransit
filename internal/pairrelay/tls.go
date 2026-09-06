@@ -20,6 +20,7 @@ import (
 
 	"github.com/sentrybottale/owntransit/internal/identity"
 	"github.com/sentrybottale/owntransit/internal/protocol"
+	carriertransport "github.com/sentrybottale/owntransit/internal/transport"
 )
 
 // PeerDNSName is the exact route-bound outer admission identity. The receiver
@@ -285,8 +286,7 @@ func defaultWebSocketDial(ctx context.Context, rawURL string) (net.Conn, error) 
 		_ = ws.CloseNow()
 		return nil, ErrProtocol
 	}
-	ws.SetReadLimit(maxWirePayload + wireHeaderSize)
-	return websocket.NetConn(ctx, ws, websocket.MessageBinary), nil
+	return carriertransport.WrapWebSocket(ctx, ws, maxWirePayload+wireHeaderSize)
 }
 
 func publicRelayAddress(address netip.Addr) bool {
