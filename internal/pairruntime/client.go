@@ -16,6 +16,8 @@ import (
 	"github.com/sentrybottale/owntransit/internal/securefs"
 )
 
+var ErrPeerAuthorization = errors.New("pairruntime: endpoint authentication or authorization did not complete")
+
 func exchangeRetry(ctx context.Context, public *pairrelay.PublicClient, token, request []byte) ([]byte, error) {
 	for i := 0; i < 30; i++ {
 		response, err := public.ExchangePairing(ctx, token, request)
@@ -371,7 +373,7 @@ func OpenClient(ctx context.Context, path string, dial pairrelay.DialFunc) (*lea
 	l, err := ClientSession(ctx, raw, profile, a.Scope, leasewire.Options{Policy: func() (uint64, bool, error) { p, e := ReadPolicy(path); return p.Generation, p.Locked, e }, OnPeerGeneration: func(g uint64) error { return RecordPeerFloor(path, g) }})
 	if err != nil {
 		release()
-		return nil, nil, err
+		return nil, nil, errors.Join(ErrPeerAuthorization, err)
 	}
 	return l, release, nil
 }

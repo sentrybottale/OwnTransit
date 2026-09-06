@@ -9,6 +9,23 @@ becomes a publication record only after its authenticated evidence, signed
 qualification record and release decision are complete. Git tags never create
 or publish artifacts automatically.
 
+## [0.2.0]
+
+Receiver-owned stabilization release under the bounded 0.2.0 shipping contract.
+
+- Add a signed one-command Apple-silicon Mac client installer, repeatable
+  installation, protected per-user software and offline non-purging uninstall.
+- Add Linux non-purging role removal with package/managed-service ownership
+  checks, retained pairing state and safe command aliases alongside preview names.
+- Keep unrelated legacy commands and every operator SSH setting unchanged.
+- Replace generic runtime failures with fixed, non-secret diagnostic categories.
+- Add concurrent quiet SSH/restart regressions and native/isolated installer
+  tamper, reinstall, removal and state-preservation tests.
+- Retain existing cryptographic formats and production security limits. The
+  exact 0.2.0 signed inventory adds the Mac installer and rejects older sets.
+- Extended soak, clean-host certification and independent security assessment
+  are not claimed; no new machines or signing keys are required.
+
 ## [0.1.8]
 
 Signed development patch candidate; existing release bytes remain immutable.

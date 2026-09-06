@@ -1,13 +1,32 @@
-# Test OwnTransit 0.1.8
+# Install and operate OwnTransit 0.2.0
 
-This is the **signed development preview**, installed separately from 0.1.0.
-It is not a stable or production-qualified release. Keep another access path.
+This is the signed receiver-owned release line, installed separately from the
+legacy 0.1.0 package/qualification profile. Keep independent recovery access.
+Extended soak testing and independent security assessment are not claimed.
 The three roles are client, public relay and private receiver/connector.
+
+Use setup as the normal local user on the client, not root. This does not
+restrict which SSH account you authenticate to on the receiving machine.
+
+## Non-purging removal
+
+The 0.2.0 Linux installer accepts the installed local role followed by
+`--uninstall`, for example:
+
+```sh
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-linux.sh | sudo sh -s -- client --uninstall
+```
+
+Use `connector` or `relay` on those machines. It removes only recognized 0.2.0
+software; pairing and SSH settings remain. Relay keys, disabled unit
+configuration, website routing and cached rollback images are intentionally
+retained. Explicit reinstall/setup reuses that configuration. Modified units,
+overrides or unrecognized package contents are refused rather than guessed.
+The Mac installer prints its offline uninstall command; see the Mac section.
 
 ## 1. Install and start the relay
 
-The 0.1.8 patch fixes a relay timer that closed active tunnels within 30 seconds.
-Upgrade the relay for this fix. Existing compatible clients, receivers and
+The 0.1.8 relay timer fix is retained in 0.2.0. Compatible clients, receivers and
 pairing keys remain valid; do not re-pair. The 0.1.7 terminal-input fixes and
 0.1.6 managed-container fixes are retained.
 
@@ -19,7 +38,7 @@ or unrelated container. Old images remain available for rollback.
 On Linux amd64 or arm64:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.8/install-preview-linux.sh | sudo sh -s -- relay
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-linux.sh | sudo sh -s -- relay
 ```
 
 Enter the full public URL at the visible prompt, such as
@@ -29,7 +48,7 @@ hostname selects exactly which HTTPS site receives the route.
 You can also pass the URL in the same installation command:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.8/install-preview-linux.sh | sudo sh -s -- relay wss://relay.example/connects
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-linux.sh | sudo sh -s -- relay wss://relay.example/connects
 ```
 
 Setup detects Docker or Podman, installs Podman through a supported package
@@ -64,7 +83,7 @@ Keep the relay running before setting up either endpoint.
 
 ### Upgrading instead of pairing again
 
-Run the same 0.1.8 installer for the local role. For the relay, use its existing
+Run the same 0.2.0 installer for the local role. For the relay, use its existing
 public URL: setup recognizes a known managed service, preserves its keys and
 website routing, restarts the new immutable image and verifies the running image
 and public protocol response. Failed cutover restores the old unit, selection
@@ -84,7 +103,7 @@ These commands work on both supported Linux architectures, including a 64-bit
 Raspberry Pi:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.8/install-preview-linux.sh | sudo sh -s -- connector
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-linux.sh | sudo sh -s -- connector
 sudo owntransit-connector-preview pair setup
 ```
 
@@ -128,7 +147,7 @@ registration automatically; you do not paste that code back into the receiver.
 ## 4. Install and pair a Linux client
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.8/install-preview-linux.sh | sudo sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-linux.sh | sudo sh -s -- client
 owntransit-preview pair setup
 ```
 
@@ -144,8 +163,21 @@ owntransit-preview pair resume
 
 ### Apple-silicon macOS client
 
-Download `owntransit-preview-0.1.8-darwin-arm64.tar.gz` from the
-[0.1.8 development release](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.1.8).
+Install without sudo:
+
+```sh
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-macos.sh | sh -s -- client
+```
+
+Use the exact setup command printed by installation. The per-user software lives
+under `~/Library/Application Support/OwnTransitSoftware/0.2.0`; command aliases
+are under `~/.local/bin`. The printed absolute path works without changing PATH.
+Existing legacy/manual binaries elsewhere are preserved, not overwritten.
+
+For an independently verified manual handoff:
+
+Download `owntransit-preview-0.2.0-darwin-arm64.tar.gz` from the
+[0.2.0 release](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.2.0).
 Verify its digest against the signed `DEVELOPMENT-SHA256SUMS`, then extract it.
 The archive contains the client, capsule identity, checksums and license notices.
 It does not alter your Mac or require Apple notarization.
@@ -157,11 +189,11 @@ includes a custom `--state` path if selected. Pasting long codes works directly:
 do not change your terminal settings with `stty`. Backspace corrects input,
 Ctrl-U clears the entry, and Ctrl-C cancels. Paste one code per prompt.
 
-**Upgrading an already paired Mac:** replace only your preview executable with
-the newly verified one, keeping the same path. Your pairing stays in the user's
-configuration directory; do not remove it or obtain new codes. The next SSH
-connection uses the new executable. No shell configuration or SSH files need
-changing.
+**Upgrading an already paired Mac:** rerun the installer and use its printed
+client path in your ProxyCommand. Pairing stays in the user's configuration
+directory; do not remove it or obtain new codes. No SSH files are edited by the
+installer. To uninstall software while retaining pairing, run the printed
+`sh .../install-macos.sh --uninstall` command.
 Intel macOS is outside the supported matrix.
 
 ## 5. SSH normally
@@ -219,7 +251,7 @@ clearable-lock development state is rejected rather than silently converted.
 
 ## What installation changes
 
-Only the requested role is installed below `/opt/owntransit-preview/0.1.8`,
+Only the requested role is installed below `/opt/owntransit-preview/0.2.0`,
 with a separately named `*-preview` alias. An exact reinstall is idempotent;
 an unmanaged conflicting file is not overwritten. The connector installer
 creates a disabled service; only your explicit `pair setup` enables it.

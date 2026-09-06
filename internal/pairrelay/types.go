@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net"
 	"time"
 
@@ -39,9 +40,12 @@ const (
 )
 
 var (
-	ErrProtocol      = errors.New("pairrelay: invalid or unsupported protocol input")
-	ErrUnauthorized  = errors.New("pairrelay: admission denied")
-	ErrUnavailable   = errors.New("pairrelay: route unavailable")
+	ErrProtocol     = errors.New("pairrelay: invalid or unsupported protocol input")
+	ErrUnauthorized = errors.New("pairrelay: admission denied")
+	ErrUnavailable  = errors.New("pairrelay: route unavailable")
+	// Relay transport failure remains an unavailable route for existing callers.
+	// It is a local diagnostic category, never a new wire response or authority.
+	ErrTransport     = fmt.Errorf("%w: relay transport unavailable", ErrUnavailable)
 	ErrCapacity      = errors.New("pairrelay: capacity exhausted")
 	ErrExpired       = errors.New("pairrelay: authorization expired")
 	ErrAlreadyClosed = errors.New("pairrelay: relay is closed")

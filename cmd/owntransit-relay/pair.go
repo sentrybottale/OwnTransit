@@ -62,6 +62,17 @@ func runManagedRelay(arguments []string, input io.Reader, output, diagnostics io
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+	if arguments[0] == "uninstall-managed" {
+		if len(arguments) != 1 {
+			return 2
+		}
+		if err := relaysetup.UninstallManaged(ctx); err != nil {
+			fmt.Fprintln(diagnostics, err)
+			return 1
+		}
+		fmt.Fprintln(output, "Managed relay stopped and disabled. Unit configuration, keys, website routing and rollback images retained.")
+		return 0
+	}
 	if arguments[0] == "cleanup-container" {
 		if len(arguments) != 3 {
 			return 2

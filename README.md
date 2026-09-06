@@ -23,29 +23,30 @@ It can observe addresses, timing and traffic sizes, or deny service. It must
 not read the inner stream, impersonate an endpoint accepted by its peer, or
 choose where the receiver sends traffic.
 
-## Install the 0.1.8 development preview
+## Install 0.2.0
 
-This is a **signed development preview**, not a stable or production-qualified
-release. It installs separately from 0.1.0. Explicit relay setup can replace an
-identified old relay while preserving its rollback state. Linux amd64/x86_64 and
-arm64/aarch64 use the same command.
+0.2.0 is the signed receiver-owned release line, separate from the older 0.1.0
+package/qualification profile. Linux amd64/x86_64 and arm64/aarch64 use the same
+command. Existing preview filenames and aliases remain for compatibility;
+normal command names are added where available. Follow the command printed by
+the installer if a legacy name conflicts. No unrelated command is overwritten.
 
 First, on the public VPS (installation starts relay setup):
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.8/install-preview-linux.sh | sudo sh -s -- relay
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-linux.sh | sudo sh -s -- relay
 ```
 
 Then install the package on the private SSH server:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.8/install-preview-linux.sh | sudo sh -s -- connector
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-linux.sh | sudo sh -s -- connector
 ```
 
 On a Linux client:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.8/install-preview-linux.sh | sudo sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-linux.sh | sudo sh -s -- client
 ```
 
 For a new pairing, follow **Pair and connect** below once both packages are
@@ -64,7 +65,14 @@ an existing HTTPS site. Bespoke proxy layouts or a missing HTTPS site produce a
 specific setup error; they are not guessed. Failed cutover restores the previous
 relay and any route changed by setup. Start the relay before endpoint setup.
 
-Apple-silicon macOS uses the [signed client archive](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.1.8).
+On an Apple-silicon Mac, install the client **without sudo**:
+
+```sh
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-macos.sh | sh -s -- client
+```
+
+The Mac installer prints the exact setup command, normally
+`"$HOME/.local/bin/owntransit" pair setup`. It requires no PATH or SSH-file edits.
 Intel macOS is not supported. No Apple signing subscription is required; the
 client is not Apple-notarized.
 
@@ -73,14 +81,13 @@ distribution key and verifies the signed archive before executing its installer.
 See the [complete guide](PAIRING_INSTALL.md) for the relay commands, verification,
 macOS use and recovery. **Do not use the old 0.1.0 curl command for this flow.**
 
-## Upgrade an existing preview
+## Upgrade without new pairing codes
 
-**Relay operators:** 0.1.8 fixes a pending-connection timer that could close
-active tunnels within 30 seconds. Upgrade the relay to fix this; compatible
-existing clients and receivers do not need new software or pairing codes.
+0.2.0 includes the 0.1.8 fix for the relay timer that closed active tunnels.
+Endpoint authentication and wire compatibility are unchanged.
 
-Use the same 0.1.8 installer above for each installed role. It preserves pairing
-state and accepts known 0.1.1/0.1.2/0.1.3/0.1.5/0.1.6/0.1.7 preview packages; stable 0.1.0 remains
+Use the same 0.2.0 installer above for each installed role. It preserves pairing
+state and accepts known 0.1.1/0.1.2/0.1.3/0.1.5/0.1.6/0.1.7/0.1.8 preview packages; stable 0.1.0 remains
 separate. On the relay, supply the existing URL. Managed upgrade restarts onto
 the new image, verifies it and the public route, and rolls back on failure;
 it does not rewrite website routing or relay keys. Rerunning after an interrupted
@@ -96,9 +103,40 @@ Use independent access during maintenance: active SSH carriers may disconnect.
 The client uses its new executable on the next connection. **Do not rerun
 receiver `pair setup` just to upgrade**—that deliberately creates new identities.
 
+On Mac, rerun the same installer and use its printed executable path in your
+ProxyCommand. Existing pairing state is reused. Older manually installed Mac
+binaries are not overwritten or selected silently.
+
+## Uninstall without deleting pairing state
+
+For Linux 0.2.0, use the same installer with the local role and `--uninstall`:
+
+```sh
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-linux.sh | sudo sh -s -- client --uninstall
+```
+
+Replace `client` with `connector` or `relay` as appropriate. Upgrade older
+packages to 0.2.0 first. Receiver removal stops/disables its service. Relay
+removal disables its verified managed unit and removes the stopped container;
+its keys, disabled unit configuration, website route and rollback images are
+retained for explicit reinstall/setup. Modified/unrecognized files are not
+silently removed. SSH configuration and pairing state are never purged.
+
+On Mac, use the installer's printed uninstall command, normally:
+
+```sh
+sh "$HOME/Library/Application Support/OwnTransitSoftware/0.2.0/install-macos.sh" --uninstall
+```
+
+Reinstalling restores software without requiring new pairing codes.
+
 ## Pair and connect
 
 Once the relay is running and the executables are in place:
+
+The examples retain compatible `*-preview` names. Fresh installations also
+provide normal aliases (`owntransit`, `owntransit-connector`, `owntransit-relay`)
+where those names are free. On Mac, use the absolute path printed by installation.
 
 ### 1. On the private SSH server
 
@@ -213,6 +251,13 @@ guarantee that SSH-started jobs stop.
 
 ## Scope and current limits
 
+0.2.0 uses bounded source/security, fast timer/reconnect/concurrency and
+alarm/rebuild fixtures, isolated installer checks, authenticated artifacts and
+a brief final end-to-end check. **Extended soak testing, pristine-host
+certification and independent security assessment are not claimed.** Historical
+`DEVELOPMENT-SHA256SUMS` and signing namespace names identify the retained
+distribution format; they are not legacy 0.1.0 release-policy authority.
+
 OwnTransit carries SSH byte streams only. It is not a VPN, subnet router, DNS
 layer, identity provider, dashboard or general-purpose proxy.
 
@@ -231,7 +276,7 @@ require explicit new pairing state; the relay cannot authorize a silent reset.
 Integrated tests exercise real WebSocket carriage, both TLS boundaries, SSH
 protocol authentication and exec, receiver restart, credential renewal,
 terminal client/receiver alarms, deliberate rebuilding and profile rejection.
-The signed development artifacts do not claim independent security assessment,
+The signed receiver-owned artifacts do not claim independent security assessment,
 production qualification or a new-machine/reboot certification.
 
 For protocol and threat-model details, read

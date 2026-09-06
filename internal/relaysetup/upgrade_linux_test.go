@@ -27,7 +27,7 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 	if filepath.Dir(exe) != "/usr/local/libexec/owntransit-relay-setup-check" {
 		t.Fatal("unexpected fixture path")
 	}
-	for _, scenario := range []string{"success", "failed-public-probe", "stale-running-image", "edited-unit", "interrupted", "stopped-disabled"} {
+	for _, scenario := range []string{"success", "uninstall-reinstall", "failed-public-probe", "stale-running-image", "edited-unit", "interrupted", "stopped-disabled"} {
 		t.Run(scenario, func(t *testing.T) {
 			_ = os.RemoveAll(managedRoot)
 			_ = os.Remove(unitPath)
@@ -91,6 +91,9 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 						enabled = true
 					case "disable":
 						enabled = false
+						if len(args) > 1 && args[1] == "--now" {
+							running = false
+						}
 					case "stop":
 						running = false
 					case "start":
@@ -152,6 +155,24 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 				if err := os.WriteFile(unitPath, append(unit(prev.Image, prev.Engine), []byte("# local override\n")...), 0644); err != nil {
 					t.Fatal(err)
 				}
+				if err := UninstallManaged(context.Background()); err == nil || len(calls) != 0 {
+					t.Fatal("uninstall accepted an edited unit or mutated the host")
+				}
+			}
+			if scenario == "uninstall-reinstall" {
+				if err := UninstallManaged(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				if running || enabled || present {
+					t.Fatal("uninstall left active service/container")
+				}
+				retained, _, err := protectedFile(unitPath)
+				if err != nil || !bytes.Equal(retained, unit(prev.Image, prev.Engine)) {
+					t.Fatal("uninstall changed retained configuration")
+				}
+				if err := UninstallManaged(context.Background()); err != nil {
+					t.Fatal("uninstall rerun failed", err)
+				}
 			}
 			if scenario == "interrupted" {
 				journal, _ := json.Marshal(upgradeIntent{"owntransit.relay-upgrade.v1", prev, next, true, true, nil})
@@ -170,7 +191,7 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 				}
 			} else {
 				err := upgradeManaged(context.Background(), root, prev, next, &output)
-				if scenario == "success" {
+				if scenario == "success" || scenario == "uninstall-reinstall" {
 					if err != nil || currentImage != next.Image || !running || !enabled {
 						t.Fatalf("upgrade failed: %v", err)
 					}
@@ -200,7 +221,7 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 			if scenario != "edited-unit" {
 				selected, err := loadConfig()
 				expected := prev
-				if scenario == "success" {
+				if scenario == "success" || scenario == "uninstall-reinstall" {
 					expected = next
 				}
 				if err != nil || selected != expected {
