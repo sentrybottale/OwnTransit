@@ -23,32 +23,34 @@ It can observe addresses, timing and traffic sizes, or deny service. It must
 not read the inner stream, impersonate an endpoint accepted by its peer, or
 choose where the receiver sends traffic.
 
-## Install the 0.1.3 development preview
+## Install the 0.1.5 development preview
 
 This is a **signed development preview**, not a stable or production-qualified
 release. It installs separately from 0.1.0. Explicit relay setup can replace an
 identified old relay while preserving its rollback state. Linux amd64/x86_64 and
 arm64/aarch64 use the same command.
 
-On the private SSH server:
+First, on the public VPS (installation starts relay setup):
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.3/install-preview-linux.sh | sudo sh -s -- connector
-sudo owntransit-connector-preview pair setup
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.5/install-preview-linux.sh | sudo sh -s -- relay
+```
+
+Then install the package on the private SSH server:
+
+```sh
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.5/install-preview-linux.sh | sudo sh -s -- connector
 ```
 
 On a Linux client:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.3/install-preview-linux.sh | sudo sh -s -- client
-owntransit-preview pair setup
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.5/install-preview-linux.sh | sudo sh -s -- client
 ```
 
-On the public relay:
-
-```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.3/install-preview-linux.sh | sudo sh -s -- relay
-```
+For a new pairing, follow **Pair and connect** below once both packages are
+installed. The setup commands below are interactive programs: answer their
+prompts, rather than pasting the command again into an input field.
 
 The relay installer starts one setup workflow and asks for the full public URL,
 for example `wss://relay.example/connects`. That selects the website when the VPS
@@ -62,7 +64,7 @@ an existing HTTPS site. Bespoke proxy layouts or a missing HTTPS site produce a
 specific setup error; they are not guessed. Failed cutover restores the previous
 relay and any route changed by setup. Start the relay before endpoint setup.
 
-Apple-silicon macOS uses the [signed client archive](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.1.3).
+Apple-silicon macOS uses the [signed client archive](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.1.5).
 Intel macOS is not supported. No Apple signing subscription is required; the
 client is not Apple-notarized.
 
@@ -70,6 +72,25 @@ The initial curl script trusts GitHub delivery, then pins the existing
 distribution key and verifies the signed archive before executing its installer.
 See the [complete guide](PAIRING_INSTALL.md) for the relay commands, verification,
 macOS use and recovery. **Do not use the old 0.1.0 curl command for this flow.**
+
+## Upgrade an existing preview
+
+Use the same 0.1.5 installer above for each installed role. It preserves pairing
+state and accepts known 0.1.1/0.1.2/0.1.3 preview packages; stable 0.1.0 remains
+separate. On the relay, supply the existing URL. Managed upgrade restarts onto
+the new image, verifies it and the public route, and rolls back on failure;
+it does not rewrite website routing or relay keys. Rerunning after an interrupted
+upgrade recovers the previous service first.
+
+After the connector package upgrade, activate it without new pairing codes:
+
+```sh
+sudo systemctl restart owntransit-connector-pair.service
+```
+
+Use independent access during maintenance: active SSH carriers may disconnect.
+The client uses its new executable on the next connection. **Do not rerun
+receiver `pair setup` just to upgrade**—that deliberately creates new identities.
 
 ## Pair and connect
 
@@ -116,7 +137,9 @@ its relay registration automatically.
 owntransit-preview pair setup
 ```
 
-Paste the relay code and the private receiver code into the prompts. Do not
+Paste the **VPS registration code** (`otrelay1.…`) from the public VPS, then the
+**private receiving-machine code** (`otpair1.…`) from the private SSH machine.
+Input is hidden; paste once and press Enter. Do not
 put either in shell arguments or environment variables. The endpoints generate
 their own keys, authenticate the exchange and save the pairing. No comparison
 words or approval call are involved.

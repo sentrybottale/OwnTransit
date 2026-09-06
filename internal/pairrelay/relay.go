@@ -16,6 +16,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/sentrybottale/owntransit/internal/protocol"
+	"github.com/sentrybottale/owntransit/internal/transport"
 )
 
 type routeKey struct {
@@ -54,6 +55,7 @@ type Relay struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
 	connections chan struct{}
+	admission   admissionGuard
 
 	mu              sync.Mutex
 	closed          bool
@@ -186,6 +188,12 @@ func (relay *Relay) ServeHTTP(output http.ResponseWriter, request *http.Request)
 		http.Error(output, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
+	release, admitted := relay.admission.acquire(request.RemoteAddr, time.Now())
+	if !admitted {
+		http.Error(output, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
+		return
+	}
+	defer release()
 	select {
 	case relay.connections <- struct{}{}:
 		defer func() { <-relay.connections }()
@@ -204,10 +212,15 @@ func (relay *Relay) ServeHTTP(output http.ResponseWriter, request *http.Request)
 		_ = ws.CloseNow()
 		return
 	}
-	ws.SetReadLimit(maxWirePayload + wireHeaderSize)
-	connection := websocket.NetConn(relay.ctx, ws, websocket.MessageBinary)
-	defer connection.Close()
+	stream, err := transport.WrapWebSocket(relay.ctx, ws, maxWirePayload+wireHeaderSize)
+	if err != nil {
+		_ = ws.CloseNow()
+		return
+	}
+	connection := &admissionConnection{Conn: stream, release: release}
+	defer transport.Abort(stream)
 	if err := relay.handleConnection(connection); err != nil {
+		_ = connection.SetWriteDeadline(time.Now().Add(time.Second))
 		_ = writeWireFrame(connection, kindFailure, nil, 0)
 	}
 }
@@ -235,6 +248,9 @@ func (relay *Relay) handleConnection(connection net.Conn) error {
 	if relay == nil || connection == nil {
 		return ErrProtocol
 	}
+	if err := connection.SetDeadline(time.Now().Add(relay.limits.HandshakeTimeout)); err != nil {
+		return ErrUnavailable
+	}
 	frame, err := readWireFrame(connection, maxWirePayload)
 	if err != nil {
 		return ErrProtocol
@@ -256,6 +272,10 @@ func (relay *Relay) handleConnection(connection net.Conn) error {
 		if err != nil {
 			return err
 		}
+		releaseAdmission(connection)
+		if err := connection.SetDeadline(relay.pairingExpiry(claims)); err != nil {
+			return ErrUnavailable
+		}
 		return relay.waitPairingReceiver(connection, claims)
 	case kindPairClient:
 		token, request, err := decodeTokenAndBlob(frame.data, relay.limits.PairingBytes)
@@ -266,6 +286,7 @@ func (relay *Relay) handleConnection(connection net.Conn) error {
 		if err != nil || len(request) > claims.Limits.PairingBytes {
 			return ErrUnauthorized
 		}
+		releaseAdmission(connection)
 		return relay.exchangePairing(connection, claims, request)
 	case kindRuntime, kindRenewToken:
 		preface, err := decodeRuntimePreface(frame.data)
@@ -457,6 +478,7 @@ func (relay *Relay) handleAuthenticated(connection net.Conn, preface runtimePref
 	if err := secured.HandshakeContext(handshakeCtx); err != nil {
 		return ErrUnauthorized
 	}
+	releaseAdmission(connection)
 	peer := AuthenticatedPeer{
 		ReceiverID: claims.ReceiverID, RouteID: claims.RouteID, AdmissionRootSHA256: claims.AdmissionRootSHA256,
 		Role: preface.role, PeerID: preface.peerID,
@@ -468,6 +490,9 @@ func (relay *Relay) handleAuthenticated(connection net.Conn, preface runtimePref
 			return err
 		}
 		return writeWireFrame(secured, kindRenewedToken, renewed, MaxTokenBytes)
+	}
+	if err := connection.SetDeadline(relay.pendingExpiry(claims)); err != nil {
+		return ErrUnavailable
 	}
 	return relay.handleRuntime(secured, claims, peer)
 }

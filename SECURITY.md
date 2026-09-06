@@ -1,5 +1,33 @@
 # OwnTransit security policy
 
+## 0.1.5 candidate hardening
+
+The receiver-owned relay bounds its initial frame and outer admission handshake
+with an absolute deadline (10 seconds by default). Public operation writes are
+bounded too; error replies have a one-second write deadline and rejected
+WebSockets are aborted promptly. Admitted pairing/runtime operations move to
+their own bounded lifetimes, not a short deadline on an established SSH session.
+
+Before authentication, concurrency is capped at 32 globally and eight per actual
+TCP peer. Token buckets bound accepted connection creation to 64/second with a
+burst of 128 globally, and 16/second with a burst of 64 per peer. Peer bookkeeping
+is capped at 256 entries and idle entries expire. Forwarding headers are not
+trusted: clients behind a reverse proxy/NAT share its TCP-peer bucket. These
+are resource controls for an honestly operated relay, not volumetric network
+flood protection or a promise of availability against a compromised relay.
+
+Both receiver-owned WebSocket adapters restore their message limit after
+`websocket.NetConn` construction, before reads start, and split larger local
+writes. Whole and fragmented oversized-message tests use the actual adapter.
+These changes preserve independent TLS/SSH authentication and existing wire
+profiles; no new protocol, endpoint key or trust-reset operation is introduced.
+
+Managed relay upgrades validate the exact saved unit, reject custom drop-ins,
+retain keys and website routing, and verify the running image as well as the
+public protocol response. A root-private journal allows restoration after
+failure/interruption; it never carries endpoint issuer material. Upgrades do
+not invoke the website route editor for an already managed installation.
+
 ## Managed relay setup
 
 The explicit relay setup command is local administration. It accepts the public

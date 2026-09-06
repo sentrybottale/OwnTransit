@@ -99,8 +99,9 @@ func newIntegrated(t *testing.T) *integrated {
 		if err != nil {
 			return nil, err
 		}
+		connection := websocket.NetConn(ctx, ws, websocket.MessageBinary)
 		ws.SetReadLimit(2 << 20)
-		return websocket.NetConn(ctx, ws, websocket.MessageBinary), nil
+		return connection, nil
 	}
 	public, err := pairrelay.NewPublicClient("wss://relay.example/connects", f.dial)
 	if err != nil {
@@ -250,6 +251,18 @@ func (f *integrated) pair(t *testing.T) {
 	}
 	if err != nil {
 		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(f.clientPath, "client.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	origin, pending, locked, err := ClientSetupSummary(f.clientPath)
+	if err != nil || origin != "wss://relay.example/connects" || pending || locked {
+		t.Fatal("existing client setup summary is incorrect")
+	}
+	after, err := os.ReadFile(filepath.Join(f.clientPath, "client.json"))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("setup inspection mutated client credentials")
 	}
 }
 

@@ -1,5 +1,115 @@
 # OwnTransit roadmap
 
+## 0.1.5 candidate scope
+
+The three fix groups below are implemented in candidate source and exercised
+by focused regression tests. Signed distribution and exact-artifact checks
+remain required for publication; this is not a stable-release qualification or
+independent security assessment. Multi-tunnel profiles remain a later feature.
+
+## 0.1.5 — first-time client setup guidance
+
+- Make the installer-to-setup handoff explicit: run the printed shell command
+  once, then answer the program's prompts. Explain what each prompt expects
+  before requesting input; do not rely on first-time users recognizing the
+  transition from shell commands to interactive answers.
+- Show a numbered client flow: relay URL, relay registration code, private
+  receiver pairing code. Explain where each comes from and that the private
+  receiver code must never go to the relay. Use a reserved example URL and
+  clearly distinguish example text from an actual deployment value.
+- Label the two code prompts by their source: "Code from your public VPS
+  (starts with otrelay1.)" and "Private code from your receiving SSH machine
+  (starts with otpair1.)". Avoid the ambiguous word "server" for both roles.
+  Explain that pasted code input is hidden and Enter submits it. Treat prefixes
+  only as input-type hints; retain full strict parsing and authentication.
+- Explain empty or wrong-code-type input and reprompt without echoing either
+  code, sending a private receiver code to the relay, resetting trust or
+  emitting the generic whole-operation failure message.
+- If a command is pasted into the URL prompt, explain that this field needs a
+  URL such as `wss://relay.example/connects`, not another shell command, and
+  reprompt without creating or replacing pairing state. Never execute pasted
+  input or silently treat an example URL as the user's relay.
+- Replace the confusing `pair init: invalid relay URL` response during guided
+  setup with actionable, stage-specific guidance. Keep secret inputs hidden
+  and out of diagnostics, and preserve explicit cancellation.
+- Test the complete displayed installer/setup transcript, including the
+  first-time copy/paste mistake, correction, and the final connection example;
+  successful package installation alone is not a passing usability test.
+- At pairing success, distinguish "OwnTransit paired" from "SSH login
+  authorized": the user still needs an independently verified SSH host identity
+  and an SSH key accepted by the requested remote account. Pairing codes do not
+  grant SSH access. Explain that the SSH destination labels the paired receiver;
+  it does not select a new network target through the tunnel. Do not edit SSH
+  keys, accounts, configuration or authorization as a usability shortcut.
+
+## 0.1.5 — relay availability and WebSocket bounds
+
+- Bound the entire initial admission exchange, including partial reads and
+  stalled error writes. Idle, trickling or control-frame-only peers must release
+  their connection slots promptly; promotion to an admitted session must not
+  leave a short setup deadline on a legitimate long-lived SSH stream.
+- Add bounded pre-authentication concurrency and connection-creation rate
+  controls. Keep peer accounting bounded and do not trust arbitrary forwarded
+  address headers. Reverse-proxy limits are additional protection, not the
+  only enforcement point; retain existing sites when configuring them.
+- Restore the WebSocket message limit after constructing `websocket.NetConn`
+  on both receiving and dialing paths, before any reads start. Preserve stream
+  chunking and review all adapter call sites against the pinned dependency.
+- Add real-WebSocket regression tests for idle/partial admission, slot release,
+  stalled peers, oversized and fragmented messages, sustained legitimate SSH
+  transfers and reconnects. Do not treat passing unrelated CI as proof of these
+  properties; record whether findings are statically confirmed or reproduced.
+- Keep volumetric network-flood protection separate from application limits.
+  These defenses protect an honestly operated relay's availability; they do
+  not make the relay trusted or alter endpoint authentication.
+
+## 0.1.5 — managed relay upgrades
+
+- Make the same versioned relay install/setup command upgrade an existing
+  managed relay; replace the dead-end "explicit upgrade is required" error
+  with an implemented operation and clear next-step instructions.
+- Validate the old managed unit against saved local setup state, preserve relay
+  keys and website routing, and restart onto the selected immutable new image.
+- Restore the previous unit, image selection, setup configuration and service
+  state if cutover fails. Refuse unrelated or locally edited units.
+- Verify the running container's actual image and public protocol response;
+  an old still-running relay is not evidence of a successful upgrade.
+- Test fresh install, rerun, previous-version upgrade and failed-cutover
+  rollback without requiring new physical machines.
+
+## Feature TODO — multiple independent tunnels through one relay
+
+Feasible as an incremental feature, after the admission/DoS and WebSocket-bound
+fixes above. The relay already indexes advertisements, registrations, waiting
+legs and active quotas by receiver/route; that is implementation groundwork,
+not a qualified multi-tunnel product claim or a published capacity guarantee.
+
+- First milestone: one public relay instance and endpoint serve several
+  independent client–receiver pairings, including simultaneous SSH sessions.
+  Each pairing retains separate endpoint keys, receiver authority, pins,
+  one-use setup codes, policy and terminal alarm state. No new listener,
+  arbitrary target, relay-held issuer or shared endpoint master key is added.
+- Provide named, locally selected client profiles so one client computer can
+  reach several receivers without overwriting another pairing. Setup, status,
+  proxy selection, replacement and alarm operations must identify their scope
+  clearly and reject ambiguous selection. Names are local labels, not relay
+  identity evidence or a way to select an arbitrary SSH destination.
+- Register additional public receiver IDs without replacing existing routes;
+  preserve all independent pairings through relay upgrade and restart. Keep
+  administrative metadata local rather than exposing a public route directory.
+- Enforce bounded global and per-route resource use on an honestly operated
+  relay; exercise fairness so one busy or stalled route cannot trivially consume
+  the entire shared budget. All channels still share the VPS's bandwidth,
+  resources and outage exposure; a malicious relay can always deny service.
+- Prove simultaneous independent routes, concurrent sessions, cross-route
+  substitution rejection, overload containment, restart/re-registration, and
+  isolation of one pairing's alarm/replacement from the others. Include an
+  end-to-end walkthrough with multiple named profiles, not just map-level tests.
+- Keep multiple clients paired to the same receiver as a separate follow-up.
+  The current profile authorizes one client per receiver; extending it needs
+  explicit per-client enrollment, revocation/lease semantics and a versioned
+  state/protocol compatibility design, not removal of the single-peer check.
+
 ## 0.1.1 receiver-owned integration
 
 The new `pair` commands integrate one-use receiver pairing, receiver-local

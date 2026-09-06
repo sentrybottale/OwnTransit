@@ -84,7 +84,7 @@ for name in $expected_files; do
 done
 test "$0" = "$bundle/install-linux.sh" || fail 'installer must run from its exact absolute bundle path'
 
-expected_capsule=$(printf 'schema=owntransit.development-capsule.v1\nversion=0.1.3\nos=linux\narch=%s' "$arch")
+expected_capsule=$(printf 'schema=owntransit.development-capsule.v1\nversion=0.1.5\nos=linux\narch=%s' "$arch")
 test "$(cat "$bundle/CAPSULE")" = "$expected_capsule" || fail 'capsule identity does not match this host'
 
 test "$(wc -l < "$bundle/SHA256SUMS" | tr -d '[:space:]')" = 8 || fail 'SHA256SUMS must contain eight records'
@@ -114,7 +114,7 @@ if test "$role" = connector; then
   test -d /run/systemd/system && test -x /usr/bin/systemctl || fail 'connector preview requires systemd'
 fi
 
-prefix=/opt/owntransit-preview/0.1.3
+prefix=/opt/owntransit-preview/0.1.5
 case "$role" in
   client) binary=owntransit; alias=owntransit-preview ;;
   connector) binary=owntransit-connector; alias=owntransit-connector-preview ;;
@@ -128,7 +128,7 @@ if test -e "$alias_path" || test -L "$alias_path"; then
   previous_alias=$(readlink "$alias_path")
   case "$previous_alias" in
     "$alias_target") ;;
-    "/opt/owntransit-preview/0.1.1/$role/$binary"|"/opt/owntransit-preview/0.1.2/$role/$binary")
+    "/opt/owntransit-preview/0.1.1/$role/$binary"|"/opt/owntransit-preview/0.1.2/$role/$binary"|"/opt/owntransit-preview/0.1.3/$role/$binary")
       test -f "$previous_alias" && test ! -L "$previous_alias" || fail 'unsafe previous preview executable'
       test "$(stat -c %u:%g:%a:%h "$previous_alias")" = 0:0:755:1 || fail 'previous preview executable metadata differs'
       ;;
@@ -189,7 +189,7 @@ if test "$role" = connector; then
   trap cleanup_unit EXIT HUP INT TERM
   cat > "$unit_stage" <<EOF
 [Unit]
-Description=OwnTransit 0.1.3 preview receiver pairing broker
+Description=OwnTransit 0.1.5 preview receiver pairing broker
 After=network-online.target
 Wants=network-online.target
 ConditionPathIsDirectory=/var/lib/owntransit-pair
@@ -235,7 +235,7 @@ EOF
       # Accept only the exact previous managed template, not a locally edited
       # service. Keep all confinement; retain the broker's intended UID-drop
       # capability and its ability to terminate its different-UID worker.
-      sed -e 's/0\.1\.[12]/0.1.3/g' \
+      sed -e 's/0\.1\.[123]/0.1.5/g' \
         -e '/^Type=simple$/c\
 Type=notify\
 NotifyAccess=main\
@@ -252,16 +252,29 @@ TimeoutStartSec=30s' \
   fi
   cleanup_unit
   trap - EXIT HUP INT TERM
-  printf 'Installed OwnTransit development preview 0.1.3 role %s for linux/%s.\n' "$role" "$arch"
+  printf 'Installed OwnTransit development preview 0.1.5 role %s for linux/%s.\n' "$role" "$arch"
   printf '%s\n' 'Connector preview package installed; service was not enabled or started.'
-  printf '%s\n' 'Next: sudo owntransit-connector-preview pair setup'
+  if test -d /var/lib/owntransit-pair; then
+    printf '%s\n' 'Existing pairing retained. NEXT — activate the new executable without generating new codes:'
+    printf '%s\n' '  sudo systemctl restart owntransit-connector-pair.service'
+    printf '%s\n' 'Active SSH carriers will disconnect. Use independent access for maintenance; rerun pair setup only to deliberately replace the pairing.'
+  else
+    printf '%s\n' 'Next: sudo owntransit-connector-preview pair setup'
+    printf '%s\n' 'Run that command once in your shell, then enter your public VPS relay URL when prompted.'
+  fi
 elif test "$role" = client; then
-  printf 'Installed OwnTransit development preview 0.1.3 role %s for linux/%s.\n' "$role" "$arch"
+  printf 'Installed OwnTransit development preview 0.1.5 role %s for linux/%s.\n' "$role" "$arch"
   printf '%s\n' 'Client preview package installed without changing accounts, SSH, or legacy OwnTransit state.'
   printf '%s\n' 'Next: owntransit-preview pair setup'
+  printf '%s\n' 'Run that command once in your shell. Then answer its prompts, not with another command:'
+  printf '%s\n' '1. Public relay URL configured on your VPS (example only: wss://relay.example/connects).'
+  printf '%s\n' '2. VPS registration code starting with otrelay1. — from receiver registration on the VPS.'
+  printf '%s\n' '3. Private receiving-machine code starting with otpair1. — from connector setup, never shared with the VPS.'
+  printf '%s\n' 'Code input is hidden. Paste once and press Enter. Installation/upgrades preserve existing pairing state.'
 else
-  printf 'Installed OwnTransit development preview 0.1.3 role %s for linux/%s.\n' "$role" "$arch"
+  printf 'Installed OwnTransit development preview 0.1.5 role %s for linux/%s.\n' "$role" "$arch"
   printf '%s\n' 'Relay preview package and OCI archive installed; no image, service, listener, or reverse proxy was changed.'
   printf '%s\n' 'Next: sudo owntransit-relay-preview setup'
   printf '%s\n' 'Setup asks for your public URL and handles the container, website route and reboot service.'
+  printf '%s\n' 'For an existing managed relay, use its existing URL; setup upgrades the image while preserving keys and website routing.'
 fi

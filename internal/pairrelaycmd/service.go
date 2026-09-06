@@ -104,6 +104,7 @@ func Serve(ctx context.Context, statePath string, diagnostics io.Writer) error {
 	defer httpListener.Close()
 	server := &http.Server{
 		Handler: relay, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second,
+		ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second,
 		MaxHeaderBytes: 16 << 10, ErrorLog: log.New(io.Discard, "", 0),
 		BaseContext: func(net.Listener) context.Context { return ctx },
 	}

@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"errors"
+	"github.com/coder/websocket"
+	"github.com/sentrybottale/owntransit/internal/transport"
 	"io"
 	"net"
 	"net/http/httptest"
@@ -31,6 +33,16 @@ type relayFixture struct {
 func TestPublicRegistrationPairingRuntimeAndRenewal(t *testing.T) {
 	fixture := newRelayFixture(t)
 	defer fixture.relay.Close()
+	fixture.relay.limits.HandshakeTimeout = 2 * time.Second
+	httpServer := httptest.NewServer(fixture.relay)
+	defer httpServer.Close()
+	realDial := func(ctx context.Context, _ string) (net.Conn, error) {
+		ws, _, err := websocket.Dial(ctx, httpServer.URL+Path, &websocket.DialOptions{Subprotocols: []string{WebSocketSubprotocol}})
+		if err != nil {
+			return nil, err
+		}
+		return transport.WrapWebSocket(ctx, ws, maxWirePayload+wireHeaderSize)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -90,7 +102,7 @@ func TestPublicRegistrationPairingRuntimeAndRenewal(t *testing.T) {
 		URL: "wss://relay.example/connects", Token: registration.Token, Descriptor: fixture.descriptor,
 		AdmissionCAPEM: fixture.admissionCA.CertPEM, RelayCAPEM: info.CAPEM,
 		RelayServerName: info.ServerName, RelayServerSPKI: info.LeafSPKISHA256,
-		Dial: inMemoryDialer(fixture.relay),
+		Dial: realDial,
 	}
 	receiverConfig := base
 	receiverConfig.PeerID, receiverConfig.Certificate = fixture.descriptor.ReceiverID, receiverCertificate
@@ -121,6 +133,9 @@ func TestPublicRegistrationPairingRuntimeAndRenewal(t *testing.T) {
 	}
 	defer clientConnection.Close()
 	defer received.connection.Close()
+	// The real WebSocket stream must outlive the short setup deadline after
+	// authenticated promotion; otherwise quiet legitimate SSH sessions break.
+	time.Sleep(2200 * time.Millisecond)
 	payload := []byte("opaque-inner-tls-stream")
 	writeDone := make(chan error, 1)
 	go func() { _, err := clientConnection.Write(payload); writeDone <- err }()

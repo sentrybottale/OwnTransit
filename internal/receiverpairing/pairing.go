@@ -626,6 +626,19 @@ func encodeCode(payload codePayload) ([]byte, error) {
 	return []byte(codePrefix + base64.RawURLEncoding.EncodeToString(encoded)), nil
 }
 
+// ValidateCodeInput checks syntax and expiry for interactive input only.
+// Full receiver/advertisement binding and possession checks remain mandatory.
+func ValidateCodeInput(encoded []byte, now time.Time) error {
+	p, err := parseCode(encoded)
+	if err != nil {
+		return err
+	}
+	if p.ExpiresUnix <= now.Unix() {
+		return errors.New("receiverpairing: pairing code expired")
+	}
+	return nil
+}
+
 func parseCode(encoded []byte) (codePayload, error) {
 	if len(encoded) <= len(codePrefix) || len(encoded) > MaxCodeSize || !bytes.HasPrefix(encoded, []byte(codePrefix)) {
 		return codePayload{}, errors.New("receiverpairing: private code is invalid")
