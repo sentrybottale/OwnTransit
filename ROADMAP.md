@@ -1,5 +1,13 @@
 # OwnTransit roadmap
 
+## 0.1.7 — concise setup and native terminal input
+
+Fix long hidden-code paste without operator terminal workarounds. Exercise
+actual isolated macOS/Linux PTYs, including cancellation and restoration, not
+just string-reader tests. Keep the normal transcript short, give detailed hints
+on incorrect input, and print a usable connection example with the actual client
+path and selected state. Existing pairings and all authentication remain intact.
+
 ## 0.1.5 candidate scope
 
 The three fix groups below are implemented in candidate source and exercised
