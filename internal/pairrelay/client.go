@@ -146,7 +146,7 @@ func (client *PublicClient) connect(ctx context.Context) (net.Conn, error) {
 	}
 	connection, err := client.dial(ctx, client.url)
 	if err != nil || connection == nil {
-		return nil, ErrUnavailable
+		return nil, ErrTransport
 	}
 	return connection, nil
 }
@@ -306,7 +306,7 @@ func (value *endpoint) open(ctx context.Context, kind byte) (net.Conn, error) {
 	}
 	raw, err := value.dial(ctx, value.config.URL)
 	if err != nil || raw == nil {
-		return nil, ErrUnavailable
+		return nil, ErrTransport
 	}
 	fail := func(err error) (net.Conn, error) { _ = raw.Close(); return nil, err }
 	preface, err := encodeRuntimePreface(runtimePreface{

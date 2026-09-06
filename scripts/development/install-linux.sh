@@ -14,16 +14,22 @@ usage() {
 
 bundle=
 role=
+action=install
+next=manual
 while test "$#" -gt 0; do
   test "$#" -ge 2 || fail "$1 requires a value"
   case "$1" in
     --bundle) test -z "$bundle" || fail '--bundle specified twice'; bundle=$2 ;;
     --role) test -z "$role" || fail '--role specified twice'; role=$2 ;;
+    --action) action=$2 ;;
+    --next) next=$2 ;;
     *) fail "unknown argument: $1" ;;
   esac
   shift 2
 done
 case "$role" in client|connector|relay) ;; *) usage >&2; exit 2 ;; esac
+case "$action" in install|uninstall) ;; *) fail 'action must be install or uninstall' ;; esac
+case "$next" in manual|automatic) ;; *) fail 'invalid next-step mode' ;; esac
 test "$(id -u)" -eq 0 || fail 'installation requires root'
 test "$(uname -s)" = Linux || fail 'Linux is required'
 case "$(uname -m)" in
@@ -84,7 +90,7 @@ for name in $expected_files; do
 done
 test "$0" = "$bundle/install-linux.sh" || fail 'installer must run from its exact absolute bundle path'
 
-expected_capsule=$(printf 'schema=owntransit.development-capsule.v1\nversion=0.1.8\nos=linux\narch=%s' "$arch")
+expected_capsule=$(printf 'schema=owntransit.development-capsule.v1\nversion=0.2.0\nos=linux\narch=%s' "$arch")
 test "$(cat "$bundle/CAPSULE")" = "$expected_capsule" || fail 'capsule identity does not match this host'
 
 test "$(wc -l < "$bundle/SHA256SUMS" | tr -d '[:space:]')" = 8 || fail 'SHA256SUMS must contain eight records'
@@ -114,7 +120,7 @@ if test "$role" = connector; then
   test -d /run/systemd/system && test -x /usr/bin/systemctl || fail 'connector preview requires systemd'
 fi
 
-prefix=/opt/owntransit-preview/0.1.8
+prefix=/opt/owntransit-preview/0.2.0
 case "$role" in
   client) binary=owntransit; alias=owntransit-preview ;;
   connector) binary=owntransit-connector; alias=owntransit-connector-preview ;;
@@ -122,18 +128,77 @@ case "$role" in
 esac
 alias_path=/usr/local/bin/$alias
 alias_target=$prefix/$role/$binary
+normal_alias=/usr/local/bin/$binary
 previous_alias=
 if test -e "$alias_path" || test -L "$alias_path"; then
   test -L "$alias_path" && test "$(stat -c %u "$alias_path")" = 0 || fail "refusing to overwrite unmanaged alias: $alias_path"
   previous_alias=$(readlink "$alias_path")
   case "$previous_alias" in
     "$alias_target") ;;
-    "/opt/owntransit-preview/0.1.1/$role/$binary"|"/opt/owntransit-preview/0.1.2/$role/$binary"|"/opt/owntransit-preview/0.1.3/$role/$binary"|"/opt/owntransit-preview/0.1.5/$role/$binary"|"/opt/owntransit-preview/0.1.6/$role/$binary"|"/opt/owntransit-preview/0.1.7/$role/$binary")
+    "/opt/owntransit-preview/0.1.1/$role/$binary"|"/opt/owntransit-preview/0.1.2/$role/$binary"|"/opt/owntransit-preview/0.1.3/$role/$binary"|"/opt/owntransit-preview/0.1.5/$role/$binary"|"/opt/owntransit-preview/0.1.6/$role/$binary"|"/opt/owntransit-preview/0.1.7/$role/$binary"|"/opt/owntransit-preview/0.1.8/$role/$binary")
       test -f "$previous_alias" && test ! -L "$previous_alias" || fail 'unsafe previous preview executable'
       test "$(stat -c %u:%g:%a:%h "$previous_alias")" = 0:0:755:1 || fail 'previous preview executable metadata differs'
       ;;
     *) fail "refusing to overwrite unmanaged alias: $alias_path" ;;
   esac
+fi
+if test "$action" = uninstall; then
+  if test -z "$previous_alias" && test ! -e "$prefix/$role" && test ! -L "$prefix/$role"; then
+    printf 'OwnTransit %s is not installed at this version. Pairing retained.\n' "$role"
+    exit 0
+  fi
+  test "$previous_alias" = "$alias_target" || fail 'install this version before using its uninstaller; no old package was removed'
+  ancestor=$prefix/$role
+  while :; do
+    test -d "$ancestor" && test ! -L "$ancestor" || fail 'unsafe installed ancestor'
+    require_protected "$ancestor"
+    test "$ancestor" = / && break
+    ancestor=$(dirname "$ancestor")
+  done
+  for name in LICENSE NOTICE "$binary"; do
+    file=$prefix/$role/$name
+    test -f "$file" && test ! -L "$file" && test "$(stat -c %h "$file")" = 1 || fail 'unsafe installed member'
+    require_protected "$file"
+    cmp -s "$file" "$bundle/$name" || fail 'installed bytes differ; uninstall refused'
+  done
+  count=3
+  if test "$role" = relay; then
+    file=$prefix/relay/owntransit-relay.oci.tar
+    test -f "$file" && test ! -L "$file" && test "$(stat -c %h "$file")" = 1 || fail 'unsafe installed image'
+    require_protected "$file"
+    cmp -s "$file" "$bundle/owntransit-relay.oci.tar" || fail 'installed image differs'
+    count=4
+  fi
+  test "$role" != connector || count=4
+  test "$(find "$prefix/$role" -mindepth 1 -maxdepth 1 | wc -l | tr -d '[:space:]')" = "$count" || fail 'unrecognized package files; uninstall refused'
+  if test "$role" = connector; then
+    unit=/etc/systemd/system/owntransit-connector-pair.service
+    test -f "$unit" && test ! -L "$unit" || fail 'connector unit is absent or unsafe'
+    require_protected "$unit"
+    test -f "$prefix/$role/service.template" && test ! -L "$prefix/$role/service.template" || fail 'unit receipt missing'
+    require_protected "$prefix/$role/service.template"
+    cmp -s "$unit" "$prefix/$role/service.template" || fail 'connector unit was modified; uninstall refused'
+    drops=$(/usr/bin/systemctl show owntransit-connector-pair.service --property=DropInPaths --value)
+    test -z "$drops" || fail 'connector service has overrides; uninstall refused'
+    /usr/bin/systemctl disable --now owntransit-connector-pair.service
+    rm -- "$unit"
+    /usr/bin/systemctl daemon-reload
+  elif test "$role" = relay; then
+    "$alias_target" uninstall-managed
+  fi
+  if test -L "$normal_alias" && test "$(stat -c %u "$normal_alias")" = 0 && test "$(readlink "$normal_alias")" = "$alias_target"; then rm -- "$normal_alias"; fi
+  rm -- "$alias_path"
+  # Exact owned files only; never recurse into pairing or administrator data.
+  rm -- "$prefix/$role/LICENSE" "$prefix/$role/NOTICE" "$alias_target"
+  if test "$role" = connector; then rm -- "$prefix/$role/service.template"; fi
+  if test "$role" = relay; then
+    test -f "$prefix/relay/owntransit-relay.oci.tar" && test ! -L "$prefix/relay/owntransit-relay.oci.tar" || fail 'unsafe installed image'
+    rm -- "$prefix/relay/owntransit-relay.oci.tar"
+  fi
+  rmdir "$prefix/$role"
+  printf 'OwnTransit %s software removed. Pairing and SSH settings retained.\n' "$role"
+  test "$role" != relay || printf '%s\n' 'Relay keys, disabled unit, website route and cached rollback images retained; the container is removed.'
+  exit 0
 fi
 ensure_directory() {
   directory=$1
@@ -182,6 +247,16 @@ if test "$previous_alias" != "$alias_target"; then
   ln -s "$alias_target" "$alias_stage"
   mv -- "$alias_stage" "$alias_path"
 fi
+if test ! -e "$normal_alias" && test ! -L "$normal_alias"; then
+  ln -s "$alias_target" "$normal_alias"
+elif test -L "$normal_alias" && test "$(stat -c %u "$normal_alias")" = 0 && test "$(readlink "$normal_alias")" = "$previous_alias"; then
+  normal_stage=$normal_alias.$$.new
+  test ! -e "$normal_stage" && test ! -L "$normal_stage" || fail 'command staging name exists'
+  ln -s "$alias_target" "$normal_stage"
+  mv -- "$normal_stage" "$normal_alias"
+fi
+public_command=$alias_path
+if test -L "$normal_alias" && test "$(readlink "$normal_alias")" = "$alias_target"; then public_command=$normal_alias; fi
 
 if test "$role" = connector; then
   unit_stage=$(mktemp /run/owntransit-connector-pair.service.XXXXXX) || fail 'cannot stage connector unit'
@@ -189,7 +264,7 @@ if test "$role" = connector; then
   trap cleanup_unit EXIT HUP INT TERM
   cat > "$unit_stage" <<EOF
 [Unit]
-Description=OwnTransit 0.1.8 preview receiver pairing broker
+Description=OwnTransit 0.2.0 preview receiver pairing broker
 After=network-online.target
 Wants=network-online.target
 ConditionPathIsDirectory=/var/lib/owntransit-pair
@@ -235,7 +310,7 @@ EOF
       # Accept only the exact previous managed template, not a locally edited
       # service. Keep all confinement; retain the broker's intended UID-drop
       # capability and its ability to terminate its different-UID worker.
-      sed -e 's/0\.1\.[123567]/0.1.8/g' \
+      sed -e 's/0\.1\.[1235678]/0.2.0/g' \
         -e '/^Type=simple$/c\
 Type=notify\
 NotifyAccess=main\
@@ -250,31 +325,25 @@ TimeoutStartSec=30s' \
     install -o root -g root -m 0644 "$unit_stage" "$unit"
     /usr/bin/systemctl daemon-reload
   fi
+  install_exact "$unit_stage" "$prefix/connector/service.template" 644
   cleanup_unit
   trap - EXIT HUP INT TERM
-  printf 'Installed OwnTransit development preview 0.1.8 role %s for linux/%s.\n' "$role" "$arch"
-  printf '%s\n' 'Connector preview package installed; service was not enabled or started.'
+  printf 'OwnTransit 0.2.0 %s installed for linux/%s.\n' "$role" "$arch"
   if test -d /var/lib/owntransit-pair; then
-    printf '%s\n' 'Existing pairing retained. NEXT — activate the new executable without generating new codes:'
+    printf '%s\n' 'Pairing retained. Activate the upgrade:'
     printf '%s\n' '  sudo systemctl restart owntransit-connector-pair.service'
-    printf '%s\n' 'Active SSH carriers will disconnect. Use independent access for maintenance; rerun pair setup only to deliberately replace the pairing.'
+    printf '%s\n' 'Active tunnels disconnect during restart. Do not re-pair for an upgrade.'
   else
-    printf '%s\n' 'Next: sudo owntransit-connector-preview pair setup'
-    printf '%s\n' 'Run that command once in your shell, then enter your public VPS relay URL when prompted.'
+    printf 'Next: sudo %s pair setup\n' "$public_command"
+    printf '%s\n' 'Enter your VPS relay URL when asked. Fresh service remains disabled until setup.'
   fi
 elif test "$role" = client; then
-  printf 'Installed OwnTransit development preview 0.1.8 role %s for linux/%s.\n' "$role" "$arch"
-  printf '%s\n' 'Client preview package installed without changing accounts, SSH, or legacy OwnTransit state.'
-  printf '%s\n' 'Next: owntransit-preview pair setup'
-  printf '%s\n' 'Run that command once in your shell. Then answer its prompts, not with another command:'
-  printf '%s\n' '1. Public relay URL configured on your VPS (example only: wss://relay.example/connects).'
-  printf '%s\n' '2. VPS registration code starting with otrelay1. — from receiver registration on the VPS.'
-  printf '%s\n' '3. Private receiving-machine code starting with otpair1. — from connector setup, never shared with the VPS.'
-  printf '%s\n' 'Code input is hidden. Paste once and press Enter. Installation/upgrades preserve existing pairing state.'
+  printf 'OwnTransit 0.2.0 client installed for linux/%s. Pairing and SSH settings preserved.\n' "$arch"
+  printf 'Next: %s pair setup\n' "$public_command"
+  printf '%s\n' 'Then answer its prompts: your relay URL, VPS registration code (otrelay1.), and private SSH-machine code (otpair1.).'
 else
-  printf 'Installed OwnTransit development preview 0.1.8 role %s for linux/%s.\n' "$role" "$arch"
-  printf '%s\n' 'Relay preview package and OCI archive installed; no image, service, listener, or reverse proxy was changed.'
-  printf '%s\n' 'Next: sudo owntransit-relay-preview setup'
-  printf '%s\n' 'Setup asks for your public URL and handles the container, website route and reboot service.'
-  printf '%s\n' 'For an existing managed relay, use its existing URL; setup upgrades the image while preserving keys and website routing.'
+  printf 'OwnTransit 0.2.0 relay package installed for linux/%s.\n' "$arch"
+  if test "$next" = manual; then printf 'Next: sudo %s setup\n' "$public_command"; else printf '%s\n' 'Starting relay setup now; answer its prompts below.'; fi
+  printf '%s\n' 'Use your existing public URL for upgrades; keys and website routing are preserved.'
 fi
+printf 'Uninstall: curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-linux.sh | sudo sh -s -- %s --uninstall\n' "$role"

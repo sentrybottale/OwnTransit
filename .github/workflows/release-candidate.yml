@@ -215,6 +215,11 @@ jobs:
           homebrew_bin=$(command -v brew)
           test -n "$homebrew_bin"
           OWNTRANSIT_HOMEBREW_BIN="$homebrew_bin" ./scripts/qualify/test-signature-tools.sh
+      - name: Exercise native Mac install, tamper rejection and non-purging uninstall
+        run: |
+          mkdir -m 0700 "$GITHUB_WORKSPACE/.mac-installer-fixtures"
+          OWNTRANSIT_MAC_INSTALL_TEST_ROOT="$GITHUB_WORKSPACE/.mac-installer-fixtures" go test -count=1 -v ./scripts/development
+          rmdir "$GITHUB_WORKSPACE/.mac-installer-fixtures"
       - name: Build native Apple-silicon pairing client
         run: |
           set -eu

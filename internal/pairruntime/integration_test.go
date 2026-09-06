@@ -58,6 +58,11 @@ func privatePath(t *testing.T, name string) string {
 }
 
 func newIntegrated(t *testing.T) *integrated {
+	return newIntegratedWithLimits(t, pairrelay.Limits{})
+}
+
+// Short limits are fixture-only; production endpoint options are unchanged.
+func newIntegratedWithLimits(t *testing.T, limits pairrelay.Limits) *integrated {
 	t.Helper()
 	now := time.Now()
 	ca, err := pki.NewCA("relay test", now, 48*time.Hour)
@@ -76,7 +81,7 @@ func newIntegrated(t *testing.T) *integrated {
 	if _, err := rand.Read(key); err != nil {
 		t.Fatal(err)
 	}
-	r, err := pairrelay.NewRelay(pairrelay.RelayConfig{TokenKey: key, RelayTLS: pairrelay.TLSMaterial{Certificate: cert, CAPEM: ca.CertPEM, ServerName: "relay.paired.owntransit.invalid"}, VerifyAdvertisement: func(b []byte, now time.Time) (pairrelay.Descriptor, error) {
+	r, err := pairrelay.NewRelay(pairrelay.RelayConfig{TokenKey: key, Limits: limits, RelayTLS: pairrelay.TLSMaterial{Certificate: cert, CAPEM: ca.CertPEM, ServerName: "relay.paired.owntransit.invalid"}, VerifyAdvertisement: func(b []byte, now time.Time) (pairrelay.Descriptor, error) {
 		i, e := receiverpairing.VerifyAdvertisement(b, now)
 		if e != nil {
 			return pairrelay.Descriptor{}, e

@@ -1,5 +1,31 @@
 # OwnTransit security policy
 
+## 0.2.0 installation and diagnostic scope
+
+The receiver-owned 0.2.0 release retains its existing signed capsule format and
+key. Exact-version bootstraps reject old or malformed inventories; the Mac
+bootstrap additionally authenticates its selected archive before installing an
+unprivileged per-user client. Initial script delivery still trusts GitHub HTTPS.
+No Apple signing subscription is required. An installer does not edit SSH keys,
+configuration or accounts, and non-purging uninstall retains pairing state.
+
+Normal aliases never overwrite an unrelated legacy command. Linux package
+removal validates owned package bytes before removing only the selected local
+role. Connector removal refuses modified units/overrides. Managed relay removal
+validates saved ownership, stops/disables the unit and removes only the stopped
+managed container; it retains its disabled unit configuration, relay keys,
+website route and cached rollback images for explicit reinstall/setup.
+
+Diagnostic messages use fixed local error classes, never raw causes or relay
+strings. Unavailability is not a security alarm. Fast tests shorten fixture-only
+timers; production authorization leases, clock checks, pending/session limits and
+terminal alarm semantics are unchanged. Extended soak and independent security
+assessment are not claimed for this bounded release.
+
+Concurrent client startups wait only on the known busy local operation lock,
+inside the existing opening deadline and policy watcher. Ownership/permission
+errors are not retried. Cancellation or a local alarm still terminates the wait.
+
 ## 0.1.8 active-carrier lifetime fix
 
 The relay's pending-receiver timeout previously ended the receiver's HTTP

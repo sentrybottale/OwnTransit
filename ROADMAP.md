@@ -1,5 +1,22 @@
 # OwnTransit roadmap
 
+## 0.2.0 — bounded stabilization
+
+- Native one-command Mac client installation, repeatable local upgrades and
+  non-purging Mac/Linux removal. Retain preview aliases and pairing state;
+  never overwrite unrelated legacy commands or change SSH settings.
+- Fixed, non-secret error categories with actionable next steps instead of a
+  generic failure paragraph. Network failures never become durable alarms.
+- Fast fixture-only timeout, concurrent quiet SSH and receiver-restart tests;
+  existing shortened lease/clock/alarm/rebuild tests remain required. Production
+  security timers are unchanged.
+- Both race/vet profiles, security/publication checks, installer fixtures,
+  existing-key signed artifacts and one brief exact-build end-to-end check.
+  No hour-long soak, new machines or additional signing ceremony.
+
+P2P, multiple profiles/clients and apt/Homebrew distribution expansion remain
+later work. Publishing 0.2.0 does not claim independent security certification.
+
 ## 0.1.8 — sustained-session regression
 
 Fix the relay pending-waiter timer surviving promotion into an active carrier.

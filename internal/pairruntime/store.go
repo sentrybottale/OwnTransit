@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/sentrybottale/owntransit/internal/leasewire"
 	"github.com/sentrybottale/owntransit/internal/pairrelay"
 	"github.com/sentrybottale/owntransit/internal/receiverpairing"
 	"github.com/sentrybottale/owntransit/internal/securefs"
@@ -139,6 +140,9 @@ func Admission(path string) (*securefs.Lock, error) {
 	p, err := ReadPolicy(path)
 	if err != nil || p.Locked {
 		l.Close()
+		if err == nil && p.Locked {
+			return nil, leasewire.ErrLocked
+		}
 		return nil, ErrState
 	}
 	return l, nil

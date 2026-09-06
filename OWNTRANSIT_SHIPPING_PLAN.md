@@ -1,5 +1,32 @@
 # OwnTransit v1 shipping plan
 
+## Receiver-owned 0.2.0 release scope
+
+0.2.0 is the supported receiver-owned release line, separate from the historical
+0.1.0 package/qualification profile below. Acceptance is bounded: both build
+profiles' race/vet suites, repository/security checks, fast timeout/renewal/
+concurrency/reconnect and alarm/rebuild fixtures, isolated installer upgrade/
+uninstall checks, independently verified signed artifacts, and one brief final
+end-to-end check on existing equipment. Extended soak testing and new-machine
+qualification are not gates and are not claimed. No independent assessment is
+implied by publishing a normal GitHub release.
+
+The existing distribution key, `owntransit-development-v1` SSHSIG namespace,
+`DEVELOPMENT-SHA256SUMS` name and preview capsule/installation paths are retained
+as historical format identifiers. The 0.2.0 bootstrap accepts only its exact
+six-member signed inventory (including the new Mac installer). It cannot accept
+an older preview inventory as 0.2.0, and these signatures still grant no authority
+in the distinct legacy 0.1.0 manifest/policy namespaces. No new signing ceremony,
+key, wire protocol or endpoint authority is introduced.
+
+Normal command aliases are added only when available or already managed; old
+`*-preview` aliases remain usable. Conflicting legacy commands are preserved and
+the installer prints the usable absolute path. Upgrades and non-purging
+uninstalls retain pairing state. SSH keys, accounts and settings remain entirely
+operator-owned. The live deployment need not be reset to test installation.
+
+The existing 0.1.0 contract below remains historical and unchanged.
+
 The 0.1.1 receiver-owned source integration is documented in
 [PAIRING_INSTALL.md](PAIRING_INSTALL.md). Its CI outputs are explicitly
 development self-test executables, not an official signed handoff. They do not

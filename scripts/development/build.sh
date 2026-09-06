@@ -28,8 +28,8 @@ test -n "$tar_bin" || fail 'GNU tar is required'
 install -d -m 0700 "$output"
 scratch=$(mktemp -d "$output/build.XXXXXXXX")
 sha() { shasum -a 256 "$1" | awk '{print $1}'; }
-version=0.1.8
-ldflags="-buildid= -X github.com/sentrybottale/owntransit/internal/buildinfo.Version=$version -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$commit -X github.com/sentrybottale/owntransit/internal/buildinfo.Dirty=false"
+version=0.2.0
+ldflags="-buildid= -X github.com/sentrybottale/owntransit/internal/buildinfo.Version=$version -X github.com/sentrybottale/owntransit/internal/buildinfo.Release=owntransit-receiver-$version -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$commit -X github.com/sentrybottale/owntransit/internal/buildinfo.Dirty=false"
 
 for platform in linux-amd64 linux-arm64 darwin-arm64; do
   target_os=${platform%-*}
@@ -48,9 +48,11 @@ for platform in linux-amd64 linux-arm64 darwin-arm64; do
     done
     CGO_ENABLED=0 GOOS=linux GOARCH=$arch GOTOOLCHAIN=local "$go_bin" build -mod=readonly -trimpath -buildvcs=false -tags=owntransit_relay_container -ldflags "$ldflags" -o "$scratch/relay-container-$arch" ./cmd/owntransit-relay
     OWNTRANSIT_GNU_TAR="$tar_bin" sh scripts/development/make-relay-oci.sh "$scratch/relay-container-$arch" "$bundle/owntransit-relay.oci.tar" "$arch" "$commit" "$epoch" LICENSE THIRD_PARTY_NOTICES.md
+  else
+    install -m 0755 install-preview-macos.sh "$bundle/install-macos.sh"
   fi
   chmod 0644 "$bundle/CAPSULE"
-  (cd "$bundle"; for member in CAPSULE LICENSE NOTICE install-linux.sh owntransit owntransit-connector owntransit-relay owntransit-relay.oci.tar; do
+  (cd "$bundle"; for member in CAPSULE LICENSE NOTICE install-linux.sh install-macos.sh owntransit owntransit-connector owntransit-relay owntransit-relay.oci.tar; do
     if test -f "$member"; then printf '%s  %s\n' "$(sha "$member")" "$member"; fi
   done) > "$bundle/SHA256SUMS"
   chmod 0644 "$bundle/SHA256SUMS"
@@ -59,8 +61,9 @@ for platform in linux-amd64 linux-arm64 darwin-arm64; do
   chmod 0644 "$output/$top.tar.gz"
 done
 install -m 0644 install-preview-linux.sh "$output/install-preview-linux.sh"
-printf 'OwnTransit 0.1.8 DEVELOPMENT PREVIEW\nsource_commit=%s\nsource_date_epoch=%s\n\nNot stable or production-qualified. Published releases are immutable. Explicit relay setup can replace an identified old relay and update the selected website route, with rollback on failure.\nDistribution signatures authenticate these exact development bytes, not a platform qualification claim.\n' "$commit" "$epoch" > "$output/DEVELOPMENT.txt"
+install -m 0644 install-preview-macos.sh "$output/install-preview-macos.sh"
+printf 'OwnTransit 0.2.0 RECEIVER-OWNED RELEASE\nsource_commit=%s\nsource_date_epoch=%s\n\nPublished releases are immutable. The historical capsule filenames and signing namespace are retained for distribution compatibility. This is not the legacy 0.1.0 package/qualification profile. Explicit relay setup can update the selected website route, with rollback on failure.\nDistribution signatures authenticate these exact bytes. No extended soak or independent security certification is claimed.\n' "$commit" "$epoch" > "$output/DEVELOPMENT.txt"
 chmod 0644 "$output/DEVELOPMENT.txt"
-(cd "$output"; for member in DEVELOPMENT.txt install-preview-linux.sh owntransit-preview-0.1.8-darwin-arm64.tar.gz owntransit-preview-0.1.8-linux-amd64.tar.gz owntransit-preview-0.1.8-linux-arm64.tar.gz; do printf '%s  %s\n' "$(sha "$member")" "$member"; done) > "$output/DEVELOPMENT-SHA256SUMS"
+(cd "$output"; for member in DEVELOPMENT.txt install-preview-linux.sh install-preview-macos.sh owntransit-preview-0.2.0-darwin-arm64.tar.gz owntransit-preview-0.2.0-linux-amd64.tar.gz owntransit-preview-0.2.0-linux-arm64.tar.gz; do printf '%s  %s\n' "$(sha "$member")" "$member"; done) > "$output/DEVELOPMENT-SHA256SUMS"
 chmod 0644 "$output/DEVELOPMENT-SHA256SUMS"
 printf 'Built exact development capsules in %s\nBuild intermediates retained in %s\n' "$output" "$scratch"

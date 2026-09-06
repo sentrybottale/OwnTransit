@@ -1,4 +1,19 @@
-# Signed development previews
+# Signed receiver-owned capsules
+
+For 0.2.0, follow the bounded receiver-owned release contract at the top of
+`OWNTRANSIT_SHIPPING_PLAN.md`. Historical filenames, preview aliases and the
+existing signing namespace are retained; no signature is reinterpreted as a
+legacy 0.1.0 manifest/policy. The inventory now has six members, with nine public
+assets after adding its signature, inventory and public key. The Mac archive
+includes `install-macos.sh` for offline, non-purging removal.
+
+A 0.2.0 release may be published without GitHub's prerelease flag after the
+bounded checks and brief exact-build end-to-end check pass. Extended soak,
+clean-host certification and independent assessment remain explicitly unclaimed.
+No new signing keys or additional ceremony is introduced.
+
+The earlier preview-lane rationale follows; its prerelease-only publication rule
+applies to 0.1.x previews, not the explicitly scoped 0.2.0 release above.
 
 This is the owner-authorized fast development lane. It is separate from the
 stable/qualification release machinery in `scripts/release/` and creates no
@@ -19,7 +34,7 @@ existing distribution public-key digest, validates the detached inventory
 signature, and checks the selected archive digest before extraction or root
 execution. The inner installer rechecks the platform and exact flat inventory.
 
-Linux installation uses `/opt/owntransit-preview/0.1.8`, separately named
+Linux installation uses `/opt/owntransit-preview/0.2.0`, separately named
 `*-preview` aliases, and one disabled connector service. It preserves every
 legacy install, service, credential and SSH setting. `pair setup` on the
 connector initializes its own identities and explicitly enables its installed
@@ -32,7 +47,7 @@ its client, and that consent is checked atomically against the current peer.
 The old pairing is locked and drained before atomic state replacement. Setup
 waits for the worker's advertisement acknowledgement and prints exact next steps.
 
-For 0.1.8, existing connector installation prints a service restart command instead
+For 0.2.0, existing connector installation prints a service restart command instead
 of a new-pairing command. Client setup recognizes a retained pairing/request and
 prints its connection/resume step without changing identity. A managed relay
 upgrade uses the same setup URL and a protected rollback journal; it does not
@@ -56,7 +71,8 @@ invoke the website route editor. Multi-tunnel profiles are not part of this cut.
    client and Linux installer capsules in available bounded environments. No
    new-machine, host reboot or independent external review claim is made.
 5. Create and verify one immutable signed version tag. Create a draft GitHub
-   release with the prerelease flag, never `latest`. Upload only the five signed
+   release (prerelease for the older 0.1.x lane; normal release is allowed for
+   qualified 0.2.0 scope above). Upload only the six signed
    inventory members, the inventory, its detached signature, and the existing
    distribution public key. Download the entire draft and reverify it before
    publication. Publish with a prominent DEVELOPMENT PREVIEW warning.

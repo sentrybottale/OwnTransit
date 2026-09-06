@@ -297,7 +297,7 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 		return 2
 	}
 	if err != nil {
-		fmt.Fprintln(diagnostics, "owntransit pair: operation failed. Follow the step-specific instructions above. Interrupted client pairing can use pair resume. An explicit replacement or alarm may already have retired the previous pairing.")
+		fmt.Fprintln(diagnostics, "owntransit:", failureMessage(operation, err))
 		return 1
 	}
 	return 0

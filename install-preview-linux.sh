@@ -1,5 +1,5 @@
 #!/bin/sh
-# Explicit signed DEVELOPMENT lane. This does not install the stable release.
+# Signed receiver-owned distribution. The legacy 0.1.0 package lane is separate.
 main() {
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -8,10 +8,10 @@ LC_ALL=C
 export LC_ALL
 unset CDPATH ENV BASH_ENV TAR_OPTIONS GZIP SSH_AUTH_SOCK SSH_ASKPASS DISPLAY
 umask 077
-version=0.1.8
-base=https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.8
+version=0.2.0
+base=https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0
 stage=
-fail() { printf 'owntransit-development: %s\n' "$*" >&2; exit 1; }
+fail() { printf 'owntransit-install: %s\n' "$*" >&2; exit 1; }
 cleanup() {
   status=$?
   trap - EXIT HUP INT TERM
@@ -29,10 +29,12 @@ trap cleanup EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
-test "$#" -ge 1 && test "$#" -le 2 || fail 'usage: sudo sh install-preview-linux.sh client|connector|relay [PUBLIC_RELAY_URL]'
+test "$#" -ge 1 && test "$#" -le 2 || fail 'usage: sudo sh install-preview-linux.sh client|connector|relay [PUBLIC_RELAY_URL|--uninstall]'
 role=$1
 setup_url=${2-}
-test "$#" -eq 1 || test "$role" = relay || fail 'a public URL can be passed only for relay setup'
+action=install
+if test "$setup_url" = --uninstall; then action=uninstall; setup_url=; fi
+test "$#" -eq 1 || test "$role" = relay || test "$action" = uninstall || fail 'a public URL can be passed only for relay setup'
 case "$role" in client|connector|relay) ;; *) fail 'role must be client, connector or relay' ;; esac
 test "$(id -u)" = 0 || fail 'run through sudo'
 test "$(uname -s)" = Linux || fail 'Linux is required'
@@ -69,8 +71,8 @@ fetch() {
   mv -- "$stage/$name.part" "$stage/$name"
 }
 
-printf 'Installing signed OwnTransit %s DEVELOPMENT preview (%s, Linux %s).\n' "$version" "$role" "$arch"
-printf '%s\n' 'This is a development build. Endpoint credentials are preserved. Explicit relay setup may replace an identified old relay, with rollback on failure.'
+printf 'OwnTransit %s: %s %s for Linux %s.\n' "$version" "$action" "$role" "$arch"
+printf '%s\n' 'Pairing and SSH settings are preserved.'
 fetch distribution-public.key 4096
 test "$(sha256sum "$stage/distribution-public.key" | awk '{print $1}')" = 55d97d90f4b81628aa534ba28960b63685ea5d1d4eeef489ffb28de632dc0a9e || fail 'distribution key does not match the pinned authority'
 awk 'NF >= 2 && $1 == "ssh-ed25519" {print "owntransit-development " $1 " " $2; count++} END {if(count!=1) exit 1}' "$stage/distribution-public.key" > "$stage/allowed_signers"
@@ -80,12 +82,12 @@ ssh-keygen -Y verify -f "$stage/allowed_signers" -I owntransit-development \
   -n owntransit-development-v1 -s "$stage/DEVELOPMENT-SHA256SUMS.sig" \
   < "$stage/DEVELOPMENT-SHA256SUMS" >/dev/null 2>&1 || fail 'development inventory signature rejected'
 
-test "$(wc -l < "$stage/DEVELOPMENT-SHA256SUMS" | tr -d '[:space:]')" = 5 || fail 'unexpected signed inventory count'
+test "$(wc -l < "$stage/DEVELOPMENT-SHA256SUMS" | tr -d '[:space:]')" = 6 || fail 'unexpected signed inventory count'
 awk '
   BEGIN { ok=1; previous="" }
   {
     if (NF!=2 || length($1)!=64 || $1 !~ /^[0-9a-f]+$/ || $0!=$1 "  " $2 || seen[$2]++ || (previous!="" && previous >= $2)) ok=0
-    if ($2!="DEVELOPMENT.txt" && $2!="install-preview-linux.sh" && $2!="owntransit-preview-0.1.8-darwin-arm64.tar.gz" && $2!="owntransit-preview-0.1.8-linux-amd64.tar.gz" && $2!="owntransit-preview-0.1.8-linux-arm64.tar.gz") ok=0
+    if ($2!="DEVELOPMENT.txt" && $2!="install-preview-linux.sh" && $2!="install-preview-macos.sh" && $2!="owntransit-preview-0.2.0-darwin-arm64.tar.gz" && $2!="owntransit-preview-0.2.0-linux-amd64.tar.gz" && $2!="owntransit-preview-0.2.0-linux-arm64.tar.gz") ok=0
     previous=$2
   }
   END { exit ok ? 0 : 1 }
@@ -111,8 +113,12 @@ tar --extract --gzip --no-same-owner --no-same-permissions --file "$stage/$archi
 chmod 0700 "$stage/$top"
 chmod 0755 "$stage/$top/install-linux.sh" "$stage/$top/owntransit" "$stage/$top/owntransit-connector" "$stage/$top/owntransit-relay"
 chmod 0644 "$stage/$top/CAPSULE" "$stage/$top/LICENSE" "$stage/$top/NOTICE" "$stage/$top/SHA256SUMS" "$stage/$top/owntransit-relay.oci.tar"
-env -i PATH="$PATH" LC_ALL=C "$stage/$top/install-linux.sh" --bundle "$stage/$top" --role "$role"
-if test "$role" = relay; then
+next=manual
+if test "$role" = relay && test "$action" = install; then
+  if test -n "$setup_url" || ( : </dev/tty ) 2>/dev/null; then next=automatic; fi
+fi
+env -i PATH="$PATH" LC_ALL=C "$stage/$top/install-linux.sh" --bundle "$stage/$top" --role "$role" --action "$action" --next "$next"
+if test "$role" = relay && test "$action" = install; then
   if test -n "$setup_url"; then
     env -i PATH="$PATH" LC_ALL=C /usr/local/bin/owntransit-relay-preview setup --url "$setup_url"
   elif ( : </dev/tty ) 2>/dev/null; then
