@@ -9,6 +9,22 @@ becomes a publication record only after its authenticated evidence, signed
 qualification record and release decision are complete. Git tags never create
 or publish artifacts automatically.
 
+## [0.3.0]
+
+Independent named tunnels across shared relays and SSH hosts.
+
+- Add `--tunnel NAME`, local tunnel listing and scoped receiver restart. Preserve
+  the original default pairing and advanced explicit state-path commands.
+- Let one SSH server host several independently authorized client pairings,
+  each with separate receiver keys, state, reboot service and alarm scope.
+- Validate named unit ownership and protect setup/package changes with a local
+  maintenance lock. Upgrade/remove recognized instances while retaining state.
+- Accept 0.2.0 package upgrades on Mac and Linux without replacing unrelated
+  commands or changing SSH settings.
+- Add shared-relay/shared-SSH-host, crossed-peer, alarm-isolation, selector and
+  owned-service regressions. Existing crypto, wire profiles and fixed targets
+  remain unchanged.
+
 ## [0.2.0]
 
 Receiver-owned stabilization release under the bounded 0.2.0 shipping contract.

@@ -17,17 +17,19 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 }
 
-func pairCommand(executable, operation, state string) string {
+func pairCommand(executable, operation, state string, tunnel ...string) string {
 	command := shellQuote(executable) + " pair " + operation
-	if state != "" {
+	if len(tunnel) > 0 && tunnel[0] != "" {
+		command += " --tunnel " + shellQuote(tunnel[0])
+	} else if state != "" {
 		command += " --state " + shellQuote(state)
 	}
 	return command
 }
 
-func printConnect(w io.Writer, status, executable, state string) {
+func printConnect(w io.Writer, status, executable, state string, tunnel ...string) {
 	// There are two shells: the user's command line and SSH's ProxyCommand.
 	// Escape SSH percent tokens as well; paths are local data, never code.
-	proxy := strings.ReplaceAll(pairCommand(executable, "proxy", state), "%", "%%")
+	proxy := strings.ReplaceAll(pairCommand(executable, "proxy", state, tunnel...), "%", "%%")
 	fmt.Fprintf(w, "%s Connect:\n  ssh -o %s USER@SSH_ALIAS\nUse your SSH account, key and verified host identity.\n", status, shellQuote("ProxyCommand="+proxy))
 }

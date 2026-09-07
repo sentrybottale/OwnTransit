@@ -8,8 +8,8 @@ LC_ALL=C
 export LC_ALL
 unset CDPATH ENV BASH_ENV TAR_OPTIONS GZIP SSH_AUTH_SOCK SSH_ASKPASS DISPLAY
 umask 077
-version=0.2.0
-base=https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0
+version=0.3.0
+base=https://github.com/sentrybottale/OwnTransit/releases/download/v0.3.0
 fail() { printf 'owntransit-install: %s\n' "$*" >&2; exit 1; }
 quote() { printf "'"; printf '%s' "$1" | sed "s/'/'\"'\"'/g"; printf "'"; }
 test "$(uname -s):$(uname -m)" = Darwin:arm64 || fail 'Apple-silicon macOS is required'
@@ -44,18 +44,19 @@ owned_alias() {
   test -L "$1" && test "$(stat -f %u "$1")" = "$uid" && test "$(readlink "$1")" = "$target/owntransit"
 }
 check_release() {
-  protected "$target"
-  test "$(stat -f %u "$target")" = "$uid" || fail 'release belongs to another user'
-  test "$(find "$target" -mindepth 1 -maxdepth 1 | wc -l | tr -d '[:space:]')" = 6 || fail 'unexpected files in release directory'
+  checked=${1:-$target}
+  protected "$checked"
+  test "$(stat -f %u "$checked")" = "$uid" || fail 'release belongs to another user'
+  test "$(find "$checked" -mindepth 1 -maxdepth 1 | wc -l | tr -d '[:space:]')" = 6 || fail 'unexpected files in release directory'
   for member in CAPSULE LICENSE NOTICE SHA256SUMS owntransit install-macos.sh; do
-    file="$target/$member"
+    file="$checked/$member"
     test -f "$file" && test ! -L "$file" && test "$(stat -f %l "$file")" = 1 && test "$(stat -f %u "$file")" = "$uid" || fail 'unsafe installed release member'
     case "$member" in owntransit|install-macos.sh) mode=100755 ;; *) mode=100644 ;; esac
     test "$(stat -f %p "$file")" = "$mode" || fail 'installed release permissions differ'
   done
 }
 if test "$action" = --uninstall; then
-  test -e "$target" || { printf '%s\n' 'OwnTransit 0.2.0 client is not installed here.'; exit 0; }
+  test -e "$target" || { printf '%s\n' 'OwnTransit 0.3.0 client is not installed here.'; exit 0; }
   for path in "$user_home/Library" "$user_home/Library/Application Support" "$software" "$target" "$user_home/.local" "$bindir"; do protected "$path"; done
   owned_alias "$alias_path" || fail 'preview command is not the managed client; nothing removed'
   check_release
@@ -97,7 +98,7 @@ fetch DEVELOPMENT-SHA256SUMS.sig 8192
 ssh-keygen -Y verify -f "$stage/allowed_signers" -I owntransit-development -n owntransit-development-v1 \
   -s "$stage/DEVELOPMENT-SHA256SUMS.sig" < "$stage/DEVELOPMENT-SHA256SUMS" >/dev/null 2>&1 || fail 'release signature rejected'
 test "$(wc -l < "$stage/DEVELOPMENT-SHA256SUMS" | tr -d '[:space:]')" = 6 || fail 'unexpected release inventory'
-awk 'BEGIN {ok=1;p=""} {if(NF!=2 || length($1)!=64 || $1!~/^[0-9a-f]+$/ || $0!=$1 "  " $2 || seen[$2]++ || (p!="" && p>=$2))ok=0; if($2!="DEVELOPMENT.txt" && $2!="install-preview-linux.sh" && $2!="install-preview-macos.sh" && $2!="owntransit-preview-0.2.0-darwin-arm64.tar.gz" && $2!="owntransit-preview-0.2.0-linux-amd64.tar.gz" && $2!="owntransit-preview-0.2.0-linux-arm64.tar.gz")ok=0;p=$2} END {exit ok?0:1}' "$stage/DEVELOPMENT-SHA256SUMS" || fail 'malformed release inventory'
+awk 'BEGIN {ok=1;p=""} {if(NF!=2 || length($1)!=64 || $1!~/^[0-9a-f]+$/ || $0!=$1 "  " $2 || seen[$2]++ || (p!="" && p>=$2))ok=0; if($2!="DEVELOPMENT.txt" && $2!="install-preview-linux.sh" && $2!="install-preview-macos.sh" && $2!="owntransit-preview-0.3.0-darwin-arm64.tar.gz" && $2!="owntransit-preview-0.3.0-linux-amd64.tar.gz" && $2!="owntransit-preview-0.3.0-linux-arm64.tar.gz")ok=0;p=$2} END {exit ok?0:1}' "$stage/DEVELOPMENT-SHA256SUMS" || fail 'malformed release inventory'
 top=owntransit-preview-$version-darwin-arm64
 archive=$top.tar.gz
 expected=$(awk -v name="$archive" '$2==name {print $1}' "$stage/DEVELOPMENT-SHA256SUMS")
@@ -117,7 +118,17 @@ test "$(wc -c < "$stage/$top/SHA256SUMS" | tr -d '[:space:]')" -le 8192 || fail 
 test "$(wc -l < "$stage/$top/SHA256SUMS" | tr -d '[:space:]')" = 5 || fail 'unexpected capsule inventory count'
 awk 'BEGIN{ok=1;p=""} {if(NF!=2 || length($1)!=64 || $1!~/^[0-9a-f]+$/ || $0!=$1 "  " $2 || seen[$2]++ || (p!="" && p>=$2))ok=0;if($2!="CAPSULE" && $2!="LICENSE" && $2!="NOTICE" && $2!="install-macos.sh" && $2!="owntransit")ok=0;p=$2} END{exit ok?0:1}' "$stage/$top/SHA256SUMS" || fail 'malformed capsule inventory'
 (cd "$stage/$top" && shasum -a 256 -c SHA256SUMS >/dev/null) || fail 'capsule checksum mismatch'
-if test -e "$alias_path" || test -L "$alias_path"; then owned_alias "$alias_path" || fail 'refusing to replace an unmanaged client command'; fi
+previous_target=
+if test -e "$alias_path" || test -L "$alias_path"; then
+  if ! owned_alias "$alias_path"; then
+    test -L "$alias_path" && test "$(stat -f %u "$alias_path")" = "$uid" || fail 'refusing to replace an unmanaged client command'
+    previous_target=$(readlink "$alias_path")
+    test "$previous_target" = "$software/0.2.0/owntransit" || fail 'refusing to replace an unknown client release'
+    check_release "$software/0.2.0"
+    previous_capsule=$(printf 'schema=owntransit.development-capsule.v1\nversion=0.2.0\nos=darwin\narch=arm64')
+    test "$(cat "$software/0.2.0/CAPSULE")" = "$previous_capsule" || fail 'previous release identity differs'
+  fi
+fi
 if test -e "$target" || test -L "$target"; then
   check_release
   for member in CAPSULE LICENSE NOTICE SHA256SUMS owntransit install-macos.sh; do
@@ -125,12 +136,25 @@ if test -e "$target" || test -L "$target"; then
     cmp -s "$target/$member" "$stage/$top/$member" || fail 'existing release differs; refusing overwrite'
   done
 else mv -- "$stage/$top" "$target"; fi
-if test ! -L "$alias_path"; then ln -s "$target/owntransit" "$alias_path"; fi
+if test -n "$previous_target"; then
+  test "$(readlink "$alias_path")" = "$previous_target" || fail 'client command changed during upgrade'
+  alias_stage=$alias_path.$$.new
+  test ! -e "$alias_stage" && test ! -L "$alias_stage" || fail 'client command staging name exists'
+  ln -s "$target/owntransit" "$alias_stage"
+  mv -- "$alias_stage" "$alias_path"
+elif test ! -L "$alias_path"; then ln -s "$target/owntransit" "$alias_path"; fi
+if test -n "$previous_target" && test -L "$normal_alias" && test "$(stat -f %u "$normal_alias")" = "$uid" && test "$(readlink "$normal_alias")" = "$previous_target"; then
+  alias_stage=$normal_alias.$$.new
+  test ! -e "$alias_stage" && test ! -L "$alias_stage" || fail 'normal command staging name exists'
+  ln -s "$target/owntransit" "$alias_stage"
+  mv -- "$alias_stage" "$normal_alias"
+fi
 if test ! -e "$normal_alias" && test ! -L "$normal_alias"; then ln -s "$target/owntransit" "$normal_alias"; fi
 command_path=$alias_path
 if owned_alias "$normal_alias"; then command_path=$normal_alias; fi
 printf '%s\n' 'Installed. Existing pairing and SSH settings are unchanged.'
 printf 'Next: '; quote "$command_path"; printf ' pair setup\n'
+printf 'Another tunnel: '; quote "$command_path"; printf ' pair setup --tunnel office\n'
 printf 'Uninstall (retains pairing): sh '; quote "$target/install-macos.sh"; printf ' --uninstall\n'
 }
 main "$@"

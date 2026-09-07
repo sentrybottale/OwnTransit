@@ -1,5 +1,25 @@
 # OwnTransit security policy
 
+## 0.3.0 named tunnel isolation
+
+Named tunnels reuse the one-to-one pairing profile. Multiple independently
+authorized receiver instances may run beside the same SSH server, all with the
+same build-fixed loopback target. They do not share issuer or client keys. The
+relay sees independent opaque receiver/route IDs; a local name grants no trust.
+
+Names are bounded lowercase path components; traversal, shell/systemd tokens
+and ambiguous `--tunnel`/`--state` selection are rejected. `default` retains the
+original state path. Named state roots are private and reject symlink traversal.
+List/status output describes local pairing state, not peer availability.
+
+Receiver setup derives an instance unit from the installed root-protected
+template and refuses a modified or overridden unit. Package changes take an
+exclusive maintenance lock; setup/restart shares it. Named units keep the same
+confinement, outbound-only worker and fixed SSH dial. Package removal stops
+only recognized units and retains all pairing/alarm state. Root compromise of
+an endpoint still compromises that host; per-tunnel state is not a sandbox
+against a hostile host administrator.
+
 ## 0.2.0 installation and diagnostic scope
 
 The receiver-owned 0.2.0 release retains its existing signed capsule format and

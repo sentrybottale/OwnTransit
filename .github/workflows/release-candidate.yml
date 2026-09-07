@@ -144,6 +144,13 @@ jobs:
             --volume="$PWD:/src:ro" \
             docker.io/library/golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514 \
             sh -ceu 'install -m 0755 /src/scripts/development/support/systemctl /usr/bin/systemctl; sh /src/scripts/development/test-install-linux.sh'
+      - name: Verify scoped named receiver units in a disposable container
+        run: |
+          go test -mod=readonly -c -o "$RUNNER_TEMP/named-services.test" ./internal/paircmd
+          docker run --rm --network=none --cpus=2 --memory=512m \
+            --volume="$RUNNER_TEMP:/fixture:ro" --volume="$PWD:/src:ro" \
+            docker.io/library/golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514 \
+            sh -ceu 'mkdir -p /usr/local/libexec/owntransit-pair-service-check; install -m 0755 /fixture/named-services.test /usr/local/libexec/owntransit-pair-service-check/command.test; install -m 0755 /src/scripts/development/support/systemctl /usr/bin/systemctl; touch /owntransit-pair-service-fixture; /usr/local/libexec/owntransit-pair-service-check/command.test -test.run TestNamedReceiverServices -test.v'
       - name: Test managed VPS cutover and selected-site rollback
         run: |
           go test -mod=readonly -c -o "$RUNNER_TEMP/relay-setup.test" ./internal/relaysetup

@@ -1,5 +1,20 @@
 # OwnTransit v1 shipping plan
 
+## Receiver-owned 0.3.0 named tunnels
+
+0.3.0 extends the bounded receiver-owned release contract below with named
+client and receiver tunnels. Multiple clients on one physical SSH server use
+independent receiver instances with the existing one-peer binding. No wire
+profile, cryptographic primitive or fixed destination changes. Existing default
+pairings remain selected by `default`; explicit state paths remain compatible.
+
+Additional checks cover separate state/service selection, multiple routes on
+one relay, two clients reaching the same SSH fixture, alarm isolation, crossed
+inner-peer rejection, instance unit ownership and named-service package
+upgrade/removal. The same signing key, nine-asset distribution shape and brief
+final verification apply. Extended soak and new-machine qualification are not
+added. Published 0.2.0 artifacts and tags remain immutable.
+
 ## Receiver-owned 0.2.0 release scope
 
 0.2.0 is the supported receiver-owned release line, separate from the historical

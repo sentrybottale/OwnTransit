@@ -1,5 +1,24 @@
 # Receiver-owned pairing and circuit breaker
 
+## Named tunnels in 0.3.0
+
+The receiving identity belongs to a tunnel instance. One physical SSH server
+can run several instances, each paired to one independently keyed client. One
+public relay can carry all of those routes, and a client computer may retain
+several named pairings. Every instance still targets literal `tcp4 127.0.0.1:22`.
+
+`--tunnel NAME` selects only a local state directory and, on a receiver, a local
+service. The name is never sent as authentication evidence or a target choice.
+The original unnamed state remains `default`. Named tunnels use the same
+authenticated wire inputs and state schemas; 0.2.0 peers remain compatible with
+those identities through their existing explicit `--state` interface. No wire
+or cryptographic migration is introduced by a local label.
+
+Each receiving instance keeps its own issuer, operational credentials, paired
+client, renewal state and terminal alarm. Alarming or explicitly rebuilding one
+instance does not authorize, erase or unlock another. Root compromise of the
+receiving machine remains a host-wide compromise outside this boundary.
+
 Status: implemented in the 0.1.1 development source, with integrated SSH tests.
 See [the command walkthrough](PAIRING_INSTALL.md). It is not available in the
 immutable 0.1.0 downloads. Local agent review and repository tests are not an
