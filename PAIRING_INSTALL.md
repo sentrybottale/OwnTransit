@@ -1,4 +1,4 @@
-# Install and operate OwnTransit 0.2.0
+# Install and operate OwnTransit 0.3.0
 
 This is the signed receiver-owned release line, installed separately from the
 legacy 0.1.0 package/qualification profile. Keep independent recovery access.
@@ -10,14 +10,14 @@ restrict which SSH account you authenticate to on the receiving machine.
 
 ## Non-purging removal
 
-The 0.2.0 Linux installer accepts the installed local role followed by
+The 0.3.0 Linux installer accepts the installed local role followed by
 `--uninstall`, for example:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-linux.sh | sudo sh -s -- client --uninstall
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.3.0/install-preview-linux.sh | sudo sh -s -- client --uninstall
 ```
 
-Use `connector` or `relay` on those machines. It removes only recognized 0.2.0
+Use `connector` or `relay` on those machines. It removes only recognized 0.3.0
 software; pairing and SSH settings remain. Relay keys, disabled unit
 configuration, website routing and cached rollback images are intentionally
 retained. Explicit reinstall/setup reuses that configuration. Modified units,
@@ -26,7 +26,7 @@ The Mac installer prints its offline uninstall command; see the Mac section.
 
 ## 1. Install and start the relay
 
-The 0.1.8 relay timer fix is retained in 0.2.0. Compatible clients, receivers and
+The 0.1.8 relay timer fix is retained in 0.3.0. Compatible clients, receivers and
 pairing keys remain valid; do not re-pair. The 0.1.7 terminal-input fixes and
 0.1.6 managed-container fixes are retained.
 
@@ -38,7 +38,7 @@ or unrelated container. Old images remain available for rollback.
 On Linux amd64 or arm64:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-linux.sh | sudo sh -s -- relay
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.3.0/install-preview-linux.sh | sudo sh -s -- relay
 ```
 
 Enter the full public URL at the visible prompt, such as
@@ -48,7 +48,7 @@ hostname selects exactly which HTTPS site receives the route.
 You can also pass the URL in the same installation command:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-linux.sh | sudo sh -s -- relay wss://relay.example/connects
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.3.0/install-preview-linux.sh | sudo sh -s -- relay wss://relay.example/connects
 ```
 
 Setup detects Docker or Podman, installs Podman through a supported package
@@ -83,7 +83,7 @@ Keep the relay running before setting up either endpoint.
 
 ### Upgrading instead of pairing again
 
-Run the same 0.2.0 installer for the local role. For the relay, use its existing
+Run the same 0.3.0 installer for the local role. For the relay, use its existing
 public URL: setup recognizes a known managed service, preserves its keys and
 website routing, restarts the new immutable image and verifies the running image
 and public protocol response. Failed cutover restores the old unit, selection
@@ -103,7 +103,7 @@ These commands work on both supported Linux architectures, including a 64-bit
 Raspberry Pi:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-linux.sh | sudo sh -s -- connector
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.3.0/install-preview-linux.sh | sudo sh -s -- connector
 sudo owntransit-connector-preview pair setup
 ```
 
@@ -147,7 +147,7 @@ registration automatically; you do not paste that code back into the receiver.
 ## 4. Install and pair a Linux client
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-linux.sh | sudo sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.3.0/install-preview-linux.sh | sudo sh -s -- client
 owntransit-preview pair setup
 ```
 
@@ -166,18 +166,18 @@ owntransit-preview pair resume
 Install without sudo:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-macos.sh | sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.3.0/install-preview-macos.sh | sh -s -- client
 ```
 
 Use the exact setup command printed by installation. The per-user software lives
-under `~/Library/Application Support/OwnTransitSoftware/0.2.0`; command aliases
+under `~/Library/Application Support/OwnTransitSoftware/0.3.0`; command aliases
 are under `~/.local/bin`. The printed absolute path works without changing PATH.
 Existing legacy/manual binaries elsewhere are preserved, not overwritten.
 
 For an independently verified manual handoff:
 
-Download `owntransit-preview-0.2.0-darwin-arm64.tar.gz` from the
-[0.2.0 release](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.2.0).
+Download `owntransit-preview-0.3.0-darwin-arm64.tar.gz` from the
+[0.3.0 release](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.3.0).
 Verify its digest against the signed `DEVELOPMENT-SHA256SUMS`, then extract it.
 The archive contains the client, capsule identity, checksums and license notices.
 It does not alter your Mac or require Apple notarization.
@@ -249,17 +249,76 @@ keys/accounts, retract delivered bytes or terminate SSH-started jobs.
 The current terminal-alarm policy uses strict local schema v2. Earlier
 clearable-lock development state is rejected rather than silently converted.
 
+## Several tunnels through the same relay
+
+For multiple clients on one private SSH machine, set up one receiver tunnel per
+client. The same flow works across several private SSH machines:
+
+```sh
+sudo owntransit-connector pair setup --tunnel laptop
+sudo owntransit-connector pair setup --tunnel desktop
+```
+
+Use your relay URL and register each public receiver ID separately on the VPS:
+
+```sh
+sudo owntransit-relay register RECEIVER_A_ID
+sudo owntransit-relay register RECEIVER_B_ID
+```
+
+Registering the second receiver does not replace the first route. Give each
+client the registration code and private receiver code for its intended route.
+Never share the private receiver code with the relay.
+
+On each client, select a local tunnel name when pairing. One client can have
+several names for several receiving machines:
+
+```sh
+owntransit pair setup --tunnel office --relay wss://relay.example/connects
+owntransit pair setup --tunnel home --relay wss://relay.example/connects
+```
+
+Use your real relay URL and the actual executable path from installation.
+Each setup prints the SSH command with its `--tunnel` included. The same selector
+must be present for `pair proxy`, `pair resume`, `pair status` and `pair alarm`.
+Names are local labels and need not match between the two endpoints. For example:
+
+```sh
+owntransit pair list
+owntransit pair status --tunnel office
+ssh -o 'ProxyCommand=owntransit pair proxy --tunnel office' USER@SSH_ALIAS
+```
+
+An alarm affects the selected pairing and its active connections. All pairings
+still share the relay's network, capacity and outage exposure. The current
+defaults cap each route at four active carriers and the relay at 64; global
+connection and pending-work caps can become limiting sooner.
+
+Each named receiver uses a separate service such as
+`owntransit-connector-pair@laptop.service`. It starts automatically on reboot.
+Restart one with `sudo owntransit-connector pair restart --tunnel laptop`.
+For package upgrades, follow the printed restart commands for the installed
+tunnels. Removal stops/removes all owned receiver units but retains their state.
+
+To add another client, choose another receiver tunnel name. Reusing an existing
+name for setup deliberately retires that tunnel's old pairing after confirmation.
+The original unnamed receiver remains `default`; selecting `--tunnel default`
+uses its original state/service. There is one authorized client identity per
+tunnel, with multiple independent receiver tunnels supported on one SSH host.
+
 ## What installation changes
 
-Only the requested role is installed below `/opt/owntransit-preview/0.2.0`,
+Only the requested role is installed below `/opt/owntransit-preview/0.3.0`,
 with a separately named `*-preview` alias. An exact reinstall is idempotent;
 an unmanaged conflicting file is not overwritten. The connector installer
 creates a disabled service; only your explicit `pair setup` enables it.
 
-The default receiver state is `/var/lib/owntransit-pair`. Client state is
-`owntransit-pair` below the OS user configuration directory. Advanced
-`pair init`/`pair serve`/client commands accept `--state ABSOLUTE_PATH`;
-the installed receiver service deliberately uses its fixed default state.
+The default receiver state is `/var/lib/owntransit-pair`. Named receiver state
+is `/var/lib/owntransit-tunnels/NAME`. On clients, both directories are beneath
+the OS user configuration directory. Names use 1–32 lowercase letters, digits
+or hyphens, starting with a letter; `default` selects the original state and
+`all` is reserved. Use either `--tunnel NAME` or `--state ABSOLUTE_PATH`, never
+both. Advanced receiver `pair init`/`pair serve` still support custom state paths.
 
 The old 0.1.0 install and credentials are preserved. Do not use its installer
 or enrollment workflow for this preview. Relay setup can explicitly migrate an identified older relay and configure

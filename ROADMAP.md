@@ -1,5 +1,30 @@
 # OwnTransit roadmap
 
+## 0.3.0 — independent named tunnels
+
+The unit is one independently authorized client–receiver tunnel. Several
+tunnels can share one relay, one client computer, or one receiving SSH machine.
+Each receiving tunnel has its own authority, state, service and terminal alarm;
+all receiver instances keep the same fixed local SSH destination.
+
+- Add local `--tunnel NAME` selection, `pair list`, and receiver `pair restart`.
+  The original unnamed pairing remains `default`; existing `--state` usage stays
+  valid. Labels never become network identities or target selectors.
+- Enable a separate owned systemd unit for each receiving tunnel, preserving
+  the installed service confinement and independent reboot/restart behavior.
+- Upgrade/remove only recognized instance units and serialize package mutation
+  against setup/restart. Preserve every tunnel's identity through software changes.
+- Exercise shared-relay traffic, multiple clients reaching the same SSH fixture,
+  isolated alarms, crossed-peer rejection, selector/path validation and service
+  ownership. Use the existing bounded release checks and signing path.
+
+## Remaining product work
+
+- Optional P2P with relay fallback to reduce relay bandwidth.
+- apt/Homebrew distribution repositories and packaging expansion.
+- Broader shared-relay fairness, overload, restart/upgrade and capacity coverage.
+- Independent security review and build reproduction as additional assurance.
+
 ## 0.2.0 — bounded stabilization
 
 - Native one-command Mac client installation, repeatable local upgrades and
@@ -14,8 +39,8 @@
   existing-key signed artifacts and one brief exact-build end-to-end check.
   No hour-long soak, new machines or additional signing ceremony.
 
-P2P, multiple profiles/clients and apt/Homebrew distribution expansion remain
-later work. Publishing 0.2.0 does not claim independent security certification.
+Named tunnels are addressed by 0.3.0 above. Publishing 0.2.0 does not claim
+independent security certification.
 
 ## 0.1.8 — sustained-session regression
 
@@ -38,7 +63,7 @@ path and selected state. Existing pairings and all authentication remain intact.
 The three fix groups below are implemented in candidate source and exercised
 by focused regression tests. Signed distribution and exact-artifact checks
 remain required for publication; this is not a stable-release qualification or
-independent security assessment. Multi-tunnel profiles remain a later feature.
+independent security assessment. Named tunnels are now covered by 0.3.0 above.
 
 ## 0.1.5 — first-time client setup guidance
 
@@ -110,25 +135,30 @@ independent security assessment. Multi-tunnel profiles remain a later feature.
 - Test fresh install, rerun, previous-version upgrade and failed-cutover
   rollback without requiring new physical machines.
 
-## Feature TODO — multiple independent tunnels through one relay
+## Multiple independent tunnels through one relay
 
-Feasible as an incremental feature, after the admission/DoS and WebSocket-bound
-fixes above. The relay already indexes advertisements, registrations, waiting
-legs and active quotas by receiver/route; that is implementation groundwork,
-not a qualified multi-tunnel product claim or a published capacity guarantee.
+The existing relay and client `--state` selector support several independent
+pairings through one public URL. A real-WebSocket/dual-mTLS/SSH fixture exercises
+two independently issued routes concurrently, registration while another route
+is live, isolation of a receiver alarm, and rejection of crossed inner peers
+before local SSH. The [walkthrough](PAIRING_INSTALL.md#several-tunnels-through-the-same-relay)
+uses existing commands; no binary or protocol upgrade is needed for that flow.
 
-- First milestone: one public relay instance and endpoint serve several
+Named client/receiver selection is implemented for 0.3.0. Broader relay
+restart/fairness/load coverage and capacity guarantees remain future work:
+
+- Implemented basic capability: one public relay instance and endpoint serve several
   independent client–receiver pairings, including simultaneous SSH sessions.
   Each pairing retains separate endpoint keys, receiver authority, pins,
   one-use setup codes, policy and terminal alarm state. No new listener,
   arbitrary target, relay-held issuer or shared endpoint master key is added.
-- Provide named, locally selected client profiles so one client computer can
+- Named, locally selected client tunnels let one client computer
   reach several receivers without overwriting another pairing. Setup, status,
   proxy selection, replacement and alarm operations must identify their scope
   clearly and reject ambiguous selection. Names are local labels, not relay
   identity evidence or a way to select an arbitrary SSH destination.
-- Register additional public receiver IDs without replacing existing routes;
-  preserve all independent pairings through relay upgrade and restart. Keep
+- Registering additional public receiver IDs preserves existing routes. Extend
+  multi-route tests to relay upgrade and restart. Keep
   administrative metadata local rather than exposing a public route directory.
 - Enforce bounded global and per-route resource use on an honestly operated
   relay; exercise fairness so one busy or stalled route cannot trivially consume
@@ -138,10 +168,9 @@ not a qualified multi-tunnel product claim or a published capacity guarantee.
   substitution rejection, overload containment, restart/re-registration, and
   isolation of one pairing's alarm/replacement from the others. Include an
   end-to-end walkthrough with multiple named profiles, not just map-level tests.
-- Keep multiple clients paired to the same receiver as a separate follow-up.
-  The current profile authorizes one client per receiver; extending it needs
-  explicit per-client enrollment, revocation/lease semantics and a versioned
-  state/protocol compatibility design, not removal of the single-peer check.
+- Multiple client machines reach one SSH server using distinct named receiver
+  instances on that host. Each instance retains the existing one-peer binding;
+  no shared multi-client identity or new authentication protocol is required.
 
 ## 0.1.1 receiver-owned integration
 

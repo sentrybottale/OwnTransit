@@ -41,6 +41,7 @@ type integrated struct {
 	registration           pairrelay.Registration
 	dials                  atomic.Int32
 	sshSigner              ssh.Signer
+	sshTarget              func(net.Conn)
 }
 
 func privatePath(t *testing.T, name string) string {
@@ -99,14 +100,21 @@ func newIntegratedWithLimits(t *testing.T, limits pairrelay.Limits) *integrated 
 	httpServer := httptest.NewServer(r)
 	t.Cleanup(httpServer.Close)
 	t.Cleanup(func() { r.Close() })
-	f := &integrated{relay: r, serverPath: privatePath(t, "receiver"), clientPath: privatePath(t, "client")}
-	f.dial = func(ctx context.Context, _ string) (net.Conn, error) {
+	dial := func(ctx context.Context, _ string) (net.Conn, error) {
 		ws, _, err := websocket.Dial(ctx, httpServer.URL+pairrelay.Path, &websocket.DialOptions{Subprotocols: []string{pairrelay.WebSocketSubprotocol}})
 		if err != nil {
 			return nil, err
 		}
 		return transport.WrapWebSocket(ctx, ws, 2<<20)
 	}
+	return newRouteOnRelay(t, r, dial)
+}
+
+// Each route has independent receiver authority, client state and SSH identity,
+// even when several fixtures share the same public relay and WebSocket address.
+func newRouteOnRelay(t *testing.T, r *pairrelay.Relay, dial pairrelay.DialFunc) *integrated {
+	t.Helper()
+	f := &integrated{relay: r, dial: dial, serverPath: privatePath(t, "receiver"), clientPath: privatePath(t, "client")}
 	public, err := pairrelay.NewPublicClient("wss://relay.example/connects", f.dial)
 	if err != nil {
 		t.Fatal(err)
@@ -174,7 +182,11 @@ func (f *integrated) start(t *testing.T) (context.CancelFunc, <-chan error) {
 				}
 				f.dials.Add(1)
 				local, target := net.Pipe()
-				go f.sshServer(target)
+				if f.sshTarget != nil {
+					go f.sshTarget(target)
+				} else {
+					go f.sshServer(target)
+				}
 				return local, nil
 			})
 		})

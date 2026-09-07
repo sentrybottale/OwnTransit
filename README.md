@@ -23,9 +23,9 @@ It can observe addresses, timing and traffic sizes, or deny service. It must
 not read the inner stream, impersonate an endpoint accepted by its peer, or
 choose where the receiver sends traffic.
 
-## Install 0.2.0
+## Install 0.3.0
 
-0.2.0 is the signed receiver-owned release line, separate from the older 0.1.0
+0.3.0 is the signed receiver-owned release line, separate from the older 0.1.0
 package/qualification profile. Linux amd64/x86_64 and arm64/aarch64 use the same
 command. Existing preview filenames and aliases remain for compatibility;
 normal command names are added where available. Follow the command printed by
@@ -34,19 +34,19 @@ the installer if a legacy name conflicts. No unrelated command is overwritten.
 First, on the public VPS (installation starts relay setup):
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-linux.sh | sudo sh -s -- relay
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.3.0/install-preview-linux.sh | sudo sh -s -- relay
 ```
 
 Then install the package on the private SSH server:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-linux.sh | sudo sh -s -- connector
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.3.0/install-preview-linux.sh | sudo sh -s -- connector
 ```
 
 On a Linux client:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-linux.sh | sudo sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.3.0/install-preview-linux.sh | sudo sh -s -- client
 ```
 
 For a new pairing, follow **Pair and connect** below once both packages are
@@ -68,7 +68,7 @@ relay and any route changed by setup. Start the relay before endpoint setup.
 On an Apple-silicon Mac, install the client **without sudo**:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-macos.sh | sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.3.0/install-preview-macos.sh | sh -s -- client
 ```
 
 The Mac installer prints the exact setup command, normally
@@ -83,10 +83,10 @@ macOS use and recovery. **Do not use the old 0.1.0 curl command for this flow.**
 
 ## Upgrade without new pairing codes
 
-0.2.0 includes the 0.1.8 fix for the relay timer that closed active tunnels.
+0.3.0 includes the 0.1.8 fix for the relay timer that closed active tunnels.
 Endpoint authentication and wire compatibility are unchanged.
 
-Use the same 0.2.0 installer above for each installed role. It preserves pairing
+Use the same 0.3.0 installer above for each installed role. It preserves pairing
 state and accepts known 0.1.1/0.1.2/0.1.3/0.1.5/0.1.6/0.1.7/0.1.8 preview packages; stable 0.1.0 remains
 separate. On the relay, supply the existing URL. Managed upgrade restarts onto
 the new image, verifies it and the public route, and rolls back on failure;
@@ -109,14 +109,14 @@ binaries are not overwritten or selected silently.
 
 ## Uninstall without deleting pairing state
 
-For Linux 0.2.0, use the same installer with the local role and `--uninstall`:
+For Linux 0.3.0, use the same installer with the local role and `--uninstall`:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-linux.sh | sudo sh -s -- client --uninstall
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.3.0/install-preview-linux.sh | sudo sh -s -- client --uninstall
 ```
 
 Replace `client` with `connector` or `relay` as appropriate. Upgrade older
-packages to 0.2.0 first. Receiver removal stops/disables its service. Relay
+packages to 0.3.0 first. Receiver removal stops/disables its service. Relay
 removal disables its verified managed unit and removes the stopped container;
 its keys, disabled unit configuration, website route and rollback images are
 retained for explicit reinstall/setup. Modified/unrecognized files are not
@@ -125,7 +125,7 @@ silently removed. SSH configuration and pairing state are never purged.
 On Mac, use the installer's printed uninstall command, normally:
 
 ```sh
-sh "$HOME/Library/Application Support/OwnTransitSoftware/0.2.0/install-macos.sh" --uninstall
+sh "$HOME/Library/Application Support/OwnTransitSoftware/0.3.0/install-macos.sh" --uninstall
 ```
 
 Reinstalling restores software without requiring new pairing codes.
@@ -197,9 +197,67 @@ Normal SSH options, including `-i` and `-L`, remain yours. SCP can use the same
 ProxyCommand. OwnTransit does not create an SSH alias, choose your SSH key or
 change your login policy.
 
-The current pairing profile supports one client per receiver. See the
+Each tunnel pairs one client identity with one receiver identity. See the
 [full walkthrough](PAIRING_INSTALL.md) for custom state paths, interrupted
 pairing, SCP syntax and restart instructions.
+
+## More than one tunnel
+
+Named tunnel commands require the 0.3.0 client/connector. Existing compatible
+relays can carry them without new relay configuration or pairing migration.
+
+One VPS relay and public URL can carry several independent client–receiver
+pairings. Register each receiver's public ID on the same relay. Each pairing
+keeps its own keys, receiver authority and alarm state.
+
+To let several client computers access the same SSH machine, create a named
+receiver tunnel for each client on that machine:
+
+```sh
+sudo owntransit-connector pair setup --tunnel laptop
+sudo owntransit-connector pair setup --tunnel desktop
+```
+
+Register both public receiver IDs on your relay. Give each client only the codes
+for its own tunnel. On each client, pair and select a local name:
+
+```sh
+owntransit pair setup --tunnel office
+ssh -o 'ProxyCommand=owntransit pair proxy --tunnel office' USER@SSH_ALIAS
+```
+
+One client can also create several named tunnels to different SSH machines.
+Names are local labels: the client and receiver do not have to use the same
+name. Use the executable path printed by installation if it is not on PATH.
+
+List local tunnels or select one to inspect, restart or alarm:
+
+```sh
+owntransit pair list
+owntransit pair status --tunnel office
+sudo owntransit-connector pair list
+sudo owntransit-connector pair restart --tunnel laptop
+```
+
+Use `pair alarm --tunnel NAME` on the desired endpoint to permanently disable
+that individual tunnel. Every receiver tunnel has separate keys, state and a
+reboot-enabled service, all delivering to the same local SSH port. Existing
+unnamed installations remain the `default` tunnel; `--state` is still supported
+as an alternative selector.
+
+After reinstalling a receiver package, use `pair list` and restart each retained
+named tunnel that you want to bring back. Software installation does not
+silently enable previously removed services.
+
+Multiple SSH/SCP connections can also share one pairing. Current admission
+ceilings are four active carrier connections per pairing and 64 across the
+relay; other connection/resource limits still apply. These are limits, not a
+throughput or simultaneous-capacity guarantee. One SSH connection may itself
+carry several OpenSSH channels.
+
+An individual pairing still authorizes one client identity. A physical SSH
+server accepts multiple client computers through separate named pairings, so
+their keys and alarms remain independent.
 
 ## Encryption and authorization
 
@@ -251,7 +309,7 @@ guarantee that SSH-started jobs stop.
 
 ## Scope and current limits
 
-0.2.0 uses bounded source/security, fast timer/reconnect/concurrency and
+0.3.0 uses bounded source/security, fast timer/reconnect/concurrency and
 alarm/rebuild fixtures, isolated installer checks, authenticated artifacts and
 a brief final end-to-end check. **Extended soak testing, pristine-host
 certification and independent security assessment are not claimed.** Historical

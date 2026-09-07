@@ -42,7 +42,7 @@ test -d "$bundle" && test ! -L "$bundle" || fail 'bundle must be a non-symlink d
 resolved=$(CDPATH= cd -P -- "$bundle" && pwd) || fail 'cannot resolve bundle'
 test "$resolved" = "$bundle" || fail 'bundle path must be canonical without symlink components'
 
-for command_name in awk basename cat chmod chown cmp dirname find id install ln mktemp mv readlink rm sed sha256sum sort stat tr uname wc; do
+for command_name in awk basename cat chmod chown cmp dirname find grep id install ln mktemp mv readlink rm sed sha256sum sort stat tr uname wc; do
   command -v "$command_name" >/dev/null 2>&1 || fail "required command is unavailable: $command_name"
 done
 
@@ -90,7 +90,7 @@ for name in $expected_files; do
 done
 test "$0" = "$bundle/install-linux.sh" || fail 'installer must run from its exact absolute bundle path'
 
-expected_capsule=$(printf 'schema=owntransit.development-capsule.v1\nversion=0.2.0\nos=linux\narch=%s' "$arch")
+expected_capsule=$(printf 'schema=owntransit.development-capsule.v1\nversion=0.3.0\nos=linux\narch=%s' "$arch")
 test "$(cat "$bundle/CAPSULE")" = "$expected_capsule" || fail 'capsule identity does not match this host'
 
 test "$(wc -l < "$bundle/SHA256SUMS" | tr -d '[:space:]')" = 8 || fail 'SHA256SUMS must contain eight records'
@@ -118,9 +118,56 @@ test "$listed" = "$expected_listed" || fail 'SHA256SUMS member set is not exact'
 
 if test "$role" = connector; then
   test -d /run/systemd/system && test -x /usr/bin/systemctl || fail 'connector preview requires systemd'
+  command -v flock >/dev/null 2>&1 || fail 'connector service maintenance requires flock'
+  for ancestor in / /var /var/lib; do
+    test -d "$ancestor" && test ! -L "$ancestor" || fail 'unsafe connector maintenance ancestor'
+    require_protected "$ancestor"
+  done
+  manager=/var/lib/owntransit-connector-manager
+  if test ! -e "$manager" && test ! -L "$manager"; then install -d -o root -g root -m 0700 "$manager"; fi
+  test -d "$manager" && test ! -L "$manager" && test "$(stat -c %u:%g:%a "$manager")" = 0:0:700 || fail 'unsafe connector maintenance directory'
+  if test ! -e "$manager/package.lock" && test ! -L "$manager/package.lock"; then
+    (set -C; : > "$manager/package.lock") || fail 'maintenance lock creation raced; retry'
+  fi
+  test -f "$manager/package.lock" && test ! -L "$manager/package.lock" && test "$(stat -c %u:%g:%a:%h:%s "$manager/package.lock")" = 0:0:600:1:0 || fail 'unsafe connector maintenance lock'
+  exec 9<> "$manager/package.lock"
+  flock -n 9 || fail 'a connector setup or package operation is active; retry when it completes'
 fi
 
-prefix=/opt/owntransit-preview/0.2.0
+named_units=
+collect_named_units() {
+  for instance in /etc/systemd/system/owntransit-connector-pair@*.service; do
+    if test ! -e "$instance" && test ! -L "$instance"; then continue; fi
+    name=${instance#/etc/systemd/system/owntransit-connector-pair@}
+    name=${name%.service}
+    test "${#name}" -le 32 && test "$name" != default && test "$name" != all || fail 'unrecognized named connector unit'
+    printf '%s\n' "$name" | grep -Eq '^[a-z][a-z0-9-]*$' || fail 'invalid named connector unit'
+    test -f "$instance" && test ! -L "$instance" && test "$(stat -c %u:%g:%a:%h "$instance")" = 0:0:644:1 || fail 'unsafe named connector unit'
+    printf '%s\n' "$instance"
+  done
+}
+named_unit_bytes() {
+  name=${1#/etc/systemd/system/owntransit-connector-pair@}
+  name=${name%.service}
+  sed "s@/var/lib/owntransit-pair@/var/lib/owntransit-tunnels/$name@g" "$2"
+}
+no_unit_overrides() {
+  drops=$(/usr/bin/systemctl show "${1##*/}" --property=DropInPaths --value) || fail 'cannot inspect service overrides'
+  test -z "$drops" || fail 'connector service has overrides; automatic modification refused'
+}
+normalize_previous_unit() {
+  sed -e 's/0\.1\.[1235678]/0.3.0/g' \
+    -e 's/0\.2\.0/0.3.0/g' \
+    -e '/^Type=simple$/c\
+Type=notify\
+NotifyAccess=main\
+TimeoutStartSec=30s' \
+    -e 's/^CapabilityBoundingSet=CAP_SETUID CAP_SETGID$/CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_KILL/' \
+    -e 's/^AmbientCapabilities=$/AmbientCapabilities=CAP_SETUID/' "$1"
+}
+if test "$role" = connector; then named_units=$(collect_named_units); fi
+
+prefix=/opt/owntransit-preview/0.3.0
 case "$role" in
   client) binary=owntransit; alias=owntransit-preview ;;
   connector) binary=owntransit-connector; alias=owntransit-connector-preview ;;
@@ -135,7 +182,7 @@ if test -e "$alias_path" || test -L "$alias_path"; then
   previous_alias=$(readlink "$alias_path")
   case "$previous_alias" in
     "$alias_target") ;;
-    "/opt/owntransit-preview/0.1.1/$role/$binary"|"/opt/owntransit-preview/0.1.2/$role/$binary"|"/opt/owntransit-preview/0.1.3/$role/$binary"|"/opt/owntransit-preview/0.1.5/$role/$binary"|"/opt/owntransit-preview/0.1.6/$role/$binary"|"/opt/owntransit-preview/0.1.7/$role/$binary"|"/opt/owntransit-preview/0.1.8/$role/$binary")
+    "/opt/owntransit-preview/0.1.1/$role/$binary"|"/opt/owntransit-preview/0.1.2/$role/$binary"|"/opt/owntransit-preview/0.1.3/$role/$binary"|"/opt/owntransit-preview/0.1.5/$role/$binary"|"/opt/owntransit-preview/0.1.6/$role/$binary"|"/opt/owntransit-preview/0.1.7/$role/$binary"|"/opt/owntransit-preview/0.1.8/$role/$binary"|"/opt/owntransit-preview/0.2.0/$role/$binary")
       test -f "$previous_alias" && test ! -L "$previous_alias" || fail 'unsafe previous preview executable'
       test "$(stat -c %u:%g:%a:%h "$previous_alias")" = 0:0:755:1 || fail 'previous preview executable metadata differs'
       ;;
@@ -178,8 +225,15 @@ if test "$action" = uninstall; then
     test -f "$prefix/$role/service.template" && test ! -L "$prefix/$role/service.template" || fail 'unit receipt missing'
     require_protected "$prefix/$role/service.template"
     cmp -s "$unit" "$prefix/$role/service.template" || fail 'connector unit was modified; uninstall refused'
-    drops=$(/usr/bin/systemctl show owntransit-connector-pair.service --property=DropInPaths --value)
-    test -z "$drops" || fail 'connector service has overrides; uninstall refused'
+    no_unit_overrides "$unit"
+    for instance in $named_units; do
+      named_unit_bytes "$instance" "$prefix/$role/service.template" | cmp -s "$instance" - || fail 'named connector unit was modified; uninstall refused'
+      no_unit_overrides "$instance"
+    done
+    for instance in $named_units; do
+      /usr/bin/systemctl disable --now "${instance##*/}"
+      rm -- "$instance"
+    done
     /usr/bin/systemctl disable --now owntransit-connector-pair.service
     rm -- "$unit"
     /usr/bin/systemctl daemon-reload
@@ -264,7 +318,7 @@ if test "$role" = connector; then
   trap cleanup_unit EXIT HUP INT TERM
   cat > "$unit_stage" <<EOF
 [Unit]
-Description=OwnTransit 0.2.0 preview receiver pairing broker
+Description=OwnTransit 0.3.0 preview receiver pairing broker
 After=network-online.target
 Wants=network-online.target
 ConditionPathIsDirectory=/var/lib/owntransit-pair
@@ -303,6 +357,13 @@ EOF
   chmod 0644 "$unit_stage"
   chown root:root "$unit_stage"
   unit=/etc/systemd/system/owntransit-connector-pair.service
+  instance_stage=$(mktemp /run/owntransit-connector-instance.XXXXXX) || fail 'cannot stage named connector unit'
+  cleanup_unit() { rm -f -- "$unit_stage" "$instance_stage"; }
+  for instance in $named_units; do
+    named_unit_bytes "$instance" "$unit_stage" > "$instance_stage"
+    normalize_previous_unit "$instance" | cmp -s "$instance_stage" - || fail 'refusing to overwrite a modified named connector unit'
+    no_unit_overrides "$instance"
+  done
   if test -e "$unit" || test -L "$unit"; then
     test -f "$unit" && test ! -L "$unit" || fail 'existing preview unit is unsafe'
     test "$(stat -c %u "$unit"):$(stat -c %g "$unit"):$(stat -c %a "$unit"):$(stat -c %h "$unit")" = 0:0:644:1 || fail 'existing preview unit metadata differs'
@@ -310,14 +371,7 @@ EOF
       # Accept only the exact previous managed template, not a locally edited
       # service. Keep all confinement; retain the broker's intended UID-drop
       # capability and its ability to terminate its different-UID worker.
-      sed -e 's/0\.1\.[1235678]/0.2.0/g' \
-        -e '/^Type=simple$/c\
-Type=notify\
-NotifyAccess=main\
-TimeoutStartSec=30s' \
-        -e 's/^CapabilityBoundingSet=CAP_SETUID CAP_SETGID$/CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_KILL/' \
-        -e 's/^AmbientCapabilities=$/AmbientCapabilities=CAP_SETUID/' \
-        "$unit" | cmp -s "$unit_stage" - || fail 'refusing to overwrite a different preview unit'
+      normalize_previous_unit "$unit" | cmp -s "$unit_stage" - || fail 'refusing to overwrite a different preview unit'
       install -o root -g root -m 0644 "$unit_stage" "$unit"
       /usr/bin/systemctl daemon-reload
     fi
@@ -325,10 +379,17 @@ TimeoutStartSec=30s' \
     install -o root -g root -m 0644 "$unit_stage" "$unit"
     /usr/bin/systemctl daemon-reload
   fi
+  for instance in $named_units; do
+    named_unit_bytes "$instance" "$unit_stage" > "$instance_stage"
+    if ! cmp -s "$instance_stage" "$instance"; then
+      install -o root -g root -m 0644 "$instance_stage" "$instance"
+      /usr/bin/systemctl daemon-reload
+    fi
+  done
   install_exact "$unit_stage" "$prefix/connector/service.template" 644
   cleanup_unit
   trap - EXIT HUP INT TERM
-  printf 'OwnTransit 0.2.0 %s installed for linux/%s.\n' "$role" "$arch"
+  printf 'OwnTransit 0.3.0 %s installed for linux/%s.\n' "$role" "$arch"
   if test -d /var/lib/owntransit-pair; then
     printf '%s\n' 'Pairing retained. Activate the upgrade:'
     printf '%s\n' '  sudo systemctl restart owntransit-connector-pair.service'
@@ -337,13 +398,19 @@ TimeoutStartSec=30s' \
     printf 'Next: sudo %s pair setup\n' "$public_command"
     printf '%s\n' 'Enter your VPS relay URL when asked. Fresh service remains disabled until setup.'
   fi
+  for instance in $named_units; do
+    printf 'Named tunnel upgrade: sudo systemctl try-restart %s\n' "${instance##*/}"
+  done
+  printf 'Add another client tunnel: sudo %s pair setup --tunnel laptop\n' "$public_command"
+  printf 'List local tunnels: sudo %s pair list\n' "$public_command"
 elif test "$role" = client; then
-  printf 'OwnTransit 0.2.0 client installed for linux/%s. Pairing and SSH settings preserved.\n' "$arch"
+  printf 'OwnTransit 0.3.0 client installed for linux/%s. Pairing and SSH settings preserved.\n' "$arch"
   printf 'Next: %s pair setup\n' "$public_command"
   printf '%s\n' 'Then answer its prompts: your relay URL, VPS registration code (otrelay1.), and private SSH-machine code (otpair1.).'
+  printf 'Select another tunnel: %s pair setup --tunnel office\n' "$public_command"
 else
-  printf 'OwnTransit 0.2.0 relay package installed for linux/%s.\n' "$arch"
+  printf 'OwnTransit 0.3.0 relay package installed for linux/%s.\n' "$arch"
   if test "$next" = manual; then printf 'Next: sudo %s setup\n' "$public_command"; else printf '%s\n' 'Starting relay setup now; answer its prompts below.'; fi
   printf '%s\n' 'Use your existing public URL for upgrades; keys and website routing are preserved.'
 fi
-printf 'Uninstall: curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.2.0/install-preview-linux.sh | sudo sh -s -- %s --uninstall\n' "$role"
+printf 'Uninstall: curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.3.0/install-preview-linux.sh | sudo sh -s -- %s --uninstall\n' "$role"
