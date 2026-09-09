@@ -145,7 +145,7 @@ func TestMacInstallerIsolatedLifecycle(t *testing.T) {
 	}
 	write(filepath.Join(assets, top+".tar.gz"), archive.Bytes(), 0600)
 	out := run(true, "client")
-	if !strings.Contains(out, "Next: '") || !strings.Contains(out, "--uninstall") {
+	if !strings.Contains(out, "NEXT — on THIS Mac, without sudo: '") || !strings.Contains(out, "--uninstall") || !strings.Contains(out, "not the public VPS") {
 		t.Fatal("missing actionable commands")
 	}
 	if !strings.Contains(out, "your relay URL and the private receiver code (otpair2.)") || strings.Contains(out, "otrelay1.") {
