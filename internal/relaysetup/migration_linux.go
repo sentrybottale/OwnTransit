@@ -196,6 +196,16 @@ func prepareSetupLocked(ctx context.Context, root *securefs.Root, name, u string
 			}
 		}
 	}
+	if source == nil && p.Kind == "reserved" {
+		parsed, _ := url.Parse(u)
+		route, routeErr := prepareRouteForPort(ctx, parsed.Hostname(), p.Port)
+		if routeErr != nil {
+			return p, nil, routeErr
+		}
+		if route == nil {
+			return p, nil, ErrRoute
+		}
+	}
 	// The token binds the read-only source and the protected local inventory.
 	p.evidence = planDigest(struct {
 		Plan        SetupPlan
@@ -405,7 +415,16 @@ func discoverManual(ctx context.Context, u string, specs []instanceSpec) (*migra
 			}
 			parsed, _ := url.Parse(u)
 			route, err := prepareRouteForPort(ctx, parsed.Hostname(), port)
-			if err != nil || route == nil || !route.edit.Reused {
+			if errors.Is(err, ErrRoutePortConflict) {
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			if route == nil {
+				return nil, ErrRoute
+			}
+			if !route.edit.Reused {
 				continue
 			}
 			s := legacySpec(label, u, port)

@@ -3,6 +3,8 @@
 package relaysetup
 
 import (
+	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,7 +23,15 @@ func TestRealProviderConfigurationSyntax(t *testing.T) {
 	if out, err := exec.Command("/usr/bin/openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=relay.example", "-keyout", key, "-out", cert).CombinedOutput(); err != nil {
 		t.Fatalf("fixture certificate: %v %s", err, out)
 	}
-	nginx := []byte("events {}\nhttp {\nserver { listen 443 ssl; server_name other.example; ssl_certificate " + cert + "; ssl_certificate_key " + key + "; location / { return 200 other; } }\nserver { listen 443 ssl; server_name relay.example; ssl_certificate " + cert + "; ssl_certificate_key " + key + "; location / { return 200 selected; } }\n}\n")
+	geo := []byte("192.0.2.0/24 1;\n2001:db8::/32 1;\n")
+	geoPath := filepath.Join(dir, "country-allow.conf")
+	if err := os.WriteFile(geoPath, geo, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NginxRoute(geo, "relay.example"); !errors.Is(err, ErrNoSite) {
+		t.Fatal("geo include was treated as a malformed site")
+	}
+	nginx := []byte("events {}\nhttp {\nlog_format json escape=json '{' '\"method\":\"$request_method\"' '}';\ngeo $country_allowed { default 0; include " + geoPath + "; }\nserver { listen 443 ssl; server_name other.example; ssl_certificate " + cert + "; ssl_certificate_key " + key + "; location / { return 200 other; } }\nserver { listen 443 ssl; server_name www.relay.example; ssl_certificate " + cert + "; ssl_certificate_key " + key + "; return 301 https://relay.example$request_uri; }\nserver { listen 443 ssl; server_name relay.example alias.relay.example; ssl_certificate " + cert + "; ssl_certificate_key " + key + "; if ($scheme != https) { return 301 https://$host$request_uri; } location / { return 200 selected; } }\nserver { listen 8080; server_name relay.example alias.relay.example; location / { return 200 backend; } }\n}\n")
 	edit, err := NginxRoute(nginx, "other.example")
 	if err != nil {
 		t.Fatal(err)
@@ -29,6 +39,10 @@ func TestRealProviderConfigurationSyntax(t *testing.T) {
 	edit, err = NginxRouteForPort(edit.After, "relay.example", 19087)
 	if err != nil {
 		t.Fatal(err)
+	}
+	reused, err := NginxRouteForPort(edit.After, "alias.relay.example", 19087)
+	if err != nil || !reused.Reused || !bytes.Equal(reused.After, edit.After) {
+		t.Fatal("control-panel alias route did not reuse exact bytes")
 	}
 	path := filepath.Join(dir, "nginx.conf")
 	if err := os.WriteFile(path, edit.After, 0600); err != nil {

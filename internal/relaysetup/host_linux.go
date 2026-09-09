@@ -455,6 +455,22 @@ func (s instanceSpec) setup(ctx context.Context, inputURL string, output io.Writ
 		return err
 	}
 	defer root.Close()
+	// Establish the selected site's exact route or bounded missing-route edit
+	// before fresh recovery, image loading, or creation of any relay identity.
+	// An unresolved site is never evidence that this URL needs new keys.
+	var route *routeChange
+	if _, savedErr := s.loadConfig(); errors.Is(savedErr, os.ErrNotExist) {
+		u, _ := url.Parse(publicURL)
+		route, err = prepareRouteForPort(ctx, u.Hostname(), s.port)
+		if err != nil {
+			return err
+		}
+		if route == nil {
+			return ErrRoute
+		}
+	} else if savedErr != nil {
+		return savedErr
+	}
 	if err := s.recoverFresh(ctx, root); err != nil {
 		return err
 	}
@@ -560,6 +576,19 @@ func (s instanceSpec) setup(ctx context.Context, inputURL string, output io.Writ
 		fmt.Fprintf(output, "Relay ready at %s.\n", publicURL)
 		return nil
 	}
+	contents := s.unit(image, e)
+	if existing, _, err := protectedFile(s.unitPath); err == nil && !bytes.Equal(existing, contents) {
+		var pending savedConfig
+		b, pendingErr := s.readRecord(root, "pending-setup.json", 8192)
+		if !s.named() || pendingErr != nil || strictjson.Decode(b, &pending) != nil || !s.knownUnit(existing, pending) {
+			return errors.New("managed service has no matching saved setup state; no service was stopped. Restore its setup.json backup before retrying")
+		}
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := s.preflightFresh(ctx, e, image); err != nil {
+		return err
+	}
 	if info, err := os.Lstat(dataDir); errors.Is(err, os.ErrNotExist) {
 		if err := os.Mkdir(dataDir, 0700); err != nil {
 			return err
@@ -584,7 +613,6 @@ func (s instanceSpec) setup(ctx context.Context, inputURL string, output io.Writ
 	if err := s.validateData(); err != nil {
 		return err
 	}
-	var route *routeChange
 	changedRoute := false
 	newStarted := false
 	oldStopped := false
@@ -612,19 +640,6 @@ func (s instanceSpec) setup(ctx context.Context, inputURL string, output io.Writ
 			}
 		}
 	}()
-	contents := s.unit(image, e)
-	if existing, _, err := protectedFile(s.unitPath); err == nil && !bytes.Equal(existing, contents) {
-		var pending savedConfig
-		b, pendingErr := s.readRecord(root, "pending-setup.json", 8192)
-		if !s.named() || pendingErr != nil || strictjson.Decode(b, &pending) != nil || !s.knownUnit(existing, pending) {
-			return errors.New("managed service has no matching saved setup state; no service was stopped. Restore its setup.json backup before retrying")
-		}
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	if err := s.preflightFresh(ctx, e, image); err != nil {
-		return err
-	}
 	if s.named() {
 		pending, _ := json.Marshal(s.config(publicURL, e, image))
 		if err := root.ReplaceFile("pending-setup.json", pending, 0600); err != nil {
@@ -704,11 +719,6 @@ func (s instanceSpec) setup(ctx context.Context, inputURL string, output io.Writ
 	}
 	verified := verify(firstProbeTimeout)
 	if !verified {
-		u, _ := url.Parse(publicURL)
-		route, err = prepareRouteForPort(ctx, u.Hostname(), s.port)
-		if err != nil {
-			return err
-		}
 		if route != nil {
 			if err := route.apply(ctx, root); err != nil {
 				return err

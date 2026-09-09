@@ -2,6 +2,7 @@ package relaysetup
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"testing"
 )
@@ -32,6 +33,50 @@ var portRouteAdapters = []struct {
 		second: "<VirtualHost *:443>\n ServerName second.example\n DocumentRoot /srv/second\n</VirtualHost>\n",
 		alias:  "<VirtualHost *:443>\n ServerName first.example\n ServerAlias second.example\n</VirtualHost>\n",
 	},
+}
+
+func TestAllAdaptersClassifyOnlyDefiniteLoopbackPortConflicts(t *testing.T) {
+	for _, adapter := range portRouteAdapters {
+		t.Run(adapter.name, func(t *testing.T) {
+			first, err := adapter.forPort([]byte(adapter.alias), "first.example", 19087)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, hostname := range []string{"first.example", "second.example"} {
+				if _, err := adapter.forPort(first.After, hostname, 19088); !errors.Is(err, ErrRoutePortConflict) || !errors.Is(err, ErrRoute) {
+					t.Fatalf("definite aliased port conflict was not classified: %v", err)
+				}
+			}
+			for _, target := range []string{"other.example:19087", "127.0.0.1:$port", "127.0.0.1:019087", "127.0.0.1:65536"} {
+				unsafe := bytes.ReplaceAll(first.After, []byte("127.0.0.1:19087"), []byte(target))
+				if _, err := adapter.forPort(unsafe, "first.example", 19088); !errors.Is(err, ErrRoute) || errors.Is(err, ErrRoutePortConflict) {
+					t.Fatal("unknown/dynamic target became a recoverable port conflict")
+				}
+			}
+		})
+	}
+}
+
+func TestOtherAdaptersDoNotClassifyAmbiguousRoutesAsPortConflicts(t *testing.T) {
+	for _, input := range []string{
+		"relay.example {\n handle /connects {\n reverse_proxy 127.0.0.1:19087\n reverse_proxy 127.0.0.1:19088\n }\n}\n",
+		"relay.example {\n handle /connects {\n reverse_proxy 127.0.0.1:19087\n }\n handle /connects {\n reverse_proxy 127.0.0.1:19088\n }\n}\n",
+		"relay.example {\n handle /connects {\n reverse_proxy 127.0.0.1:19087\n }\n handle /connects* {\n respond blocked\n }\n}\n",
+	} {
+		if _, err := CaddyRouteForPort([]byte(input), "relay.example", 19089); !errors.Is(err, ErrRoute) || errors.Is(err, ErrRoutePortConflict) {
+			t.Fatal("ambiguous Caddy route became a port conflict")
+		}
+	}
+	for _, content := range []string{
+		"ProxyPassMatch \"^/connects$\" \"ws://127.0.0.1:19087/connects\"\nProxyPassMatch \"^/connects$\" \"ws://127.0.0.1:19088/connects\"",
+		"<If true>\nProxyPassMatch \"^/connects$\" \"ws://127.0.0.1:19087/connects\"\n</If>",
+		"ProxyPassMatch \"^/connects$\" \"ws://127.0.0.1:19087/connects\"\nRedirect /connects https://other.example",
+	} {
+		input := []byte("<VirtualHost *:443>\nServerName relay.example\n" + content + "\n</VirtualHost>\n")
+		if _, err := ApacheRouteForPort(input, "relay.example", 19089); !errors.Is(err, ErrRoute) || errors.Is(err, ErrRoutePortConflict) {
+			t.Fatal("ambiguous Apache route became a port conflict")
+		}
+	}
 }
 
 func TestRoutePortsPreserveIndependentSitesAndDefault(t *testing.T) {

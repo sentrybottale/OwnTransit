@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +33,7 @@ type migrationFixture struct {
 	failNewProbe       bool
 	crash              string
 	crashed            bool
+	extraNginxDump     string
 }
 
 func newMigrationFixture(t *testing.T) *migrationFixture {
@@ -186,7 +188,7 @@ func (f *migrationFixture) command(_ context.Context, program string, args ...st
 	f.calls = append(f.calls, program+" "+strings.Join(args, " "))
 	if program == "/usr/sbin/nginx" {
 		if len(args) == 1 && args[0] == "-T" {
-			return []byte("# configuration file /etc/nginx/sites-enabled/migration.conf:\n"), nil
+			return []byte(f.extraNginxDump + "# configuration file /etc/nginx/sites-enabled/migration.conf:\n"), nil
 		}
 		return nil, errors.New("website mutation forbidden")
 	}
@@ -274,6 +276,9 @@ func (f *migrationFixture) command(_ context.Context, program string, args ...st
 	if program != "/usr/bin/podman" {
 		return nil, errors.New("unavailable fixture engine")
 	}
+	if args[0] == "info" {
+		return []byte("amd64"), nil
+	}
 	if args[0] == "load" {
 		return nil, nil
 	}
@@ -330,9 +335,21 @@ func (f *migrationFixture) command(_ context.Context, program string, args ...st
 	return nil, errors.New("unexpected fixture command")
 }
 func TestManagedMigrationLifecycle(t *testing.T) {
-	for _, scenario := range []string{"success", "failed-probe", "changed-unit", "unconfirmed", "reservation-data", "reservation-active", "reservation-stopped", "reservation-dropin", "unknown-state", "shared-state", "guard", "stopped", "started", "retired", "commit-before-publication", "commit-after-publication", "tampered-journal"} {
+	for _, scenario := range []string{"success", "unrelated-large-fragment", "other-manual-port", "failed-probe", "changed-unit", "unconfirmed", "reservation-data", "reservation-active", "reservation-stopped", "reservation-dropin", "unknown-state", "shared-state", "guard", "stopped", "started", "retired", "commit-before-publication", "commit-after-publication", "tampered-journal"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newMigrationFixture(t)
+			if scenario == "other-manual-port" {
+				other := legacySpec("beta", "wss://other.example/connects", 9091)
+				f.containers[other.container] = f.container(other, f.oldImage, "7")
+			}
+			if scenario == "unrelated-large-fragment" {
+				const path = "/etc/nginx/sites-enabled/migration-geo.conf"
+				contents := "geo $fixture_country { default 0;\n" + strings.Repeat("192.0.2.0/24 1;\n", 66000) + "}\n"
+				if err := os.WriteFile(path, []byte(contents), 0644); err != nil {
+					t.Fatal(err)
+				}
+				f.extraNginxDump = "# configuration file " + path + ":\n"
+			}
 			commitFault := strings.HasPrefix(scenario, "commit-")
 			if commitFault {
 				original := publishMigration
@@ -481,7 +498,7 @@ func TestManagedMigrationLifecycle(t *testing.T) {
 				}
 				err = nil
 			}
-			if scenario == "success" || f.crashed || commitFault {
+			if scenario == "success" || scenario == "unrelated-large-fragment" || scenario == "other-manual-port" || f.crashed || commitFault {
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -576,5 +593,114 @@ func TestManagedMigrationIdentitySpecialFiles(t *testing.T) {
 	}
 	if _, err := hashIdentityMember(fd, "relay-key.pem"); err == nil {
 		t.Fatal("symlink identity accepted")
+	}
+}
+
+func TestManagedMigrationUnknownRouteDoesNotCreateIdentity(t *testing.T) {
+	for _, scenario := range []string{"duplicate-https", "unsupported-location"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := newMigrationFixture(t)
+			const site = "/etc/nginx/sites-enabled/migration.conf"
+			contents, err := os.ReadFile(site)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if scenario == "duplicate-https" {
+				contents = append(contents, contents...)
+			} else {
+				contents = bytes.Replace(contents, []byte("location = /connects"), []byte("location ~ /connects"), 1)
+			}
+			if err := os.WriteFile(site, contents, 0644); err != nil {
+				t.Fatal(err)
+			}
+			beforeKeys, err := identityDigests(f.old)
+			if err != nil {
+				t.Fatal(err)
+			}
+			unitBefore, err := os.ReadFile(f.target.unitPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pendingBefore, err := os.ReadFile(f.target.root + "/pending-setup.json")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := PrepareSetup(context.Background(), "", f.old.url); err == nil {
+				t.Fatal("unknown existing route became a fresh setup plan")
+			}
+			unitAfter, _ := os.ReadFile(f.target.unitPath)
+			pendingAfter, _ := os.ReadFile(f.target.root + "/pending-setup.json")
+			if !bytes.Equal(unitBefore, unitAfter) || !bytes.Equal(pendingBefore, pendingAfter) {
+				t.Fatal("failed preparation changed the reservation")
+			}
+			// The low-level setup entry must enforce the same boundary even when
+			// an unused reservation contains only its binding and no pending unit.
+			if err := os.Remove(f.target.unitPath); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Remove(f.target.root + "/pending-setup.json"); err != nil {
+				t.Fatal(err)
+			}
+			callStart := len(f.calls)
+			if err := SetupInstance(context.Background(), f.target.name, f.old.url, io.Discard); err == nil {
+				t.Fatal("ambiguous site initialized a relay")
+			}
+			if _, err := os.Lstat(f.target.dataRoot()); !errors.Is(err, os.ErrNotExist) {
+				t.Fatal("failed route preflight created an identity directory")
+			}
+			if _, err := os.Lstat(f.target.unitPath); !errors.Is(err, os.ErrNotExist) {
+				t.Fatal("failed route preflight created a managed unit")
+			}
+			for _, call := range f.calls[callStart:] {
+				if strings.Contains(call, " pair init ") || strings.Contains(call, "systemctl enable") || strings.Contains(call, "systemctl disable") || strings.Contains(call, "systemctl start") || strings.Contains(call, "systemctl stop") {
+					t.Fatal("failed route preflight mutated relay state")
+				}
+			}
+			afterKeys, err := identityDigests(f.old)
+			if err != nil || planDigest(beforeKeys) != planDigest(afterKeys) {
+				t.Fatal("route failure changed legacy identity", err)
+			}
+			if !f.containers[f.old.container].State.Running || !f.enabled[f.old.unitName] {
+				t.Fatal("route failure stopped the existing relay")
+			}
+		})
+	}
+}
+
+func TestManagedFreshOccupiedPortDoesNotCreateIdentity(t *testing.T) {
+	f := newMigrationFixture(t)
+	if err := os.Remove(f.target.unitPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(f.target.root + "/pending-setup.json"); err != nil {
+		t.Fatal(err)
+	}
+	const site = "/etc/nginx/sites-enabled/migration.conf"
+	contents, err := os.ReadFile(site)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents = bytes.ReplaceAll(contents, []byte("127.0.0.1:9088"), []byte("127.0.0.1:9089"))
+	if err := os.WriteFile(site, contents, 0644); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp4", "127.0.0.1:9089")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	if err := SetupInstance(context.Background(), f.target.name, f.old.url, io.Discard); err == nil {
+		t.Fatal("occupied port accepted")
+	}
+	if _, err := os.Lstat(f.target.dataRoot()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("occupied port created relay identity state")
+	}
+	if _, err := os.Lstat(f.target.unitPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("occupied port created relay unit")
+	}
+	for _, call := range f.calls {
+		if strings.Contains(call, " pair init ") {
+			t.Fatal("occupied port reached identity initialization")
+		}
 	}
 }
