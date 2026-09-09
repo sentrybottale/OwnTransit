@@ -20,6 +20,9 @@ const (
 	kindRenewToken           byte = 6
 	kindFetchRegistration    byte = 7
 	kindFetchServerInfo      byte = 8
+	kindCheckOfferSupport    byte = 9
+	kindPublishOffer         byte = 10
+	kindFetchOffer           byte = 11
 
 	kindOK            byte = 0x80
 	kindAdvertisement byte = 0x81
@@ -28,6 +31,8 @@ const (
 	kindRenewedToken  byte = 0x84
 	kindReady         byte = 0x85
 	kindServerInfo    byte = 0x86
+	kindOfferSupport  byte = 0x87
+	kindOffer         byte = 0x88
 	kindFailure       byte = 0xff
 )
 
@@ -39,6 +44,10 @@ type wireFrame struct {
 }
 
 func readWireFrame(reader io.Reader, maximum int) (wireFrame, error) {
+	return readBoundedWireFrame(reader, maximum, nil)
+}
+
+func readBoundedWireFrame(reader io.Reader, maximum int, kindLimit func(byte) int) (wireFrame, error) {
 	if reader == nil || maximum < 0 || maximum > maxWirePayload {
 		return wireFrame{}, ErrProtocol
 	}
@@ -50,6 +59,9 @@ func readWireFrame(reader io.Reader, maximum int) (wireFrame, error) {
 		return wireFrame{}, ErrProtocol
 	}
 	size := binary.BigEndian.Uint32(header[8:12])
+	if kindLimit != nil {
+		maximum = minInt(maximum, kindLimit(header[5]))
+	}
 	if uint64(size) > uint64(maximum) {
 		return wireFrame{}, ErrProtocol
 	}

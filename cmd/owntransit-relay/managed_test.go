@@ -29,6 +29,9 @@ func TestManagedRelaySelectorsFailBeforeOperations(t *testing.T) {
 		{"register", "--instance", "office", "--url", "wss://office.example/connects", "not-a-receiver-id"},
 		{"register", "--url", "", id.String()},
 		{"register", "--url", "http://office.example/connects", id.String()},
+		{"approve", "--instance", "office", "--url", "wss://office.example/connects", id.String()},
+		{"approve", "--url", "http://office.example/connects", id.String()},
+		{"approve", "not-a-receiver-id"},
 		{"register", "--url", "wss://office.example/connects", "--url", "wss://other.example/connects", "not-a-receiver-id"},
 		{"list", "--instance", "office"},
 		{"list", "unexpected"},
@@ -69,6 +72,9 @@ func TestManagedRelayDispatchKeepsScopeAndLegacyDefault(t *testing.T) {
 		{[]string{"register", id.String()}, "register:default:" + id.String(), 0},
 		{[]string{"register", "--instance", "office", id.String()}, "register:office:" + id.String(), 0},
 		{[]string{"register", "--url", "https://OFFICE.example:443/connects", id.String()}, "register-url:wss://office.example/connects:" + id.String(), 0},
+		{[]string{"approve", id.String()}, "register:default:" + id.String(), 0},
+		{[]string{"approve", "--instance", "office", id.String()}, "register:office:" + id.String(), 0},
+		{[]string{"approve", "--url", "wss://office.example/connects", id.String()}, "register-url:wss://office.example/connects:" + id.String(), 0},
 		{[]string{"uninstall-managed", "--instance", "office"}, "uninstall:office", 0},
 		{[]string{"uninstall-managed", "--instance", "office", "--package-lock-fd", "9"}, "uninstall:office", 9},
 		{[]string{"uninstall-all-managed", "--package-lock-fd", "9"}, "uninstall-all", 9},
@@ -100,6 +106,9 @@ func TestManagedRelayDispatchKeepsScopeAndLegacyDefault(t *testing.T) {
 			}
 			if code := executeManagedRelay(context.Background(), tc.args, strings.NewReader(""), &out, &diag, ops); code != 0 || called != tc.want || locked != tc.lock {
 				t.Fatalf("code=%d call=%q lock=%d diagnostics=%s", code, called, locked, diag.String())
+			}
+			if tc.args[0] == "approve" && (!strings.Contains(out.String(), "Receiver approved") || strings.Contains(out.String()+diag.String(), "fixture-relay-code")) {
+				t.Fatal("approval must confirm success without printing a relay code")
 			}
 		})
 	}

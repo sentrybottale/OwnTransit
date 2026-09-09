@@ -1,5 +1,16 @@
 # OwnTransit security policy
 
+## 0.5.0 one-code setup
+
+The short private code retains 256-bit randomness. An independent full HMAC
+authenticates the receiver's exact signed advertisement before its recipient
+key is used or a secret-bearing request is sent. The VPS approval path retains
+local admission control but no longer makes users copy its public routing blob.
+Versioned offer operations remain bounded by relay pre-auth limits and expiry;
+public token restoration cannot mint or extend admission. There is no automatic
+fallback, origin switch, trust reset or alarm recovery on setup/network failure.
+See [the protocol and downgrade analysis](PAIRING_ONE_CODE.md).
+
 ## 0.4.0 managed relay instance isolation
 
 Instance names select only local relay deployment resources. They do not select

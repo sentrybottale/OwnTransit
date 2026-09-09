@@ -34,6 +34,30 @@ func relayRegistrationCommand(origin, receiverID string) string {
 	return "sudo owntransit-relay-preview register --url " + shellQuote(origin) + " " + shellQuote(receiverID)
 }
 
+func relayApprovalCommand(origin, receiverID string) string {
+	return "sudo owntransit-relay-preview approve --url " + shellQuote(origin) + " " + shellQuote(receiverID)
+}
+
+func printReceiverCode(output io.Writer, receiverID string, code []byte, legacy bool) error {
+	if legacy {
+		_, err := fmt.Fprintf(output, "Receiver ID (public; give to relay):\n%s\n\nPrivate one-use pairing code (give only to your client):\n%s\n\nKeep this code private. It expires in 24 hours.\n", receiverID, code)
+		return err
+	}
+	// The public ID appears only inside the complete approval command below,
+	// not as another value the operator must identify and copy separately.
+	_, err := fmt.Fprintf(output, "Private client code (one use, valid 24 hours; never give to VPS):\n%s\n\n", code)
+	return err
+}
+
+func printReceiverNext(output io.Writer, origin, receiverID, tunnel string, legacyCodes bool) {
+	client := pairCommand("owntransit-preview", "setup", "", tunnel)
+	if legacyCodes {
+		fmt.Fprintf(output, "\nNEXT — on your relay:\n  %s\nThen on your client:\n  %s --legacy-codes\nPaste the relay's code and the private pairing code above when asked.\n", relayRegistrationCommand(origin, receiverID), client)
+		return
+	}
+	fmt.Fprintf(output, "\n1. On your VPS:\n  %s\n2. On your client:\n  %s --relay %s\nPaste the private 56-character code above when asked. No VPS code to copy.\n", relayApprovalCommand(origin, receiverID), client, shellQuote(origin))
+}
+
 func printConnect(w io.Writer, status, executable, state string, tunnel ...string) {
 	// There are two shells: the user's command line and SSH's ProxyCommand.
 	// Escape SSH percent tokens as well; paths are local data, never code.

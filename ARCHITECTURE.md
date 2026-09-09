@@ -1,5 +1,11 @@
 # OwnTransit architecture
 
+The 0.5.0 release reduces receiver-owned setup to one private code.
+The client fetches a public offer and authenticates it with the full code-derived
+MAC before using any receiver keys; the existing encrypted pairing and runtime
+profiles remain unchanged. VPS approval is still local and explicit, but prints
+no client code. [Protocol, bounds and compatibility](PAIRING_ONE_CODE.md).
+
 The 0.4.0 managed installer supports explicitly named independent relay instances
 on one host. Local instance names select separate root-protected configuration,
 relay data mounts, containers, units and loopback ports; they are not endpoint

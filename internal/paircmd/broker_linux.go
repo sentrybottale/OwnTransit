@@ -55,7 +55,19 @@ func workerCommand(ctx context.Context, args ...string) (*exec.Cmd, error) {
 }
 
 func discover(ctx context.Context, origin string) (pairrelay.ServerInfo, error) {
-	cmd, err := workerCommand(ctx, "discover-worker", origin)
+	return discoverProfile(ctx, origin, false)
+}
+
+func discoverOffer(ctx context.Context, origin string) (pairrelay.ServerInfo, error) {
+	return discoverProfile(ctx, origin, true)
+}
+
+func discoverProfile(ctx context.Context, origin string, requireOffer bool) (pairrelay.ServerInfo, error) {
+	operation := "discover-worker"
+	if requireOffer {
+		operation = "discover-offer-worker"
+	}
+	cmd, err := workerCommand(ctx, operation, origin)
 	if err != nil {
 		return pairrelay.ServerInfo{}, err
 	}
@@ -63,6 +75,9 @@ func discover(ctx context.Context, origin string) (pairrelay.ServerInfo, error) 
 	cmd.Stdout = &boundedOutput{buffer: &output, remaining: 128 << 10}
 	cmd.Stderr = io.Discard
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return pairrelay.ServerInfo{}, ctx.Err()
+		}
 		return pairrelay.ServerInfo{}, err
 	}
 	var info pairrelay.ServerInfo

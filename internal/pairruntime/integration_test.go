@@ -351,8 +351,9 @@ func (f *integrated) open(t *testing.T) (*leasewire.Conn, func()) {
 	if _, e := pairrelay.NewReceiver(ec); e != nil {
 		t.Fatalf("outer receiver profile: %v", e)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	// The context belongs to the full live stream, not just its opening handshake.
+	// This is the entire test stream lifetime, including other routes' setup
+	// and deliberate quiet intervals, not a production handshake timeout.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	var l *leasewire.Conn
 	var release func()
 	var err error

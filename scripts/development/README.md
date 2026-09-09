@@ -1,5 +1,14 @@
 # Signed receiver-owned capsules
 
+0.5.0 adds a 56-character private receiver code and automatic delivery of public
+setup material. The selected VPS still explicitly approves the receiver's public
+ID; its approval command prints success. New clients enter their relay URL and
+one private code. The versioned public-offer extension requires an updated relay
+and receiver for new short-code setup. Existing paired state, endpoint wire
+authentication, alarm state and relay origins remain unchanged. The same signer,
+nine assets and bounded checks apply, with offer-substitution, mixed-version,
+restart and terminal-paste tests. No signing key or ceremony is added.
+
 0.4.0 adds named local relay instances and retains default deployment compatibility.
 Relay instance creation/upgrade/removal is explicitly selected; endpoint pairings
 never change relay origins automatically. The same existing signer, nine assets
@@ -17,7 +26,7 @@ legacy 0.1.0 manifest/policy. The inventory now has six members, with nine publi
 assets after adding its signature, inventory and public key. The Mac archive
 includes `install-macos.sh` for offline, non-purging removal.
 
-A 0.2.0, 0.3.0 or 0.4.0 release may be published without GitHub's prerelease flag after the
+A 0.2.0, 0.3.0, 0.4.0 or 0.5.0 release may be published without GitHub's prerelease flag after the
 bounded checks and brief exact-build end-to-end check pass. Extended soak,
 clean-host certification and independent assessment remain explicitly unclaimed.
 No new signing keys or additional ceremony is introduced.
@@ -44,7 +53,7 @@ existing distribution public-key digest, validates the detached inventory
 signature, and checks the selected archive digest before extraction or root
 execution. The inner installer rechecks the platform and exact flat inventory.
 
-Linux installation uses `/opt/owntransit-preview/0.4.0`, separately named
+Linux installation uses `/opt/owntransit-preview/0.5.0`, separately named
 `*-preview` aliases, and one disabled connector service. It preserves every
 legacy install, service, credential and SSH setting. `pair setup` on the
 connector initializes its own identities and explicitly enables its installed

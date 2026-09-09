@@ -21,6 +21,16 @@ import (
 // directory exchange selects the new identity only after all old workers exit.
 // Old state remains private and terminally locked; it is never a rollback target.
 func RebuildReceiver(ctx context.Context, path, origin string, info pairrelay.ServerInfo, expectedPeer string) (receiverpairing.Attempt, string, error) {
+	return rebuildReceiver(ctx, path, origin, info, expectedPeer, false)
+}
+
+// RebuildReceiverWithOffer prepares the public offer in the candidate before
+// the previous identity is retired. A failed preparation cannot retire trust.
+func RebuildReceiverWithOffer(ctx context.Context, path, origin string, info pairrelay.ServerInfo, expectedPeer string) (receiverpairing.Attempt, string, error) {
+	return rebuildReceiver(ctx, path, origin, info, expectedPeer, true)
+}
+
+func rebuildReceiver(ctx context.Context, path, origin string, info pairrelay.ServerInfo, expectedPeer string, short bool) (receiverpairing.Attempt, string, error) {
 	var empty receiverpairing.Attempt
 	if !filepath.IsAbs(path) || filepath.Clean(path) != path || path == "/" {
 		return empty, "", ErrState
@@ -71,7 +81,7 @@ func RebuildReceiver(ctx context.Context, path, origin string, info pairrelay.Se
 		return empty, "", err
 	}
 	candidate := filepath.Join(controlPath, "generation-"+id.String())
-	attempt, err := InitializeReceiver(candidate, origin, info)
+	attempt, err := initializeReceiver(candidate, origin, info, short)
 	if err != nil {
 		return empty, "", err
 	}

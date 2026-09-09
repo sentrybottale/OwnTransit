@@ -6,6 +6,7 @@ package paircmd
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,6 +22,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/sentrybottale/owntransit/internal/buildinfo"
+	"github.com/sentrybottale/owntransit/internal/pairoffer"
 	"github.com/sentrybottale/owntransit/internal/pairrelay"
 	"github.com/sentrybottale/owntransit/internal/pairrelaycmd"
 	"github.com/sentrybottale/owntransit/internal/pairruntime"
@@ -60,6 +63,9 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 	if operation == "discover-worker" && receiver {
 		return discoverWorker(args[1:], output)
 	}
+	if operation == "discover-offer-worker" && receiver {
+		return discoverWorkerProfile(args[1:], output, true)
+	}
 	if receiver && (runtime.GOOS != "linux" || os.Geteuid() != 0) {
 		fmt.Fprintln(diagnostics, "owntransit connector pair: requires Linux root; the network worker drops privileges")
 		return 1
@@ -89,6 +95,10 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 	state := flags.String("state", base, "private state directory for this local role")
 	tunnel := flags.String("tunnel", "", "local tunnel name (default keeps the original pairing)")
 	origin := flags.String("relay", "", "canonical wss://relay.example/connects URL (init only)")
+	legacyCodes := false
+	if operation == "init" || operation == "setup" {
+		flags.BoolVar(&legacyCodes, "legacy-codes", false, "explicit older two-code setup (otrelay1. and otpair1.)")
+	}
 	if err := flags.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -180,13 +190,7 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 				return 1
 			}
 		}
-		if operation == "setup" {
-			if !receiver {
-				fmt.Fprintln(diagnostics, "OwnTransit setup — paste each code, then Enter. Input is hidden. Ctrl-C cancels.")
-			} else {
-				fmt.Fprintln(diagnostics, "OwnTransit receiver setup — answer the prompts below.")
-			}
-		}
+		printSetupBanner(diagnostics, receiver, legacyCodes)
 		if operation == "setup" && receiver && *tunnel == "" && *state != "/var/lib/owntransit-pair" {
 			fmt.Fprintln(diagnostics, "owntransit pair setup: the installed service uses the default state; custom paths use pair init and pair serve")
 			return 2
@@ -261,22 +265,43 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 		}
 		if receiver {
 			var info pairrelay.ServerInfo
-			info, err = discover(ctx, *origin)
+			if legacyCodes {
+				info, err = discover(ctx, *origin)
+			} else {
+				info, err = discoverOffer(ctx, *origin)
+			}
 			if err != nil {
-				fmt.Fprintln(diagnostics, "Receiver was not initialized: the 0.1.1 relay could not be reached. Start the preview relay first and check its HTTPS /connects route; a 0.1.0 relay cannot complete this setup.")
+				if ctx.Err() != nil {
+					err = ctx.Err()
+					break
+				}
+				if legacyCodes {
+					fmt.Fprintln(diagnostics, "Receiver was not initialized: the receiver-owned relay could not be reached. Start the relay and check its HTTPS /connects route.")
+				} else {
+					fmt.Fprintln(diagnostics, "Receiver was not replaced: this relay is unreachable or does not support one-code setup. Check the URL and upgrade the running relay, then retry. Older installations require explicit --legacy-codes on receiver and client setup.")
+				}
 				break
 			}
 			var attempt receiverpairing.Attempt
 			if operation == "setup" {
 				bounded, c := context.WithTimeout(ctx, 10*time.Second)
-				attempt, _, err = pairruntime.RebuildReceiver(bounded, *state, *origin, info, replacementPeer)
+				if legacyCodes {
+					attempt, _, err = pairruntime.RebuildReceiver(bounded, *state, *origin, info, replacementPeer)
+				} else {
+					attempt, _, err = pairruntime.RebuildReceiverWithOffer(bounded, *state, *origin, info, replacementPeer)
+				}
 				c()
 			} else {
-				attempt, err = pairruntime.InitializeReceiver(*state, *origin, info)
+				if legacyCodes {
+					attempt, err = pairruntime.InitializeReceiver(*state, *origin, info)
+				} else {
+					attempt, err = pairruntime.InitializeReceiverWithOffer(*state, *origin, info)
+				}
 			}
 			if err != nil {
 				break
 			}
+			defer clear(attempt.Code)
 			if operation == "setup" {
 				err = startInstalledReceiver(ctx, *tunnel)
 				if err != nil {
@@ -285,7 +310,7 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 					break
 				}
 			}
-			_, err = fmt.Fprintf(output, "Receiver ID (public; give to relay):\n%s\n\nPrivate one-use pairing code (give only to your client):\n%s\n\nKeep this code private. It expires in 24 hours.\n", attempt.ReceiverID, attempt.Code)
+			err = printReceiverCode(output, attempt.ReceiverID, attempt.Code, legacyCodes)
 			if err != nil {
 				break
 			}
@@ -294,8 +319,23 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 			} else {
 				fmt.Fprintf(output, "Start this receiver: owntransit-connector pair serve --state %s\n", *state)
 			}
-			fmt.Fprintf(output, "\nNEXT — on your relay:\n  %s\nThen on your client:\n  %s\nPaste the relay's code and the private pairing code above when asked.\n", relayRegistrationCommand(*origin, attempt.ReceiverID), pairCommand("owntransit-preview", "setup", "", *tunnel))
+			printReceiverNext(output, *origin, attempt.ReceiverID, *tunnel, legacyCodes)
 		} else {
+			if !legacyCodes {
+				var privateCode []byte
+				privateCode, err = readShortPairingCode(ctx, input, reader, diagnostics)
+				if err != nil {
+					break
+				}
+				bounded, c := context.WithTimeout(ctx, time.Minute)
+				err = pairruntime.PairClientShort(bounded, *state, *origin, privateCode, nil)
+				c()
+				clear(privateCode)
+				if err == nil {
+					printConnect(output, "OwnTransit paired.", clientCommand, selectedState, *tunnel)
+				}
+				break
+			}
 			var relayCode, privateCode []byte
 			relayCode, err = promptValidated(ctx, input, reader, diagnostics, "VPS registration code (otrelay1., hidden): ", "Run the URL-specific relay registration command printed by receiver setup on your VPS; paste its complete otrelay1. code here.", pairrelaycmd.MaxRegistrationCode, true, func(v []byte) error { _, e := pairrelaycmd.DecodeRegistration(string(v)); return e })
 			if err != nil {
@@ -476,6 +516,10 @@ func startInstalledReceiver(ctx context.Context, tunnel string) error {
 }
 
 func discoverWorker(args []string, output io.Writer) int {
+	return discoverWorkerProfile(args, output, false)
+}
+
+func discoverWorkerProfile(args []string, output io.Writer, requireOffer bool) int {
 	if os.Geteuid() == 0 || len(args) != 1 {
 		return 1
 	}
@@ -485,7 +529,7 @@ func discoverWorker(args []string, output io.Writer) int {
 	}
 	ctx, c := context.WithTimeout(context.Background(), 15*time.Second)
 	defer c()
-	info, err := p.FetchServerInfo(ctx)
+	info, err := discoverServerInfo(ctx, p, requireOffer)
 	if err != nil {
 		return 1
 	}
@@ -493,4 +537,49 @@ func discoverWorker(args []string, output io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+type receiverDiscovery interface {
+	CheckOfferSupport(context.Context) error
+	FetchServerInfo(context.Context) (pairrelay.ServerInfo, error)
+}
+
+// Both calls happen in the dropped-privilege worker. A new receiver must not
+// replace its current trust until that worker confirms the offer profile.
+func discoverServerInfo(ctx context.Context, public receiverDiscovery, requireOffer bool) (pairrelay.ServerInfo, error) {
+	if requireOffer {
+		if err := public.CheckOfferSupport(ctx); err != nil {
+			return pairrelay.ServerInfo{}, err
+		}
+	}
+	return public.FetchServerInfo(ctx)
+}
+
+func printSetupBanner(output io.Writer, receiver, legacyCodes bool) {
+	role := "client"
+	if receiver {
+		role = "receiver"
+	}
+	profile := "one private code (otpair2., 56 characters)"
+	if legacyCodes {
+		profile = "legacy two-code setup (otrelay1. and otpair1.)"
+	}
+	fmt.Fprintf(output, "OwnTransit %s %s setup — %s.\n", buildinfo.Version, role, profile)
+	if !receiver {
+		fmt.Fprintln(output, "Paste each answer into its prompt, then press Enter. Code input is hidden. Ctrl-C cancels.")
+	}
+}
+
+func readShortPairingCode(ctx context.Context, input io.Reader, reader *bufio.Reader, diagnostics io.Writer) ([]byte, error) {
+	// Read a bounded older code completely so selecting the wrong executable
+	// or code type gets useful guidance. Only the exact 56-byte canonical new
+	// format can pass validation; no pasted text is extracted or normalized.
+	return promptValidated(ctx, input, reader, diagnostics, "Private receiver code (otpair2., 56 characters, hidden): ", "Paste only the complete 56-character otpair2. code from receiver setup, then press Enter. Never give it to the VPS.", pairrelaycmd.MaxRegistrationCode, true, func(value []byte) error {
+		if bytes.HasPrefix(value, []byte("otrelay1.")) {
+			fmt.Fprintln(diagnostics, "That is an older public VPS code. One-code setup needs the private otpair2. code from your receiving SSH machine.")
+		} else if bytes.HasPrefix(value, []byte("otpair1.")) {
+			fmt.Fprintln(diagnostics, "That private receiver code belongs to older two-code setup. To use an existing older receiver, cancel and run this client with pair setup --legacy-codes; keep both original codes.")
+		}
+		return pairoffer.ValidateCode(value)
+	})
 }

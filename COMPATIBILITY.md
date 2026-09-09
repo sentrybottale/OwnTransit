@@ -50,3 +50,13 @@ The signed 0.1.1 development preview uses strict local policy schema
 clearable v1 development policy rather than converting it. Older v1 readers
 reject v2 records, preventing a casual downgrade from clearing the alarm.
 Whole-state rollback/cloning or root compromise remains outside this guarantee.
+
+## One-code setup extension (0.5.0)
+
+The explicitly selected `owntransit.receiver-offer.v1` extension adds OTR2
+public operations 9–11 and `otpair2.` input. Existing frame magic, TLS ALPN,
+WebSocket subprotocol, signed advertisement and endpoint request/response
+formats are unchanged. New setup rejects unsupported relays before replacing
+trust; it never silently falls back. Completed pairings need no migration.
+The optional public sidecar does not alter strict persisted authority schemas.
+See [wire details, mixed-version behavior and rollback](PAIRING_ONE_CODE.md).
