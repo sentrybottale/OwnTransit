@@ -56,7 +56,7 @@ func runPairCommand(arguments []string, output, diagnostics io.Writer) int {
 
 func executePairCommand(arguments []string, output, diagnostics io.Writer, operations pairOperations) int {
 	if len(arguments) == 0 {
-		fmt.Fprintln(diagnostics, "usage: owntransit-relay pair init|serve|register --state ABSOLUTE_PATH [RECEIVER_ID]")
+		fmt.Fprintln(diagnostics, "usage: owntransit-relay pair init|serve|register|approve --state ABSOLUTE_PATH [RECEIVER_ID]")
 		return 2
 	}
 	action := arguments[0]
@@ -65,7 +65,7 @@ func executePairCommand(arguments []string, output, diagnostics io.Writer, opera
 			fmt.Fprintln(diagnostics, "owntransit-relay pair help: unexpected argument")
 			return 2
 		}
-		fmt.Fprintln(output, "usage: owntransit-relay pair init|serve|register --state ABSOLUTE_PATH [RECEIVER_ID]")
+		fmt.Fprintln(output, "usage: owntransit-relay pair init|serve|register|approve --state ABSOLUTE_PATH [RECEIVER_ID]")
 		return 0
 	}
 	flags := flag.NewFlagSet("owntransit-relay pair "+action, flag.ContinueOnError)
@@ -107,22 +107,29 @@ func executePairCommand(arguments []string, output, diagnostics io.Writer, opera
 			return 1
 		}
 		return 0
-	case "register":
+	case "register", "approve":
 		if flags.NArg() != 1 || operations.register == nil {
-			fmt.Fprintln(diagnostics, "owntransit-relay pair register: exactly one receiver ID is required")
+			fmt.Fprintf(diagnostics, "owntransit-relay pair %s: exactly one receiver ID is required\n", action)
 			return 2
 		}
 		receiverID, err := protocol.ParseID(flags.Arg(0))
 		if err != nil || receiverID == (protocol.ID{}) {
-			fmt.Fprintln(diagnostics, "owntransit-relay pair register: receiver ID is invalid")
+			fmt.Fprintf(diagnostics, "owntransit-relay pair %s: receiver ID is invalid\n", action)
 			return 2
 		}
 		code, err := operations.register(*state, receiverID)
 		if err != nil {
-			fmt.Fprintln(diagnostics, "owntransit-relay pair register: operation failed")
+			fmt.Fprintf(diagnostics, "owntransit-relay pair %s: operation failed\n", action)
 			return 1
 		}
-		fmt.Fprintln(output, code)
+		if action == "approve" {
+			// Manual/container deployments use the same local UID-checked
+			// registration authority without copying its public routing blob.
+			code = "Receiver approved. No VPS code to copy."
+		}
+		if _, err := fmt.Fprintln(output, code); err != nil {
+			return 1
+		}
 		return 0
 	default:
 		fmt.Fprintf(diagnostics, "owntransit-relay pair: unknown operation %q\n", action)

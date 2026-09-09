@@ -233,6 +233,24 @@ func serveReceiver(ctx context.Context, agent ReceiverAgent, dial pairrelay.Dial
 	if err != nil {
 		return err
 	}
+	publish := func(ctx context.Context, snapshot *Snapshot) error {
+		err := publishPendingReceiver(ctx, public, *snapshot)
+		if err == nil || len(snapshot.Offer) == 0 || len(snapshot.Meta.Token) == 0 {
+			return err
+		}
+		// An explicit local re-approval may have replaced the relay-only token.
+		// Retrieve only the registration for this exact signed advertisement;
+		// no new endpoint trust or authority is accepted from this response.
+		token, e := public.FetchRegistration(ctx, snapshot.Meta.Advertisement)
+		if e != nil {
+			return err
+		}
+		if e := agent.SaveToken(token); e != nil {
+			return e
+		}
+		snapshot.Meta.Token = token
+		return publishPendingReceiver(ctx, public, *snapshot)
+	}
 	// Policy failure is fail closed even before TLS and while rendezvous waits.
 	go func() {
 		ticker := time.NewTicker(100 * time.Millisecond)
@@ -253,9 +271,9 @@ func serveReceiver(ctx context.Context, agent ReceiverAgent, dial pairrelay.Dial
 	// Initial setup waits for advertisement delivery. An already registered
 	// receiver does not require its expired one-use advertisement to reconnect.
 	// A relay acknowledgement is delivery status, never endpoint trust evidence.
-	for len(s.Meta.Token) == 0 {
+	for len(s.Meta.Token) == 0 || len(s.Offer) != 0 {
 		attempt, c := context.WithTimeout(ctx, 10*time.Second)
-		err = public.PublishAdvertisement(attempt, s.Meta.Advertisement)
+		err = publish(attempt, &s)
 		c()
 		if err == nil {
 			break
@@ -271,7 +289,7 @@ func serveReceiver(ctx context.Context, agent ReceiverAgent, dial pairrelay.Dial
 	}
 	for len(s.Meta.Token) == 0 {
 		attempt, c := context.WithTimeout(ctx, 10*time.Second)
-		err = public.PublishAdvertisement(attempt, s.Meta.Advertisement)
+		err = publish(attempt, &s)
 		if err == nil {
 			s.Meta.Token, err = public.FetchRegistration(attempt, s.Meta.Advertisement)
 		}
@@ -300,6 +318,20 @@ func serveReceiver(ctx context.Context, agent ReceiverAgent, dial pairrelay.Dial
 			if e != nil {
 				cancel()
 				return
+			}
+			// A pending short-code pairing republishes its public offer and exact
+			// already-approved token after relay loss. This cannot mint admission
+			// or extend expiry. Paired reconnects never depend on one-use offers.
+			if len(current.Offer) != 0 {
+				attempt, stop := context.WithTimeout(ctx, 10*time.Second)
+				e = publish(attempt, &current)
+				stop()
+				if e != nil {
+					if pause(ctx, time.Second) != nil {
+						return
+					}
+					continue
+				}
 			}
 			wait, c := context.WithTimeout(ctx, 25*time.Second)
 			_ = pairReceiver.AcceptPairing(wait, current.Meta.Token, func(_ context.Context, blob []byte) ([]byte, error) { return agent.Exchange(blob) })
@@ -404,4 +436,11 @@ func serveReceiver(ctx context.Context, agent ReceiverAgent, dial pairrelay.Dial
 		}(raw, profile, scope)
 	}
 	return ctx.Err()
+}
+
+func publishPendingReceiver(ctx context.Context, public *pairrelay.PublicClient, s Snapshot) error {
+	if len(s.Offer) != 0 {
+		return public.PublishOffer(ctx, s.Offer, s.Meta.Token)
+	}
+	return public.PublishAdvertisement(ctx, s.Meta.Advertisement)
 }

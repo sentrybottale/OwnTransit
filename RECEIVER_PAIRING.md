@@ -35,10 +35,12 @@ mode. The relay remains fully malicious and carries no endpoint authority.
    origin. It creates its identities locally, retains them durably, opens an
    outbound rendezvous, and shows a public receiver ID and a separate private
    pairing code.
-2. On the relay, register the public RECEIVER ID. The relay produces its routing
-   and admission code. It never receives the private endpoint pairing code.
-3. On the client, enter the relay details, relay code and private receiver code.
-   The endpoints perform the authenticated exchange and save their pairing.
+2. On the relay, run the public approval command printed by receiver setup.
+   The relay confirms approval without printing a routing code. It never
+   receives the private endpoint pairing code.
+3. On the client, enter the relay URL and the private receiver code. The client
+   retrieves public routing data and authenticates the receiver's offer before
+   performing the existing authenticated exchange and saving its pairing.
 4. Fresh runtime mutual TLS and a successful fixed loopback SSH-port dial produce
    carrier READY. OpenSSH then performs its own host/user authentication.
 
@@ -49,17 +51,19 @@ Normal reconnection, certificate renewal and authorization refresh require no
 user interaction. Lost identities or deliberate replacement require a new
 explicit local pairing operation.
 
-## Three different values
+## One code; public routing stays automatic
 
 | Value | Purpose | Relay may know it? |
 |---|---|---|
 | Public receiver ID | Locate and bind a receiving connector's public identity | Yes |
-| Relay code | Routing/admission to the selected relay | Yes; assume it can forge it |
+| Automatic relay registration | Routing/admission to the selected relay | Yes; assume it can forge it |
 | Private pairing code | One-use authority to pair a client with the expected receiver | No |
 
-Use 256 bits of operating-system randomness for the private code, with a bounded
-canonical encoding binding the receiver identity, pairing attempt and expiry.
-It is copied and pasted, not shortened to a numeric PIN or comparison words.
+Use 256 bits of operating-system randomness for the private code. The short
+`otpair2.` encoding is 56 characters including a typo checksum, not a numeric
+PIN or comparison words. Its full HMAC authenticates the existing signed
+advertisement, which binds the receiver identity, attempt, origin and expiry.
+See [the one-code protocol and downgrade rules](PAIRING_ONE_CODE.md).
 Read it interactively; never accept it through argv, environment variables or
 URLs, and never log it. Displaying it to the initiating local user is deliberate
 secret disclosure, not ordinary diagnostic output.

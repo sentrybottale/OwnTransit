@@ -1,5 +1,16 @@
 # OwnTransit v1 shipping plan
 
+## Receiver-owned 0.5.0 one-code setup
+
+Use the existing bounded release lane, signer and nine assets. This candidate
+adds the explicitly versioned public offer extension specified in
+`PAIRING_ONE_CODE.md`; it does not weaken existing endpoint authority or change
+the SSH carrier. Require both race/vet profiles, public/security checks, native
+terminal and installer fixtures, offer substitution/old-version rejection,
+pending restart recovery and a brief exact-build end-to-end check. Preserve
+published artifacts and existing completed pairings. Do not claim independent
+assessment or live qualification that was not performed.
+
 ## Receiver-owned 0.4.0 named relay instances
 
 0.4.0 adds only local relay-instance selection and host integration to the

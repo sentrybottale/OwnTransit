@@ -30,7 +30,7 @@ const managedRoot = "/var/lib/owntransit-relay-setup"
 const managedContainer = "owntransit-relay-managed"
 const managedUnit = "owntransit-relay-managed.service"
 const unitPath = "/etc/systemd/system/" + managedUnit
-const imageTag = "owntransit-relay-pair:0.4.0"
+const imageTag = "owntransit-relay-pair:0.5.0"
 
 type boundedBuffer struct {
 	bytes.Buffer
@@ -541,7 +541,7 @@ func (s instanceSpec) setup(ctx context.Context, inputURL string, output io.Writ
 		if err := s.upgradeManaged(ctx, root, saved, s.config(publicURL, e, image), output); err != nil {
 			return err
 		}
-		fmt.Fprintf(output, "Relay ready at %s. NEXT: continue with your existing receiver/client; for a new receiver, run its pair setup and register its public ID here.\n", publicURL)
+		fmt.Fprintf(output, "Relay ready at %s. NEXT: continue with your existing receiver/client. For a new receiver, run its pair setup; it prints the approval command to run on this VPS.\n", publicURL)
 		return nil
 	}
 	if info, err := os.Lstat(dataDir); errors.Is(err, os.ErrNotExist) {
@@ -713,11 +713,7 @@ func (s instanceSpec) setup(ctx context.Context, inputURL string, output io.Writ
 			return err
 		}
 	}
-	selector := ""
-	if s.named() {
-		selector = " --instance " + s.name
-	}
-	fmt.Fprintf(output, "Relay is ready at %s and enabled for reboot.\nNEXT — on your private SSH server:\n  sudo owntransit-connector-preview pair setup\nUse the relay URL above. Register that receiver on this relay instance:\n  sudo owntransit-relay-preview register%s RECEIVER_ID\n", publicURL, selector)
+	fmt.Fprintf(output, "Relay is ready at %s and enabled for reboot.\nNEXT — on your private SSH server:\n  sudo owntransit-connector-preview pair setup\nUse the relay URL above. Receiver setup prints the exact approval command to run back on this VPS. Its form is:\n  sudo owntransit-relay-preview approve --url %s RECEIVER_ID\n", publicURL, publicURL)
 	return nil
 }
 

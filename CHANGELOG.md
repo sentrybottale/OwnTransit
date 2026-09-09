@@ -9,6 +9,20 @@ becomes a publication record only after its authenticated evidence, signed
 qualification record and release decision are complete. Git tags never create
 or publish artifacts automatically.
 
+## [0.5.0]
+
+- Reduce default setup to one 56-character private receiver code. Fetch public
+  routing data automatically; VPS `approve` confirms success without a code blob.
+- Authenticate a versioned bounded offer before using advertised recipient keys;
+  preserve 256-bit secret entropy, existing pairing exchange and runtime trust.
+- Republish pending offers and restore only existing valid admission after relay
+  restart. Repeated identical local approval preserves the token and expiry.
+- Explicit `--legacy-codes` retains old setup without automatic downgrade.
+  Completed pairings and terminal alarms retain their existing state semantics.
+- Handle bracketed paste, reject mixed/multiline shell input, drain queued paste
+  before returning to the shell, and restore terminal settings on cancellation.
+- Show actual setup version/profile and keep the quickstart to the normal path.
+
 ## [0.4.0]
 
 Explicitly named independent relay instances on one VPS.

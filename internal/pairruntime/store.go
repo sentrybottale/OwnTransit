@@ -3,14 +3,17 @@
 package pairruntime
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"math"
+	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/sentrybottale/owntransit/internal/leasewire"
+	"github.com/sentrybottale/owntransit/internal/pairoffer"
 	"github.com/sentrybottale/owntransit/internal/pairrelay"
 	"github.com/sentrybottale/owntransit/internal/receiverpairing"
 	"github.com/sentrybottale/owntransit/internal/securefs"
@@ -230,6 +233,7 @@ type Snapshot struct {
 	Status        receiverpairing.ReceiverStatus `json:"status"`
 	Trust         receiverpairing.Trust          `json:"trust"`
 	Authorization []byte                         `json:"authorization"`
+	Offer         []byte                         `json:"offer,omitempty"`
 }
 
 func (Snapshot) String() string   { return "pairruntime.Snapshot[REDACTED]" }
@@ -238,6 +242,17 @@ func (Snapshot) GoString() string { return "pairruntime.Snapshot[REDACTED]" }
 // InitializeReceiver is a local authority operation. Public relay discovery is
 // performed separately by the unprivileged network worker, before key creation.
 func InitializeReceiver(path, origin string, info pairrelay.ServerInfo) (receiverpairing.Attempt, error) {
+	return initializeReceiver(path, origin, info, false)
+}
+
+// InitializeReceiverWithOffer uses the same receiver authority and pairing
+// exchange. Only a public authenticated offer is persisted alongside old state;
+// the short private code is returned once and never stored.
+func InitializeReceiverWithOffer(path, origin string, info pairrelay.ServerInfo) (receiverpairing.Attempt, error) {
+	return initializeReceiver(path, origin, info, true)
+}
+
+func initializeReceiver(path, origin string, info pairrelay.ServerInfo, short bool) (receiverpairing.Attempt, error) {
 	root, err := securefs.CreateRoot(path)
 	if err != nil {
 		return receiverpairing.Attempt{}, err
@@ -270,6 +285,18 @@ func InitializeReceiver(path, origin string, info pairrelay.ServerInfo) (receive
 	m := ReceiverMeta{Schema: "owntransit.paired-receiver.v1", Origin: origin, ServerInfo: info, Advertisement: attempt.Advertisement, Leaves: leaves}
 	if err := writeRecord(root, "receiver.json", m, true); err != nil {
 		return receiverpairing.Attempt{}, err
+	}
+	if short {
+		code, offer, err := receiverpairing.CreateShortOffer(attempt, now)
+		clear(attempt.Code)
+		if err != nil {
+			return receiverpairing.Attempt{}, err
+		}
+		if err := root.CreateExclusive("pair-offer.json", offer, 0600); err != nil {
+			clear(code)
+			return receiverpairing.Attempt{}, err
+		}
+		attempt.Code = code
 	}
 	return attempt, nil
 }
@@ -312,6 +339,20 @@ func (b ReceiverBackend) Snapshot() (Snapshot, error) {
 	}
 	if s.Status.LocalLocked || s.Status.PeerLocked || s.Status.PeerRevoked {
 		return s, ErrState
+	}
+	// Paired tunnels do not depend on a spent/expired offer. No existing strict
+	// authority or receiver record format is changed by this optional sidecar.
+	if s.Status.PairedClientID == "" {
+		offer, e := root.ReadFile("pair-offer.json", pairoffer.MaxOfferBytes)
+		if e == nil {
+			parsed, e := pairoffer.Parse(offer)
+			if e != nil || !bytes.Equal(parsed.Advertisement, s.Meta.Advertisement) {
+				return s, ErrState
+			}
+			s.Offer = offer
+		} else if !errors.Is(e, os.ErrNotExist) {
+			return s, e
+		}
 	}
 	cert, e := leaf(s.Meta.Leaves.Inner)
 	if e != nil {

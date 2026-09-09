@@ -1,5 +1,16 @@
 # OwnTransit roadmap
 
+## 0.5.0 — one-code setup
+
+- One 56-character private code from receiver to client; fetch and authenticate
+  public routing data automatically. Keep local VPS approval, print no VPS code.
+- Authenticate the full existing advertisement before any secret-bearing
+  request. Keep 256-bit randomness, one-use claims and unchanged runtime trust.
+- Explicit versioned bounded offer transport, no automatic legacy fallback;
+  existing completed pairings keep their identities and reconnect normally.
+- Exercise pending setup across restarts, idempotent approval, malicious-relay
+  substitution and real Linux/macOS terminal paste/cancel behavior.
+
 ## 0.4.0 — independent named relay instances
 
 - Select VPS-local relay setup, registration and removal with `--instance NAME`;

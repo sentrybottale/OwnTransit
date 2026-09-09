@@ -23,11 +23,11 @@ It can observe addresses, timing and traffic sizes, or deny service. It must
 not read the inner stream, impersonate an endpoint accepted by its peer, or
 choose where the receiver sends traffic.
 
-## Install 0.4.0
+## Quickstart — one private pairing code
 
-**New connection? Follow these five steps.** Run one command block at a time and
-answer each program's prompts before continuing. Linux supports amd64/x86_64 and
-arm64/aarch64; the Mac client supports Apple silicon.
+The one-code flow below requires **0.5.0 on all three roles**; it is not in older
+downloads. Linux supports amd64/x86_64 and arm64/aarch64; Mac supports Apple
+silicon. Run one block at a time, then answer its prompts.
 
 **Already paired? [Upgrade without new codes](#upgrade-without-new-pairing-codes).**
 Do not rerun receiver `pair setup` just to upgrade—it replaces that pairing.
@@ -37,7 +37,7 @@ For additional connections, see [named tunnels](#more-than-one-tunnel) or
 **1. Public VPS — install and start the relay**
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-linux.sh | sudo sh -s -- relay
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.5.0/install-preview-linux.sh | sudo sh -s -- relay
 ```
 
 This starts relay setup automatically. Enter your public URL, such as
@@ -47,7 +47,7 @@ Use this same URL on the receiver and client below.
 **2. Private SSH server — install the receiver, then create the new pairing**
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-linux.sh | sudo sh -s -- connector
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.5.0/install-preview-linux.sh | sudo sh -s -- connector
 ```
 
 After installation, run:
@@ -56,40 +56,37 @@ After installation, run:
 sudo owntransit-connector-preview pair setup
 ```
 
-Enter the relay URL. Keep the **public receiver ID** for the VPS and the
-**private one-use pairing code** for your client only. Never give the private
-code to the VPS; transfer it through your existing authenticated SSH or console.
+Enter the relay URL. Setup prints **one VPS approval command** and **one short
+private code**. Keep that code for your client only.
 
-**3. Back on the VPS — register that receiver**
+**3. Back on the VPS — approve the receiver**
 
-Copy the complete registration command printed by receiver setup. It already
-contains your URL and public receiver ID. Its form is:
+Run the complete command printed by receiver setup. It looks like:
 
 ```sh
-sudo owntransit-relay-preview register --url wss://relay.example/connects RECEIVER_ID
+sudo owntransit-relay-preview approve --url wss://relay.example/connects RECEIVER_ID
 ```
 
-Use the printed values, not the example domain or `RECEIVER_ID` placeholder.
-Keep the resulting **VPS registration code** for the client.
+It says **Receiver approved**. There is no VPS code to copy.
 
 **4. Client computer — choose Linux or Mac**
 
 On Linux, install:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-linux.sh | sudo sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.5.0/install-preview-linux.sh | sudo sh -s -- client
 ```
 
 Then run setup as your ordinary user, **without sudo**:
 
 ```sh
-owntransit-preview pair setup
+/usr/local/bin/owntransit-preview pair setup
 ```
 
 On an Apple-silicon Mac, install **without sudo**:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-macos.sh | sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.5.0/install-preview-macos.sh | sh -s -- client
 ```
 
 Then run the installed client; this path works without editing your PATH:
@@ -98,9 +95,11 @@ Then run the installed client; this path works without editing your PATH:
 "$HOME/.local/bin/owntransit-preview" pair setup
 ```
 
-Client setup asks for the **relay URL**, the **VPS registration code** (`otrelay1.…`),
-and the **private receiver code** (`otpair1.…`), in that order. Paste codes into
-the hidden prompts, not into shell commands or environment variables.
+Enter the **relay URL**, then paste the **private code from step 2** (`otpair2.…`).
+That is the only code the client needs. The public routing data is fetched and
+authenticated automatically. Transfer the private code through your existing
+authenticated SSH or console; never paste it into a shell command or give it
+to the VPS.
 
 **5. Connect over SSH**
 
@@ -122,7 +121,7 @@ archives are then signature-verified. See [installation trust](SECURITY.md#insta
 <details>
 <summary>Installation details, compatibility and trust</summary>
 
-0.4.0 is the signed receiver-owned release line, separate from the older 0.1.0
+0.5.0 is the signed receiver-owned release line, separate from the older 0.1.0
 package/qualification profile. Existing preview filenames and aliases remain
 for compatibility; normal command names are added where available. Follow the
 command printed by the installer if a legacy name conflicts. No unrelated
@@ -152,11 +151,11 @@ macOS use and recovery. **Do not use the old 0.1.0 curl command for this flow.**
 
 ## Upgrade without new pairing codes
 
-0.4.0 includes the 0.1.8 fix for the relay timer that closed active tunnels.
+0.5.0 includes the 0.1.8 fix for the relay timer that closed active tunnels.
 Endpoint authentication and wire compatibility are unchanged.
 
-Use the same 0.4.0 installer above for each installed role. It preserves pairing
-state and accepts known 0.1.1/0.1.2/0.1.3/0.1.5/0.1.6/0.1.7/0.1.8 and 0.2.0/0.3.0 packages; stable 0.1.0 remains
+Use the same 0.5.0 installer above for each installed role. It preserves pairing
+state and accepts known 0.1.1/0.1.2/0.1.3/0.1.5/0.1.6/0.1.7/0.1.8 and 0.2.0/0.3.0/0.4.0 packages; stable 0.1.0 remains
 separate. On the relay, supply the existing URL. Managed upgrade restarts onto
 the new image, verifies it and the public route, and rolls back on failure;
 it does not rewrite website routing or relay keys. Rerunning after an interrupted
@@ -181,8 +180,8 @@ binaries are not overwritten or selected silently.
 Use a different local **instance name** and HTTPS hostname for each relay:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-linux.sh | sudo sh -s -- relay --instance work wss://work.example/connects
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-linux.sh | sudo sh -s -- relay --instance personal wss://personal.example/connects
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.5.0/install-preview-linux.sh | sudo sh -s -- relay --instance work wss://work.example/connects
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.5.0/install-preview-linux.sh | sudo sh -s -- relay --instance personal wss://personal.example/connects
 ```
 
 Each instance has separate relay keys, private state, container, reboot service
@@ -194,13 +193,13 @@ After package installation, the equivalent commands are:
 
 ```sh
 sudo owntransit-relay setup --instance work --url wss://work.example/connects
-sudo owntransit-relay register --instance work RECEIVER_ID
+sudo owntransit-relay approve --instance work RECEIVER_ID
 sudo owntransit-relay list
 ```
 
-Receiver setup prints a registration command with `--url` filled in. That selects
+Receiver setup prints an approval command with `--url` filled in. That selects
 the exact configured local instance by URL, so you do not need to know its VPS
-label. You may use either `register --instance NAME` or `register --url PUBLIC_URL`,
+label. You may use either `approve --instance NAME` or `approve --url PUBLIC_URL`,
 never both. An unknown or unavailable selected relay is an error, not a fallback.
 
 Choose this relay's URL on the receiving SSH machine and client. Relay
@@ -217,10 +216,10 @@ may affect existing connections, so keep independent access during setup.
 
 ## Uninstall without deleting pairing state
 
-For Linux 0.4.0, use the same installer with the local role and `--uninstall`:
+For Linux 0.5.0, use the same installer with the local role and `--uninstall`:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-linux.sh | sudo sh -s -- client --uninstall
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.5.0/install-preview-linux.sh | sudo sh -s -- client --uninstall
 ```
 
 Replace `client` with `connector` or `relay` as appropriate. **Unqualified relay
@@ -228,13 +227,13 @@ package removal stops all managed relay instances.** To stop only one and keep
 the shared package and other instances, specify its name:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-linux.sh | sudo sh -s -- relay --instance work --uninstall
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.5.0/install-preview-linux.sh | sudo sh -s -- relay --instance work --uninstall
 ```
 
 Its keys, disabled service, website route and URL/port reservation remain for
 explicit reinstall. Use `--instance default` to select only the original relay.
 Upgrade older
-packages to 0.4.0 first. Receiver removal stops/disables its service. Relay
+packages to 0.5.0 first. Receiver removal stops/disables its service. Relay
 removal disables its verified managed unit and removes the stopped container;
 its keys, disabled unit configuration, website route and rollback images are
 retained for explicit reinstall/setup. Modified/unrecognized files are not
@@ -243,71 +242,15 @@ silently removed. SSH configuration and pairing state are never purged.
 On Mac, use the installer's printed uninstall command, normally:
 
 ```sh
-sh "$HOME/Library/Application Support/OwnTransitSoftware/0.4.0/install-macos.sh" --uninstall
+sh "$HOME/Library/Application Support/OwnTransitSoftware/0.5.0/install-macos.sh" --uninstall
 ```
 
 Reinstalling restores software without requiring new pairing codes.
 
 ## Pair and connect
 
-Once the relay is running and the executables are in place:
-
-The examples retain compatible `*-preview` names. Fresh installations also
-provide normal aliases (`owntransit`, `owntransit-connector`, `owntransit-relay`)
-where those names are free. On Mac, use the absolute path printed by installation.
-
-### 1. On the private SSH server
-
-```sh
-sudo owntransit-connector-preview pair setup
-```
-
-Enter your relay URL, such as `wss://relay.example/connects`, when prompted.
-Setup starts the installed receiver service and enables it for reboot. It prints two
-different values:
-
-- a **public receiver ID** to register at the relay; and
-- a **private, one-use pairing code** to give directly to your client.
-
-Setup waits until the receiver has advertised and prints the exact next command
-to run on the relay. Running receiver `pair setup` again creates a **fresh ID and
-fresh code**, permanently retiring the old pairing. A paired receiver asks before
-disconnecting its existing client. Use `pair status` to inspect the receiver or
-`sudo systemctl restart owntransit-connector-pair.service` to restart it without
-changing identities. The package installer itself preserves pairing state.
-
-Never give the private code to the relay. Transfer it through your existing
-authenticated SSH or local-console access. Possession authorizes one device;
-the code expires after 24 hours and is spent when pairing commits.
-
-### 2. On the relay
-
-In another terminal on your VPS, run the registration command printed by receiver
-setup. It includes the exact relay URL. For example:
-
-```sh
-sudo owntransit-relay-preview register --url wss://relay.example/connects RECEIVER_ID
-```
-
-Use your actual URL and public ID from receiver setup, not the example domain.
-Copy the printed relay code to the client. The running receiver retrieves
-its relay registration automatically.
-
-### 3. On the client
-
-```sh
-owntransit-preview pair setup
-```
-
-Paste the **VPS registration code** (`otrelay1.…`) from the public VPS, then the
-**private receiving-machine code** (`otpair1.…`) from the private SSH machine.
-Input is hidden; paste once and press Enter. Long codes work directly on macOS
-and Linux; no `stty` workaround is needed. Do not
-put either in shell arguments or environment variables. The endpoints generate
-their own keys, authenticate the exchange and save the pairing. No comparison
-words or approval call are involved.
-
-Then use your existing SSH user, key and independently verified host identity:
+After the quickstart, use your existing SSH user, key and independently verified
+host identity. Use the absolute executable path printed by setup on Mac:
 
 ```sh
 ssh -o 'ProxyCommand=owntransit-preview pair proxy' USER@SSH_ALIAS
@@ -338,7 +281,7 @@ sudo owntransit-connector pair setup --tunnel laptop
 sudo owntransit-connector pair setup --tunnel desktop
 ```
 
-Register both public receiver IDs on your relay. Give each client only the codes
+Approve both public receiver IDs on your relay. Give each client only the private code
 for its own tunnel. On each client, pair and select a local name:
 
 ```sh
@@ -429,7 +372,7 @@ guarantee that SSH-started jobs stop.
 
 ## Scope and current limits
 
-0.4.0 uses bounded source/security, fast timer/reconnect/concurrency and
+0.5.0 uses bounded source/security, fast timer/reconnect/concurrency and
 alarm/rebuild fixtures, isolated installer checks, authenticated artifacts and
 a brief final end-to-end check. **Extended soak testing, pristine-host
 certification and independent security assessment are not claimed.** Historical

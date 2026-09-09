@@ -28,6 +28,11 @@ type advertisementRecord struct {
 	encoded       []byte
 	admissionHash [sha256.Size]byte
 	expires       time.Time
+	// Offer metadata shares this bounded advertisement slot; the encoded
+	// advertisement has one retained copy and no independent offer registry.
+	offerLocator [sha256.Size]byte
+	offerProof   [sha256.Size]byte
+	hasOffer     bool
 }
 
 type registrationRecord struct {
@@ -251,11 +256,35 @@ func (relay *Relay) handleConnection(connection net.Conn) error {
 	if err := connection.SetDeadline(time.Now().Add(relay.limits.HandshakeTimeout)); err != nil {
 		return ErrUnavailable
 	}
-	frame, err := readWireFrame(connection, maxWirePayload)
+	frame, err := readBoundedWireFrame(connection, maxWirePayload, initialOfferPayloadLimit)
 	if err != nil {
 		return ErrProtocol
 	}
 	switch frame.kind {
+	case kindCheckOfferSupport:
+		if string(frame.data) != offerProfile {
+			return ErrProtocol
+		}
+		return writeWireFrame(connection, kindOfferSupport, []byte(offerProfile), len(offerProfile))
+	case kindPublishOffer:
+		encoded, token, err := decodeOfferPublication(frame.data)
+		if err != nil {
+			return err
+		}
+		if err := relay.publishOffer(encoded, token); err != nil {
+			return err
+		}
+		return writeWireFrame(connection, kindOK, nil, 0)
+	case kindFetchOffer:
+		locator, err := decodeOfferLocator(frame.data)
+		if err != nil {
+			return err
+		}
+		encoded, err := relay.fetchOffer(locator)
+		if err != nil {
+			return err
+		}
+		return writeWireFrame(connection, kindOffer, encoded, maxPublicOfferBytes)
 	case kindPublishAdvertisement:
 		if err := relay.publishAdvertisement(frame.data); err != nil {
 			return err
@@ -349,6 +378,9 @@ func (relay *Relay) RegisterReceiver(
 	if matches != 1 {
 		return Registration{}, ErrUnavailable
 	}
+	if _, exists := relay.registrations[selectedKey]; !exists && len(relay.registrations) >= relay.limits.Advertisements {
+		return Registration{}, ErrCapacity
+	}
 	descriptor, err := relay.config.VerifyAdvertisement(append([]byte(nil), selected.encoded...), now)
 	if err != nil || descriptor.ReceiverID != selectedKey.receiver || descriptor.RouteID != selectedKey.route {
 		return Registration{}, ErrUnavailable
@@ -356,6 +388,23 @@ func (relay *Relay) RegisterReceiver(
 	_, _, currentAdmissionHash, err := parseAdmissionCA(descriptor.AdmissionCAPEM, now)
 	if err != nil || currentAdmissionHash != selected.admissionHash {
 		return Registration{}, ErrUnavailable
+	}
+	// Repeating the same local approval keeps the already delivered token and
+	// its original expiry. An explicit change of limits or validity remains a
+	// new local registration decision, never a public offer operation.
+	if current, ok := relay.registrations[selectedKey]; ok && current.advertisementSHA256 == sha256.Sum256(selected.encoded) {
+		claims, err := VerifyToken(relay.config.TokenKey, current.token, now)
+		if err == nil && claims.ReceiverID == selectedKey.receiver && claims.RouteID == selectedKey.route &&
+			claims.AdmissionRootSHA256 == selected.admissionHash && claims.Limits == routeLimits &&
+			time.Duration(claims.ExpiresUnix-claims.IssuedUnix)*time.Second == validity {
+			info, err := serverInfoFromMaterial(relay.config.RelayTLS)
+			if err != nil {
+				return Registration{}, err
+			}
+			return Registration{
+				ReceiverID: receiverID, RouteID: selectedKey.route, Token: append([]byte(nil), current.token...), ServerInfo: info,
+			}, nil
+		}
 	}
 	claims := TokenClaims{
 		ReceiverID: receiverID, RouteID: selectedKey.route, AdmissionRootSHA256: selected.admissionHash,
@@ -394,6 +443,10 @@ func (relay *Relay) fetchRegistration(advertisement []byte) ([]byte, error) {
 	now := relay.now()
 	relay.mu.Lock()
 	defer relay.mu.Unlock()
+	if relay.closed {
+		return nil, ErrAlreadyClosed
+	}
+	relay.expireAdvertisementsLocked(now)
 	record, ok := relay.registrations[key]
 	if !ok || !now.Before(record.expires) || record.advertisementSHA256 != sha256.Sum256(advertisement) {
 		return nil, ErrUnavailable
@@ -424,6 +477,14 @@ func (relay *Relay) publishAdvertisement(encoded []byte) error {
 		return ErrAlreadyClosed
 	}
 	relay.expireAdvertisementsLocked(relay.now())
+	if previous, exists := relay.advertisements[key]; exists && previous.hasOffer {
+		if !bytes.Equal(previous.encoded, encoded) || previous.admissionHash != digest {
+			return ErrUnavailable
+		}
+		previous.expires = relay.now().Add(relay.limits.AdvertisementTTL)
+		relay.advertisements[key] = previous
+		return nil
+	}
 	if _, exists := relay.advertisements[key]; !exists && len(relay.advertisements) >= relay.limits.Advertisements {
 		return ErrCapacity
 	}
@@ -454,6 +515,11 @@ func (relay *Relay) expireAdvertisementsLocked(now time.Time) {
 	for key, record := range relay.advertisements {
 		if !now.Before(record.expires) {
 			delete(relay.advertisements, key)
+		}
+	}
+	for key, record := range relay.registrations {
+		if !now.Before(record.expires) {
+			delete(relay.registrations, key)
 		}
 	}
 }

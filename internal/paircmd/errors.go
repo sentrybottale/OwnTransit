@@ -23,6 +23,12 @@ func failureMessage(operation string, err error) string {
 	switch {
 	case errors.Is(err, context.Canceled):
 		return "Cancelled. Completed local steps remain in effect; check pair status before retrying."
+	case errors.Is(err, pairruntime.ErrApprovalMissing):
+		return "Receiver approval is missing. Run the complete VPS approval command printed by receiver setup, then retry this client setup with the same private code."
+	case errors.Is(err, pairruntime.ErrReceiverOffer):
+		return "The private code could not authenticate this receiver and relay URL. Check the URL and current unexpired receiver code; never disable verification."
+	case errors.Is(err, pairruntime.ErrOfferUnavailable):
+		return "One-code setup is unavailable. Check the receiver service, relay URL and running relay version. Upgrade the relay for otpair2. codes; older two-code receivers require explicit pair setup --legacy-codes."
 	case errors.Is(err, leasewire.ErrLocked), errors.Is(err, leasewire.ErrPeerLock):
 		return "Pairing alarmed. This tunnel cannot be unlocked; recovery requires deliberate fresh pairing."
 	case errors.Is(err, securefs.ErrLocked):

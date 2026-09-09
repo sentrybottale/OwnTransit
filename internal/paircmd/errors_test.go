@@ -24,6 +24,9 @@ func TestFailureMessagesAreActionableAndNeverEchoCauses(t *testing.T) {
 		{pairrelay.ErrUnauthorized, "Peer authentication"}, {pairruntime.ErrPeerAuthorization, "Peer authentication"},
 		{leasewire.ErrLocked, "cannot be unlocked"}, {leasewire.ErrPeerLock, "cannot be unlocked"},
 		{leasewire.ErrPolicy, "Local authorization"}, {os.ErrNotExist, "state is missing"},
+		{pairruntime.ErrApprovalMissing, "VPS approval command"},
+		{pairruntime.ErrReceiverOffer, "private code could not authenticate"},
+		{pairruntime.ErrOfferUnavailable, "running relay version"},
 	} {
 		message := failureMessage("proxy", errors.Join(tc.err, errors.New("private-test-value-never-display")))
 		if !strings.Contains(message, tc.want) || strings.Contains(message, "private-test-value") || strings.Contains(message, "otpair1.") {
