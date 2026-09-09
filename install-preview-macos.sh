@@ -8,8 +8,8 @@ LC_ALL=C
 export LC_ALL
 unset CDPATH ENV BASH_ENV TAR_OPTIONS GZIP SSH_AUTH_SOCK SSH_ASKPASS DISPLAY
 umask 077
-version=0.3.0
-base=https://github.com/sentrybottale/OwnTransit/releases/download/v0.3.0
+version=0.4.0
+base=https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0
 fail() { printf 'owntransit-install: %s\n' "$*" >&2; exit 1; }
 quote() { printf "'"; printf '%s' "$1" | sed "s/'/'\"'\"'/g"; printf "'"; }
 test "$(uname -s):$(uname -m)" = Darwin:arm64 || fail 'Apple-silicon macOS is required'
@@ -56,7 +56,7 @@ check_release() {
   done
 }
 if test "$action" = --uninstall; then
-  test -e "$target" || { printf '%s\n' 'OwnTransit 0.3.0 client is not installed here.'; exit 0; }
+  test -e "$target" || { printf '%s\n' 'OwnTransit 0.4.0 client is not installed here.'; exit 0; }
   for path in "$user_home/Library" "$user_home/Library/Application Support" "$software" "$target" "$user_home/.local" "$bindir"; do protected "$path"; done
   owned_alias "$alias_path" || fail 'preview command is not the managed client; nothing removed'
   check_release
@@ -98,7 +98,7 @@ fetch DEVELOPMENT-SHA256SUMS.sig 8192
 ssh-keygen -Y verify -f "$stage/allowed_signers" -I owntransit-development -n owntransit-development-v1 \
   -s "$stage/DEVELOPMENT-SHA256SUMS.sig" < "$stage/DEVELOPMENT-SHA256SUMS" >/dev/null 2>&1 || fail 'release signature rejected'
 test "$(wc -l < "$stage/DEVELOPMENT-SHA256SUMS" | tr -d '[:space:]')" = 6 || fail 'unexpected release inventory'
-awk 'BEGIN {ok=1;p=""} {if(NF!=2 || length($1)!=64 || $1!~/^[0-9a-f]+$/ || $0!=$1 "  " $2 || seen[$2]++ || (p!="" && p>=$2))ok=0; if($2!="DEVELOPMENT.txt" && $2!="install-preview-linux.sh" && $2!="install-preview-macos.sh" && $2!="owntransit-preview-0.3.0-darwin-arm64.tar.gz" && $2!="owntransit-preview-0.3.0-linux-amd64.tar.gz" && $2!="owntransit-preview-0.3.0-linux-arm64.tar.gz")ok=0;p=$2} END {exit ok?0:1}' "$stage/DEVELOPMENT-SHA256SUMS" || fail 'malformed release inventory'
+awk 'BEGIN {ok=1;p=""} {if(NF!=2 || length($1)!=64 || $1!~/^[0-9a-f]+$/ || $0!=$1 "  " $2 || seen[$2]++ || (p!="" && p>=$2))ok=0; if($2!="DEVELOPMENT.txt" && $2!="install-preview-linux.sh" && $2!="install-preview-macos.sh" && $2!="owntransit-preview-0.4.0-darwin-arm64.tar.gz" && $2!="owntransit-preview-0.4.0-linux-amd64.tar.gz" && $2!="owntransit-preview-0.4.0-linux-arm64.tar.gz")ok=0;p=$2} END {exit ok?0:1}' "$stage/DEVELOPMENT-SHA256SUMS" || fail 'malformed release inventory'
 top=owntransit-preview-$version-darwin-arm64
 archive=$top.tar.gz
 expected=$(awk -v name="$archive" '$2==name {print $1}' "$stage/DEVELOPMENT-SHA256SUMS")
@@ -123,10 +123,14 @@ if test -e "$alias_path" || test -L "$alias_path"; then
   if ! owned_alias "$alias_path"; then
     test -L "$alias_path" && test "$(stat -f %u "$alias_path")" = "$uid" || fail 'refusing to replace an unmanaged client command'
     previous_target=$(readlink "$alias_path")
-    test "$previous_target" = "$software/0.2.0/owntransit" || fail 'refusing to replace an unknown client release'
-    check_release "$software/0.2.0"
-    previous_capsule=$(printf 'schema=owntransit.development-capsule.v1\nversion=0.2.0\nos=darwin\narch=arm64')
-    test "$(cat "$software/0.2.0/CAPSULE")" = "$previous_capsule" || fail 'previous release identity differs'
+    case "$previous_target" in
+      "$software/0.2.0/owntransit") previous_version=0.2.0 ;;
+      "$software/0.3.0/owntransit") previous_version=0.3.0 ;;
+      *) fail 'refusing to replace an unknown client release' ;;
+    esac
+    check_release "$software/$previous_version"
+    previous_capsule=$(printf 'schema=owntransit.development-capsule.v1\nversion=%s\nos=darwin\narch=arm64' "$previous_version")
+    test "$(cat "$software/$previous_version/CAPSULE")" = "$previous_capsule" || fail 'previous release identity differs'
   fi
 fi
 if test -e "$target" || test -L "$target"; then

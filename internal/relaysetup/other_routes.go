@@ -9,6 +9,16 @@ import (
 // CaddyRoute targets one named site. A handle with an exact path is sorted
 // before a catch-all handle by Caddy; the remainder of the site stays intact.
 func CaddyRoute(data []byte, hostname string) (RouteEdit, error) {
+	return CaddyRouteForPort(data, hostname, 9087)
+}
+
+// CaddyRouteForPort refuses to replace a /connects route belonging to another
+// loopback port, including when the selected hostname aliases an existing site.
+func CaddyRouteForPort(data []byte, hostname string, port int) (RouteEdit, error) {
+	upstream, err := routeLoopback(port)
+	if err != nil {
+		return RouteEdit{}, err
+	}
 	tokens, err := scanConfig(data)
 	if err != nil {
 		return RouteEdit{}, err
@@ -58,7 +68,7 @@ func CaddyRoute(data []byte, hostname string) (RouteEdit, error) {
 	for _, b := range site.children {
 		if len(b.words) == 2 && b.words[0].text == "handle" && b.words[1].text == "/connects" {
 			for _, d := range b.directives {
-				if len(d) == 2 && d[0].text == "reverse_proxy" && d[1].text == "127.0.0.1:9087" {
+				if len(d) == 2 && d[0].text == "reverse_proxy" && d[1].text == upstream {
 					return RouteEdit{data, data, true}, nil
 				}
 			}
@@ -72,7 +82,7 @@ func CaddyRoute(data []byte, hostname string) (RouteEdit, error) {
 			}
 		}
 	}
-	addition := []byte("\n  # OwnTransit: selected-site WebSocket route\n  handle /connects {\n    reverse_proxy 127.0.0.1:9087\n  }\n")
+	addition := []byte("\n  # OwnTransit: selected-site WebSocket route\n  handle /connects {\n    reverse_proxy " + upstream + "\n  }\n")
 	after := append([]byte(nil), data[:site.open+1]...)
 	after = append(after, addition...)
 	after = append(after, data[site.open+1:]...)
@@ -84,6 +94,16 @@ var virtualHostClose = regexp.MustCompile(`(?im)^[\t ]*</VirtualHost\s*>`)
 var apacheNames = regexp.MustCompile(`(?im)^[\t ]*(?:ServerName|ServerAlias)[\t ]+([^\r\n#]+)`)
 
 func ApacheRoute(data []byte, hostname string) (RouteEdit, error) {
+	return ApacheRouteForPort(data, hostname, 9087)
+}
+
+// ApacheRouteForPort reuses only the exact /connects directive for the selected
+// loopback port. Other routing in the selected site remains a conflict.
+func ApacheRouteForPort(data []byte, hostname string, port int) (RouteEdit, error) {
+	upstream, err := routeLoopback(port)
+	if err != nil {
+		return RouteEdit{}, err
+	}
 	if len(data) == 0 || len(data) > maxConfigBytes || bytes.IndexByte(data, 0) >= 0 {
 		return RouteEdit{}, ErrRoute
 	}
@@ -122,7 +142,7 @@ func ApacheRoute(data []byte, hostname string) (RouteEdit, error) {
 		return RouteEdit{}, ErrRoute
 	}
 	s := sites[0]
-	directive := `ProxyPassMatch "^/connects$" "ws://127.0.0.1:9087/connects"`
+	directive := `ProxyPassMatch "^/connects$" "ws://` + upstream + `/connects"`
 	for _, line := range strings.Split(string(data[s.begin:s.end]), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "#") {

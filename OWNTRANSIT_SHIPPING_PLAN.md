@@ -1,5 +1,16 @@
 # OwnTransit v1 shipping plan
 
+## Receiver-owned 0.4.0 named relay instances
+
+0.4.0 adds only local relay-instance selection and host integration to the
+receiver-owned line. Preserve the default instance, immutable published releases,
+existing signer and nine-asset distribution. Additional checks exercise scoped
+setup/registration/removal, persistent URL/port reservations, multiple website
+routes, cross-instance ownership rejection, upgrade/recovery and shared package
+locking. Do not change endpoint origins, protocol profiles or SSH ownership.
+Use existing bounded source, installer and exact-artifact checks; no new-machine
+requirement, extended soak or additional signing authority is introduced.
+
 ## Receiver-owned 0.3.0 named tunnels
 
 0.3.0 extends the bounded receiver-owned release contract below with named

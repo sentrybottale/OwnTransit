@@ -5,6 +5,7 @@ package relaysetup
 import (
 	"context"
 	"errors"
+	"github.com/sentrybottale/owntransit/internal/securefs"
 	"os"
 	"strings"
 )
@@ -13,10 +14,10 @@ import (
 // pinned image, executable and state bind. It never forces a running container
 // away and never removes images or volumes. Used by systemd pre/post hooks.
 func CleanupManaged(ctx context.Context, engine, image string) error {
-	return cleanupStopped(ctx, engine, []string{image})
+	return CleanupInstance(ctx, "default", engine, image)
 }
 
-func cleanupStopped(ctx context.Context, engine string, images []string) error {
+func (s instanceSpec) cleanupStopped(ctx context.Context, engine string, images []string) error {
 	if os.Geteuid() != 0 || !validEngine(engine) || len(images) == 0 {
 		return errors.New("invalid managed cleanup request")
 	}
@@ -25,7 +26,7 @@ func cleanupStopped(ctx context.Context, engine string, images []string) error {
 			return errors.New("invalid cleanup image ID")
 		}
 	}
-	ids, err := command(ctx, engine, "ps", "--all", "--quiet", "--no-trunc", "--filter", "name="+managedContainer)
+	ids, err := command(ctx, engine, "ps", "--all", "--quiet", "--no-trunc", "--filter", "name="+s.container)
 	if err != nil {
 		return err
 	}
@@ -40,7 +41,7 @@ func cleanupStopped(ctx context.Context, engine string, images []string) error {
 			}
 			return err
 		}
-		if strings.TrimPrefix(c.Name, "/") != managedContainer {
+		if strings.TrimPrefix(c.Name, "/") != s.container {
 			continue
 		}
 		match := false
@@ -49,11 +50,11 @@ func cleanupStopped(ctx context.Context, engine string, images []string) error {
 		}
 		bind := false
 		for _, m := range c.Mounts {
-			if m.Type == "bind" && m.Source == managedRoot+"/data" && m.Destination == "/state" {
+			if m.Type == "bind" && m.Source == s.root+"/data" && m.Destination == "/state" {
 				bind = true
 			}
 		}
-		if c.ID != id || !match || !ownRelay(c) || !bind {
+		if c.ID != id || !match || !s.ownsContainer(c, c.Image) || !bind {
 			return errors.New("container name belongs to an unrecognized instance; cleanup refused")
 		}
 		if c.State.Running {
@@ -80,4 +81,38 @@ func containerAbsent(ctx context.Context, engine, id string) (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+func CleanupInstance(ctx context.Context, name, engine, image string) error {
+	name, err := normalizedInstanceName(name)
+	if err != nil {
+		return err
+	}
+	if os.Geteuid() != 0 || !validEngine(engine) || !validImage(image) {
+		return errors.New("invalid managed cleanup request")
+	}
+	s := defaultInstance()
+	if name != "default" {
+		root, err := securefs.OpenRoot(managedRoot + "/instances/" + name)
+		if err != nil {
+			return err
+		}
+		defer root.Close()
+		s, err = readBinding(root, name)
+		if err != nil {
+			return err
+		}
+		checked, err := s.openRoot()
+		if err != nil {
+			return err
+		}
+		checked.Close()
+		if err := s.validateData(); err != nil {
+			return err
+		}
+	}
+	return s.cleanupStopped(ctx, engine, []string{image})
+}
+func cleanupStopped(ctx context.Context, engine string, images []string) error {
+	return defaultInstance().cleanupStopped(ctx, engine, images)
 }

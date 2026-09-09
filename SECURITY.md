@@ -1,5 +1,33 @@
 # OwnTransit security policy
 
+## 0.4.0 managed relay instance isolation
+
+Instance names select only local relay deployment resources. They do not select
+an SSH target, authorize a peer, replace a pairing's origin, or add relay switching.
+The original default relay retains its state paths, keys and port 9087. Named
+instances require bounded lowercase labels, distinct canonical URLs and reserved
+loopback host ports. Their protected local binding records precede activation;
+ports and URLs are not freed by failed setup or non-purging removal.
+
+Named setup never adopts a discovered legacy/default relay. Container ownership,
+cleanup hooks, saved configuration and upgrade journals bind the exact instance,
+URL, port, state mount, image and unit. Old local schemas apply only to default.
+Only the selected HTTPS site's exact route may be added; an existing route to a
+different instance is a conflict, including aliases of one virtual host.
+
+A host-wide manager lock serializes shared website and instance operations.
+Package mutation holds an exclusive coordination lock; normal management shares
+it. Package-removal helpers validate their inherited descriptor's protected inode
+and make it close-on-exec without unlocking the parent's reference. Systemd
+cleanup hooks avoid recursive lock acquisition and act only on exact stopped
+managed containers. Removing one instance retains shared software; whole-role
+removal validates all recognized instances before stopping them.
+
+These are operational isolation properties on a shared VPS, not a defense
+against its root administrator or shared resource exhaustion. The entire relay
+host remains malicious in the endpoint threat model. Inner authentication,
+end-to-end encryption, fixed SSH destination and alarm rules are unchanged.
+
 ## 0.3.0 named tunnel isolation
 
 Named tunnels reuse the one-to-one pairing profile. Multiple independently

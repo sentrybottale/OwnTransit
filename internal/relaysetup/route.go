@@ -27,6 +27,13 @@ type block struct {
 	directives  [][]token
 }
 
+func routeLoopback(port int) (string, error) {
+	if port < 1024 || port > 65535 {
+		return "", ErrRoute
+	}
+	return fmt.Sprintf("127.0.0.1:%d", port), nil
+}
+
 // scanConfig understands quoting, escapes, comments and ${variables}; braces
 // inside those values never select a different site or insertion point.
 func scanConfig(data []byte) ([]token, error) {
@@ -152,6 +159,16 @@ func parseBlocks(tokens []token, position *int, depth int) (block, error) {
 // server. Existing matching routing is reused byte-for-byte. Ambiguous sites,
 // server-level rewrites/returns and existing conflicting routes are rejected.
 func NginxRoute(data []byte, hostname string) (RouteEdit, error) {
+	return NginxRouteForPort(data, hostname, 9087)
+}
+
+// NginxRouteForPort selects only a validated host-loopback port. An existing
+// /connects route to any other port is a conflict, never a replacement target.
+func NginxRouteForPort(data []byte, hostname string, port int) (RouteEdit, error) {
+	upstream, err := routeLoopback(port)
+	if err != nil {
+		return RouteEdit{}, err
+	}
 	tokens, err := scanConfig(data)
 	if err != nil {
 		return RouteEdit{}, err
@@ -207,7 +224,7 @@ func NginxRoute(data []byte, hostname string) (RouteEdit, error) {
 						return RouteEdit{}, ErrRoute
 					}
 					for _, d := range b.directives {
-						if len(d) == 2 && d[0].text == "proxy_pass" && (d[1].text == "http://127.0.0.1:9087/connects" || d[1].text == "http://127.0.0.1:9087") {
+						if len(d) == 2 && d[0].text == "proxy_pass" && (d[1].text == "http://"+upstream+"/connects" || d[1].text == "http://"+upstream) {
 							return RouteEdit{Before: data, After: data, Reused: true}, nil
 						}
 					}
@@ -216,7 +233,7 @@ func NginxRoute(data []byte, hostname string) (RouteEdit, error) {
 			}
 		}
 	}
-	addition := []byte("\n  # OwnTransit: selected-site WebSocket route\n  location = /connects {\n    proxy_pass http://127.0.0.1:9087/connects;\n    proxy_http_version 1.1;\n    proxy_set_header Upgrade $http_upgrade;\n    proxy_set_header Connection \"upgrade\";\n    proxy_set_header Host $host;\n    proxy_set_header Origin $http_origin;\n    proxy_set_header Cookie \"\";\n    proxy_set_header Authorization \"\";\n    proxy_set_header Sec-WebSocket-Extensions \"\";\n    proxy_buffering off;\n    proxy_read_timeout 1d;\n    proxy_send_timeout 1d;\n    access_log off;\n  }\n")
+	addition := []byte("\n  # OwnTransit: selected-site WebSocket route\n  location = /connects {\n    proxy_pass http://" + upstream + "/connects;\n    proxy_http_version 1.1;\n    proxy_set_header Upgrade $http_upgrade;\n    proxy_set_header Connection \"upgrade\";\n    proxy_set_header Host $host;\n    proxy_set_header Origin $http_origin;\n    proxy_set_header Cookie \"\";\n    proxy_set_header Authorization \"\";\n    proxy_set_header Sec-WebSocket-Extensions \"\";\n    proxy_buffering off;\n    proxy_read_timeout 1d;\n    proxy_send_timeout 1d;\n    access_log off;\n  }\n")
 	after := append([]byte(nil), data[:site.close]...)
 	after = append(after, addition...)
 	after = append(after, data[site.close:]...)

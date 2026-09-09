@@ -22,7 +22,11 @@ func TestRealProviderConfigurationSyntax(t *testing.T) {
 		t.Fatalf("fixture certificate: %v %s", err, out)
 	}
 	nginx := []byte("events {}\nhttp {\nserver { listen 443 ssl; server_name other.example; ssl_certificate " + cert + "; ssl_certificate_key " + key + "; location / { return 200 other; } }\nserver { listen 443 ssl; server_name relay.example; ssl_certificate " + cert + "; ssl_certificate_key " + key + "; location / { return 200 selected; } }\n}\n")
-	edit, err := NginxRoute(nginx, "relay.example")
+	edit, err := NginxRoute(nginx, "other.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	edit, err = NginxRouteForPort(edit.After, "relay.example", 19087)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +38,11 @@ func TestRealProviderConfigurationSyntax(t *testing.T) {
 		t.Fatalf("nginx rejected route: %v %s", err, out)
 	}
 	caddy := []byte("other.example {\n respond other\n}\nrelay.example {\n respond selected\n}\n")
-	edit, err = CaddyRoute(caddy, "relay.example")
+	edit, err = CaddyRoute(caddy, "other.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	edit, err = CaddyRouteForPort(edit.After, "relay.example", 19087)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +54,11 @@ func TestRealProviderConfigurationSyntax(t *testing.T) {
 		t.Fatalf("caddy rejected route: %v %s", err, out)
 	}
 	apache := []byte("<VirtualHost *:443>\n ServerName other.example\n DocumentRoot /var/www/html\n</VirtualHost>\n<VirtualHost *:443>\n ServerName relay.example\n DocumentRoot /var/www/html\n</VirtualHost>\n")
-	edit, err = ApacheRoute(apache, "relay.example")
+	edit, err = ApacheRoute(apache, "other.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	edit, err = ApacheRouteForPort(edit.After, "relay.example", 19087)
 	if err != nil {
 		t.Fatal(err)
 	}

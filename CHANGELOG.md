@@ -9,6 +9,20 @@ becomes a publication record only after its authenticated evidence, signed
 qualification record and release decision are complete. Git tags never create
 or publish artifacts automatically.
 
+## [0.4.0]
+
+Explicitly named independent relay instances on one VPS.
+
+- Add relay `--instance NAME` setup/registration/removal and local instance listing.
+- Preserve the original default relay; give named instances separate keys,
+  protected state, containers, reboot services and persistent loopback ports.
+- Bind website routing, upgrade recovery, container cleanup and reservations to
+  the selected instance; do not adopt another instance or switch endpoint origins.
+- Serialize shared host/package operations and distinguish one-instance removal
+  from whole-role package removal. Retain all pairing and SSH state.
+- Accept known 0.3.0 packages without replacing unrelated commands. Add scoped
+  lifecycle, selector, route-conflict, package-lock and port-binding regressions.
+
 ## [0.3.0]
 
 Independent named tunnels across shared relays and SSH hosts.

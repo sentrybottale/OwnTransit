@@ -1,5 +1,18 @@
 # OwnTransit roadmap
 
+## 0.4.0 — independent named relay instances
+
+- Select VPS-local relay setup, registration and removal with `--instance NAME`;
+  preserve the existing default relay and show local instances with `list`.
+- Give every instance separate protected state, relay keys, container, reboot
+  unit, canonical website URL and persistent loopback-port reservation.
+- Scope upgrades, interrupted recovery, selected-site routing and stopped-container
+  cleanup; coordinate shared host/package mutations and retain non-purging state.
+- Test default plus named instances, conflicts and cross-instance isolation with
+  the existing bounded checks. No new signer or runtime protocol is introduced.
+- Endpoint pairings do not switch relay origins. Multiple relays are explicitly
+  selected through independent pairings, never automatic relay failover.
+
 ## 0.3.0 — independent named tunnels
 
 The unit is one independently authorized client–receiver tunnel. Several
