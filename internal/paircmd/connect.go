@@ -27,6 +27,13 @@ func pairCommand(executable, operation, state string, tunnel ...string) string {
 	return command
 }
 
+// A receiver knows its paired relay origin, not the VPS administrator's local
+// instance label. Registration therefore selects that exact URL locally on the
+// VPS; it never discovers or switches a tunnel to another relay.
+func relayRegistrationCommand(origin, receiverID string) string {
+	return "sudo owntransit-relay-preview register --url " + shellQuote(origin) + " " + shellQuote(receiverID)
+}
+
 func printConnect(w io.Writer, status, executable, state string, tunnel ...string) {
 	// There are two shells: the user's command line and SSH's ProxyCommand.
 	// Escape SSH percent tokens as well; paths are local data, never code.

@@ -1,5 +1,10 @@
 # Signed receiver-owned capsules
 
+0.4.0 adds named local relay instances and retains default deployment compatibility.
+Relay instance creation/upgrade/removal is explicitly selected; endpoint pairings
+never change relay origins automatically. The same existing signer, nine assets
+and bounded source/installer checks apply, with multi-instance isolation coverage.
+
 0.3.0 adds named client/receiver tunnel selection and independently managed
 receiver instances. It uses the same bounded release checks and nine public
 assets as 0.2.0. Existing default pairings remain intact; no wire migration or
@@ -12,7 +17,7 @@ legacy 0.1.0 manifest/policy. The inventory now has six members, with nine publi
 assets after adding its signature, inventory and public key. The Mac archive
 includes `install-macos.sh` for offline, non-purging removal.
 
-A 0.2.0 or 0.3.0 release may be published without GitHub's prerelease flag after the
+A 0.2.0, 0.3.0 or 0.4.0 release may be published without GitHub's prerelease flag after the
 bounded checks and brief exact-build end-to-end check pass. Extended soak,
 clean-host certification and independent assessment remain explicitly unclaimed.
 No new signing keys or additional ceremony is introduced.
@@ -39,7 +44,7 @@ existing distribution public-key digest, validates the detached inventory
 signature, and checks the selected archive digest before extraction or root
 execution. The inner installer rechecks the platform and exact flat inventory.
 
-Linux installation uses `/opt/owntransit-preview/0.3.0`, separately named
+Linux installation uses `/opt/owntransit-preview/0.4.0`, separately named
 `*-preview` aliases, and one disabled connector service. It preserves every
 legacy install, service, credential and SSH setting. `pair setup` on the
 connector initializes its own identities and explicitly enables its installed
@@ -56,7 +61,8 @@ Existing connector installation prints service restart commands instead
 of a new-pairing command. Client setup recognizes a retained pairing/request and
 prints its connection/resume step without changing identity. A managed relay
 upgrade uses the same setup URL and a protected rollback journal; it does not
-invoke the website route editor. Multi-tunnel profiles are not part of this cut.
+invoke the website route editor. Named endpoint tunnels and relay instances
+select independent local state without changing the pairing wire profile.
 
 ## Build and publish
 

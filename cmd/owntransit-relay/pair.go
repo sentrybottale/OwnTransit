@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/sentrybottale/owntransit/internal/pairrelaycmd"
 	"github.com/sentrybottale/owntransit/internal/protocol"
-	"github.com/sentrybottale/owntransit/internal/relaysetup"
 )
 
 type pairOperations struct {
@@ -54,72 +52,6 @@ func runPairCommand(arguments []string, output, diagnostics io.Writer) int {
 			return pairrelaycmd.Register(ctx, path, receiverID)
 		},
 	})
-}
-
-func runManagedRelay(arguments []string, input io.Reader, output, diagnostics io.Writer) int {
-	if len(arguments) == 0 {
-		return 2
-	}
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
-	if arguments[0] == "uninstall-managed" {
-		if len(arguments) != 1 {
-			return 2
-		}
-		if err := relaysetup.UninstallManaged(ctx); err != nil {
-			fmt.Fprintln(diagnostics, err)
-			return 1
-		}
-		fmt.Fprintln(output, "Managed relay stopped and disabled. Unit configuration, keys, website routing and rollback images retained.")
-		return 0
-	}
-	if arguments[0] == "cleanup-container" {
-		if len(arguments) != 3 {
-			return 2
-		}
-		if err := relaysetup.CleanupManaged(ctx, arguments[1], arguments[2]); err != nil {
-			fmt.Fprintln(diagnostics, err)
-			return 1
-		}
-		return 0
-	}
-	if arguments[0] == "register" {
-		if len(arguments) != 2 {
-			return 2
-		}
-		if _, err := protocol.ParseID(arguments[1]); err != nil {
-			return 2
-		}
-		code, err := relaysetup.RegisterManaged(ctx, arguments[1])
-		if err != nil {
-			fmt.Fprintln(diagnostics, err)
-			return 1
-		}
-		fmt.Fprintln(diagnostics, "Relay code (give to your client):")
-		fmt.Fprintln(output, code)
-		fmt.Fprintln(diagnostics, "\nNEXT — on your client:\n  owntransit-preview pair setup\nEnter your relay URL, the relay code above, and the receiver's private one-use pairing code. Never give the private receiver code to this relay.")
-		return 0
-	}
-	flags := flag.NewFlagSet("relay setup", flag.ContinueOnError)
-	flags.SetOutput(diagnostics)
-	publicURL := flags.String("url", "", "public URL, for example wss://relay.example/connects")
-	if flags.Parse(arguments[1:]) != nil || flags.NArg() != 0 {
-		return 2
-	}
-	if *publicURL == "" {
-		fmt.Fprint(output, "Public relay URL (for example wss://your-domain/connects): ")
-		reader := bufio.NewReader(io.LimitReader(input, 2049))
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			return 2
-		}
-		*publicURL = line
-	}
-	if err := relaysetup.Setup(ctx, *publicURL, output); err != nil {
-		fmt.Fprintf(diagnostics, "Relay setup: %v\n", err)
-		return 1
-	}
-	return 0
 }
 
 func executePairCommand(arguments []string, output, diagnostics io.Writer, operations pairOperations) int {

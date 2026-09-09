@@ -157,7 +157,14 @@ jobs:
           docker run --rm --network=none --cpus=2 --memory=512m \
             --volume="$RUNNER_TEMP:/fixture:ro" \
             docker.io/library/golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514 \
-            sh -ceu 'mkdir -p /usr/local/libexec/owntransit-relay-setup-check; install -m 0755 /fixture/relay-setup.test /usr/local/libexec/owntransit-relay-setup-check/host.test; touch /owntransit-relay-setup-fixture; /usr/local/libexec/owntransit-relay-setup-check/host.test -test.run "Test(Managed|Inspection|Cleanup)" -test.v'
+            sh -ceu 'mkdir -p /usr/local/libexec/owntransit-relay-setup-check; install -m 0755 /fixture/relay-setup.test /usr/local/libexec/owntransit-relay-setup-check/host.test; touch /owntransit-relay-setup-fixture; /usr/local/libexec/owntransit-relay-setup-check/host.test -test.run "Test(Managed|Inspection|Cleanup|NamedRelay|Instance)" -test.v'
+      - name: Validate named routes with real webserver parsers
+        if: matrix.arch == 'amd64'
+        run: |
+          docker run --rm --cpus=2 --memory=512m \
+            --volume="$RUNNER_TEMP:/fixture:ro" \
+            docker.io/library/golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514 \
+            sh -ceu 'apt-get -qq update; DEBIAN_FRONTEND=noninteractive apt-get -qq -y --no-install-recommends install nginx apache2 caddy openssl; a2enmod ssl proxy proxy_http proxy_wstunnel >/dev/null; touch /owntransit-provider-fixture; /fixture/relay-setup.test -test.run "^TestRealProviderConfigurationSyntax$" -test.v'
       - name: Build native pairing self-test executables
         run: |
           set -eu

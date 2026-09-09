@@ -30,7 +30,7 @@ const managedRoot = "/var/lib/owntransit-relay-setup"
 const managedContainer = "owntransit-relay-managed"
 const managedUnit = "owntransit-relay-managed.service"
 const unitPath = "/etc/systemd/system/" + managedUnit
-const imageTag = "owntransit-relay-pair:0.3.0"
+const imageTag = "owntransit-relay-pair:0.4.0"
 
 type boundedBuffer struct {
 	bytes.Buffer
@@ -102,10 +102,12 @@ func protectedFile(path string) ([]byte, os.FileMode, error) {
 }
 
 type savedConfig struct {
-	Schema string `json:"schema"`
-	URL    string `json:"url"`
-	Engine string `json:"engine"`
-	Image  string `json:"image"`
+	Schema   string `json:"schema"`
+	URL      string `json:"url"`
+	Engine   string `json:"engine"`
+	Image    string `json:"image"`
+	Instance string `json:"instance,omitempty"`
+	Port     int    `json:"port,omitempty"`
 }
 
 func stateRoot() (*securefs.Root, error) {
@@ -116,18 +118,18 @@ func stateRoot() (*securefs.Root, error) {
 	return root, err
 }
 
-func loadConfig() (savedConfig, error) {
-	r, err := securefs.OpenRoot(managedRoot)
+func (s instanceSpec) loadConfig() (savedConfig, error) {
+	r, err := s.openRoot()
 	if err != nil {
 		return savedConfig{}, err
 	}
 	defer r.Close()
-	b, err := r.ReadFile("setup.json", 8192)
+	b, err := s.readRecord(r, "setup.json", 8192)
 	if err != nil {
 		return savedConfig{}, err
 	}
 	var c savedConfig
-	if strictjson.Decode(b, &c) != nil || c.Schema != "owntransit.relay-setup.v1" {
+	if strictjson.Decode(b, &c) != nil || !s.validSaved(c) {
 		return c, errors.New("invalid relay setup state")
 	}
 	if _, err := PublicURL(c.URL); err != nil {
@@ -280,6 +282,11 @@ func ownsPort(c containerInfo) bool {
 }
 func ownRelay(c containerInfo) bool {
 	name := strings.TrimPrefix(c.Name, "/")
+	// A named managed instance can never be adopted as the legacy default,
+	// even if its publication was edited to occupy the default port.
+	if strings.HasPrefix(name, managedContainer+"-") {
+		return false
+	}
 	if name != managedContainer && name != "owntransit-relay-pair" && name != "owntransit-relay" && name != wireprofile.LegacyV1RelayArtifactName && c.Config.Labels["org.opencontainers.image.title"] != "OwnTransit Relay" {
 		return false
 	}
@@ -339,19 +346,23 @@ func previous(ctx context.Context) (*previousRelay, error) {
 	return found, nil
 }
 
-func unit(image, engine string) []byte {
-	base := string(legacyUnit(image, engine))
-	hook := fmt.Sprintf("/usr/local/bin/owntransit-relay-preview cleanup-container %s %s", engine, image)
+func (s instanceSpec) unit(image, engine string) []byte {
+	base := string(s.legacyUnit(image, engine))
+	selector := ""
+	if s.named() {
+		selector = "--instance " + s.name + " "
+	}
+	hook := fmt.Sprintf("/usr/local/bin/owntransit-relay-preview cleanup-container %s%s %s", selector, engine, image)
 	base = strings.Replace(base, "Type=simple\n", "Type=simple\nExecStartPre="+hook+"\n", 1)
 	base = strings.Replace(base, "Restart=on-failure\n", "ExecStopPost="+hook+"\nRestart=on-failure\n", 1)
 	return []byte(base)
 }
 
-func knownUnit(data []byte, c savedConfig) bool {
-	return bytes.Equal(data, unit(c.Image, c.Engine)) || bytes.Equal(data, legacyUnit(c.Image, c.Engine))
+func (s instanceSpec) knownUnit(data []byte, c savedConfig) bool {
+	return s.validSaved(c) && (bytes.Equal(data, s.unit(c.Image, c.Engine)) || (!s.named() && bytes.Equal(data, s.legacyUnit(c.Image, c.Engine))))
 }
 
-func legacyUnit(image, engine string) []byte {
+func (s instanceSpec) legacyUnit(image, engine string) []byte {
 	return []byte(fmt.Sprintf(`[Unit]
 Description=OwnTransit managed relay
 After=network-online.target
@@ -359,7 +370,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=%s run --rm --name=%s --pull=never --user=65532:65532 --read-only --cap-drop=all --security-opt=no-new-privileges --memory=256m --pids-limit=128 --cpus=1 --publish=127.0.0.1:9087:9087/tcp --volume=%s/data:/state:rw %s pair serve --state /state/relay
+ExecStart=%s run --rm --name=%s --pull=never --user=65532:65532 --read-only --cap-drop=all --security-opt=no-new-privileges --memory=256m --pids-limit=128 --cpus=1 --publish=127.0.0.1:%d:9087/tcp --volume=%s/data:/state:rw %s pair serve --state /state/relay
 ExecStop=%s stop --time=10 %s
 Restart=on-failure
 RestartSec=5s
@@ -375,7 +386,7 @@ Delegate=yes
 
 [Install]
 WantedBy=multi-user.target
-`, engine, managedContainer, managedRoot, image, engine, managedContainer))
+`, engine, s.container, s.port, s.root, image, engine, s.container))
 }
 
 func writeAtomic(path string, data []byte, mode os.FileMode) error {
@@ -412,7 +423,7 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 // Setup is entered only by the explicit local setup command. It selects one
 // public URL, pins a locally installed image and verifies the real protocol
 // through that URL. Other website locations are not rewrite targets.
-func Setup(ctx context.Context, inputURL string, output io.Writer) (returnErr error) {
+func (s instanceSpec) setup(ctx context.Context, inputURL string, output io.Writer) (returnErr error) {
 	if os.Geteuid() != 0 {
 		return errors.New("run relay setup with sudo")
 	}
@@ -423,26 +434,27 @@ func Setup(ctx context.Context, inputURL string, output io.Writer) (returnErr er
 	if _, err := os.Stat("/run/systemd/system"); err != nil {
 		return errors.New("this managed setup requires systemd")
 	}
-	root, err := stateRoot()
+	root, err := s.openRoot()
 	if err != nil {
 		return err
 	}
 	defer root.Close()
-	lock, err := root.TryLock("setup.lock")
-	if err != nil {
+	if err := s.recoverFresh(ctx, root); err != nil {
 		return err
 	}
-	defer lock.Close()
-	if err := recoverManaged(ctx, root, output); err != nil {
+	if err := s.recoverManaged(ctx, root, output); err != nil {
 		return err
 	}
-	saved, savedErr := loadConfig()
+	saved, savedErr := s.loadConfig()
 	if savedErr != nil && !errors.Is(savedErr, os.ErrNotExist) {
 		return savedErr
 	}
-	old, err := previous(ctx)
-	if err != nil {
-		return err
+	var old *previousRelay
+	if !s.named() {
+		old, err = previous(ctx)
+		if err != nil {
+			return err
+		}
 	}
 	var e string
 	if savedErr == nil {
@@ -477,7 +489,7 @@ func Setup(ctx context.Context, inputURL string, output io.Writer) (returnErr er
 		if err != nil {
 			return err
 		}
-		converted, err := os.CreateTemp(managedRoot, "docker-load-*.tar")
+		converted, err := os.CreateTemp(s.root, "docker-load-*.tar")
 		if err != nil {
 			input.Close()
 			return err
@@ -499,7 +511,7 @@ func Setup(ctx context.Context, inputURL string, output io.Writer) (returnErr er
 	}
 	// Do not alter state or the listener if a pre-existing same-name container
 	// is not an identified OwnTransit relay.
-	if c, err := inspect(ctx, e, managedContainer); err == nil && !ownRelay(c) {
+	if c, err := inspect(ctx, e, s.container); err == nil && (s.named() || !ownRelay(c)) && (savedErr != nil || !s.ownsContainer(c, saved.Image)) {
 		return errors.New("the managed container name is already used by another application")
 	}
 	imageBytes, err := command(ctx, e, "image", "inspect", "--format", "{{.Id}}", imageTag)
@@ -517,13 +529,16 @@ func Setup(ctx context.Context, inputURL string, output io.Writer) (returnErr er
 	if err != nil || strings.TrimSpace(string(user)) != "65532:65532" {
 		return errors.New("relay image does not select the required unprivileged identity")
 	}
-	dataDir := filepath.Join(managedRoot, "data")
+	dataDir := filepath.Join(s.root, "data")
 	if savedErr == nil {
+		if err := s.validateData(); err != nil {
+			return err
+		}
 		info, err := os.Lstat(filepath.Join(dataDir, "relay"))
 		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 			return errors.New("existing relay identity state is missing or unsafe; no new keys were created")
 		}
-		if err := upgradeManaged(ctx, root, saved, savedConfig{"owntransit.relay-setup.v1", publicURL, e, image}, output); err != nil {
+		if err := s.upgradeManaged(ctx, root, saved, s.config(publicURL, e, image), output); err != nil {
 			return err
 		}
 		fmt.Fprintf(output, "Relay ready at %s. NEXT: continue with your existing receiver/client; for a new receiver, run its pair setup and register its public ID here.\n", publicURL)
@@ -550,15 +565,18 @@ func Setup(ctx context.Context, inputURL string, output io.Writer) (returnErr er
 	} else if err != nil {
 		return err
 	}
+	if err := s.validateData(); err != nil {
+		return err
+	}
 	var route *routeChange
 	changedRoute := false
 	newStarted := false
 	oldStopped := false
-	alreadyManaged := old != nil && strings.TrimPrefix(old.Container.Name, "/") == managedContainer
+	alreadyManaged := old != nil && strings.TrimPrefix(old.Container.Name, "/") == s.container
 	defer func() {
 		if returnErr != nil {
 			if newStarted {
-				_, e := command(context.Background(), "/usr/bin/systemctl", "disable", "--now", managedUnit)
+				_, e := command(context.Background(), "/usr/bin/systemctl", "disable", "--now", s.unitName)
 				returnErr = errors.Join(returnErr, e)
 			}
 			if changedRoute {
@@ -578,19 +596,32 @@ func Setup(ctx context.Context, inputURL string, output io.Writer) (returnErr er
 			}
 		}
 	}()
-	contents := unit(image, e)
-	if existing, _, err := protectedFile(unitPath); err == nil && !bytes.Equal(existing, contents) {
-		return errors.New("managed service has no matching saved setup state; no service was stopped. Restore its setup.json backup before retrying")
+	contents := s.unit(image, e)
+	if existing, _, err := protectedFile(s.unitPath); err == nil && !bytes.Equal(existing, contents) {
+		var pending savedConfig
+		b, pendingErr := s.readRecord(root, "pending-setup.json", 8192)
+		if !s.named() || pendingErr != nil || strictjson.Decode(b, &pending) != nil || !s.knownUnit(existing, pending) {
+			return errors.New("managed service has no matching saved setup state; no service was stopped. Restore its setup.json backup before retrying")
+		}
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if err := writeAtomic(unitPath, contents, 0644); err != nil {
+	if err := s.preflightFresh(ctx, e, image); err != nil {
+		return err
+	}
+	if s.named() {
+		pending, _ := json.Marshal(s.config(publicURL, e, image))
+		if err := root.ReplaceFile("pending-setup.json", pending, 0600); err != nil {
+			return err
+		}
+	}
+	if err := writeAtomic(s.unitPath, contents, 0644); err != nil {
 		return err
 	}
 	if _, err := command(ctx, "/usr/bin/systemctl", "daemon-reload"); err != nil {
 		return err
 	}
-	if old != nil && strings.TrimPrefix(old.Container.Name, "/") != managedContainer {
+	if old != nil && strings.TrimPrefix(old.Container.Name, "/") != s.container {
 		if _, err := command(ctx, "/usr/bin/systemctl", "is-active", "--quiet", "owntransit-relay.service"); err == nil {
 			start, err := command(ctx, "/usr/bin/systemctl", "show", "owntransit-relay.service", "--property=ExecStart", "--value")
 			if err != nil || !bytes.Contains(start, []byte(strings.TrimPrefix(old.Container.Name, "/"))) {
@@ -611,12 +642,12 @@ func Setup(ctx context.Context, inputURL string, output io.Writer) (returnErr er
 		}
 	}
 	newStarted = !alreadyManaged
-	if _, err := command(ctx, "/usr/bin/systemctl", "enable", "--now", managedUnit); err != nil {
+	if _, err := command(ctx, "/usr/bin/systemctl", "enable", "--now", s.unitName); err != nil {
 		return err
 	}
 	var localBytes []byte
 	for attempt := 0; attempt < 20; attempt++ {
-		localBytes, err = command(ctx, e, "exec", managedContainer, "/owntransit-relay", "pair", "info", "--state", "/state/relay")
+		localBytes, err = command(ctx, e, "exec", s.container, "/owntransit-relay", "pair", "info", "--state", "/state/relay")
 		if err == nil {
 			break
 		}
@@ -632,6 +663,13 @@ func Setup(ctx context.Context, inputURL string, output io.Writer) (returnErr er
 	var local pairrelay.ServerInfo
 	if strictjson.Decode(localBytes, &local) != nil {
 		return errors.New("local relay identity could not be verified")
+	}
+	if s.named() {
+		verified, err := s.managedIdentity(ctx, e, image)
+		if err != nil {
+			return err
+		}
+		local = verified
 	}
 	verify := func(timeout time.Duration) bool {
 		probeCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -651,7 +689,7 @@ func Setup(ctx context.Context, inputURL string, output io.Writer) (returnErr er
 	verified := verify(firstProbeTimeout)
 	if !verified {
 		u, _ := url.Parse(publicURL)
-		route, err = prepareRoute(ctx, u.Hostname())
+		route, err = prepareRouteForPort(ctx, u.Hostname(), s.port)
 		if err != nil {
 			return err
 		}
@@ -666,27 +704,21 @@ func Setup(ctx context.Context, inputURL string, output io.Writer) (returnErr er
 	if !verified {
 		return errors.New("the selected website did not reach this relay; setup is rolling back its changes")
 	}
-	configBytes, _ := json.Marshal(savedConfig{"owntransit.relay-setup.v1", publicURL, e, image})
+	configBytes, _ := json.Marshal(s.config(publicURL, e, image))
 	if err := root.ReplaceFile("setup.json", configBytes, 0600); err != nil {
 		return err
 	}
-	fmt.Fprintf(output, "Relay is ready at %s and enabled for reboot.\nNEXT — on your private SSH server:\n  sudo owntransit-connector-preview pair setup\nUse the relay URL above. Receiver setup prints the exact command to run here next:\n  sudo owntransit-relay-preview register RECEIVER_ID\n", publicURL)
+	if s.named() {
+		if err := root.UnlinkFile("pending-setup.json"); err != nil {
+			return err
+		}
+	}
+	selector := ""
+	if s.named() {
+		selector = " --instance " + s.name
+	}
+	fmt.Fprintf(output, "Relay is ready at %s and enabled for reboot.\nNEXT — on your private SSH server:\n  sudo owntransit-connector-preview pair setup\nUse the relay URL above. Register that receiver on this relay instance:\n  sudo owntransit-relay-preview register%s RECEIVER_ID\n", publicURL, selector)
 	return nil
-}
-
-func RegisterManaged(ctx context.Context, id string) (string, error) {
-	if os.Geteuid() != 0 {
-		return "", errors.New("run relay registration with sudo")
-	}
-	c, err := loadConfig()
-	if err != nil {
-		return "", err
-	}
-	result, err := command(ctx, c.Engine, "exec", managedContainer, "/owntransit-relay", "pair", "register", "--state", "/state/relay", id)
-	if err != nil {
-		return "", errors.New("receiver is not advertising yet; start its setup and try again")
-	}
-	return strings.TrimSpace(string(result)), nil
 }
 
 type routeChange struct {
@@ -697,9 +729,13 @@ type routeChange struct {
 }
 
 func prepareRoute(ctx context.Context, hostname string) (*routeChange, error) {
+	return prepareRouteForPort(ctx, hostname, 9087)
+}
+
+func prepareRouteForPort(ctx context.Context, hostname string, port int) (*routeChange, error) {
 	nginx := "/usr/sbin/nginx"
 	if _, err := os.Stat(nginx); err != nil {
-		return prepareOtherRoute(ctx, hostname)
+		return prepareOtherRouteForPort(ctx, hostname, port)
 	}
 	dump, err := command(ctx, nginx, "-T")
 	if err != nil {
@@ -719,7 +755,7 @@ func prepareRoute(ctx context.Context, hostname string) (*routeChange, error) {
 		if err != nil {
 			continue
 		}
-		edit, err := NginxRoute(data, hostname)
+		edit, err := NginxRouteForPort(data, hostname, port)
 		if err != nil {
 			if errors.Is(err, ErrNoSite) {
 				continue
@@ -732,7 +768,7 @@ func prepareRoute(ctx context.Context, hostname string) (*routeChange, error) {
 		chosen = &routeChange{path: path, program: nginx, edit: edit, mode: mode, kind: "nginx"}
 	}
 	if chosen == nil {
-		return prepareOtherRoute(ctx, hostname)
+		return prepareOtherRouteForPort(ctx, hostname, port)
 	}
 	return chosen, nil
 }
@@ -744,7 +780,7 @@ func (r *routeChange) apply(ctx context.Context, root *securefs.Root) error {
 	if err != nil || !bytes.Equal(current, r.edit.Before) {
 		return errors.New("site configuration changed during setup")
 	}
-	hash := sha256.Sum256([]byte(r.path))
+	hash := sha256.Sum256(append([]byte(r.path+"\x00"), r.edit.Before...))
 	backup := "site-" + hex.EncodeToString(hash[:8]) + ".backup"
 	if err := root.EnsureFile(backup, r.edit.Before, 0600); err != nil {
 		return err

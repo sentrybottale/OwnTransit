@@ -9,13 +9,15 @@ umask 077
 
 fail() { printf 'owntransit-preview-install: %s\n' "$*" >&2; exit 1; }
 usage() {
-  printf '%s\n' 'usage: install-linux.sh --bundle ABSOLUTE_ROOT_OWNED_BUNDLE --role client|connector|relay'
+  printf '%s\n' 'usage: install-linux.sh --bundle ABSOLUTE_ROOT_OWNED_BUNDLE --role client|connector|relay [--instance NAME]'
 }
 
 bundle=
 role=
 action=install
 next=manual
+relay_instance=default
+instance_set=no
 while test "$#" -gt 0; do
   test "$#" -ge 2 || fail "$1 requires a value"
   case "$1" in
@@ -23,6 +25,7 @@ while test "$#" -gt 0; do
     --role) test -z "$role" || fail '--role specified twice'; role=$2 ;;
     --action) action=$2 ;;
     --next) next=$2 ;;
+    --instance) test "$instance_set" = no || fail '--instance specified twice'; relay_instance=$2; instance_set=yes ;;
     *) fail "unknown argument: $1" ;;
   esac
   shift 2
@@ -30,6 +33,9 @@ done
 case "$role" in client|connector|relay) ;; *) usage >&2; exit 2 ;; esac
 case "$action" in install|uninstall) ;; *) fail 'action must be install or uninstall' ;; esac
 case "$next" in manual|automatic) ;; *) fail 'invalid next-step mode' ;; esac
+test "$instance_set" = no || test "$role" = relay || fail '--instance applies only to the relay role'
+case "$relay_instance" in ''|*[!a-z0-9-]*|[!a-z]*|all) fail 'invalid relay instance name' ;; esac
+test "${#relay_instance}" -le 32 || fail 'relay instance names are limited to 32 characters'
 test "$(id -u)" -eq 0 || fail 'installation requires root'
 test "$(uname -s)" = Linux || fail 'Linux is required'
 case "$(uname -m)" in
@@ -90,7 +96,7 @@ for name in $expected_files; do
 done
 test "$0" = "$bundle/install-linux.sh" || fail 'installer must run from its exact absolute bundle path'
 
-expected_capsule=$(printf 'schema=owntransit.development-capsule.v1\nversion=0.3.0\nos=linux\narch=%s' "$arch")
+expected_capsule=$(printf 'schema=owntransit.development-capsule.v1\nversion=0.4.0\nos=linux\narch=%s' "$arch")
 test "$(cat "$bundle/CAPSULE")" = "$expected_capsule" || fail 'capsule identity does not match this host'
 
 test "$(wc -l < "$bundle/SHA256SUMS" | tr -d '[:space:]')" = 8 || fail 'SHA256SUMS must contain eight records'
@@ -116,22 +122,22 @@ owntransit-relay.oci.tar'
 test "$listed" = "$expected_listed" || fail 'SHA256SUMS member set is not exact'
 (cd "$bundle" && sha256sum -c SHA256SUMS >/dev/null) || fail 'bundle checksum verification failed'
 
-if test "$role" = connector; then
-  test -d /run/systemd/system && test -x /usr/bin/systemctl || fail 'connector preview requires systemd'
-  command -v flock >/dev/null 2>&1 || fail 'connector service maintenance requires flock'
+if test "$role" = connector || test "$role" = relay; then
+  if test "$role" = connector; then test -d /run/systemd/system && test -x /usr/bin/systemctl || fail 'connector preview requires systemd'; fi
+  command -v flock >/dev/null 2>&1 || fail 'service package maintenance requires flock'
   for ancestor in / /var /var/lib; do
-    test -d "$ancestor" && test ! -L "$ancestor" || fail 'unsafe connector maintenance ancestor'
+    test -d "$ancestor" && test ! -L "$ancestor" || fail 'unsafe service maintenance ancestor'
     require_protected "$ancestor"
   done
-  manager=/var/lib/owntransit-connector-manager
+  manager=/var/lib/owntransit-$role-manager
   if test ! -e "$manager" && test ! -L "$manager"; then install -d -o root -g root -m 0700 "$manager"; fi
-  test -d "$manager" && test ! -L "$manager" && test "$(stat -c %u:%g:%a "$manager")" = 0:0:700 || fail 'unsafe connector maintenance directory'
+  test -d "$manager" && test ! -L "$manager" && test "$(stat -c %u:%g:%a "$manager")" = 0:0:700 || fail 'unsafe service maintenance directory'
   if test ! -e "$manager/package.lock" && test ! -L "$manager/package.lock"; then
     (set -C; : > "$manager/package.lock") || fail 'maintenance lock creation raced; retry'
   fi
-  test -f "$manager/package.lock" && test ! -L "$manager/package.lock" && test "$(stat -c %u:%g:%a:%h:%s "$manager/package.lock")" = 0:0:600:1:0 || fail 'unsafe connector maintenance lock'
+  test -f "$manager/package.lock" && test ! -L "$manager/package.lock" && test "$(stat -c %u:%g:%a:%h:%s "$manager/package.lock")" = 0:0:600:1:0 || fail 'unsafe service maintenance lock'
   exec 9<> "$manager/package.lock"
-  flock -n 9 || fail 'a connector setup or package operation is active; retry when it completes'
+  flock -n 9 || fail 'a service setup or package operation is active; retry when it completes'
 fi
 
 named_units=
@@ -156,8 +162,9 @@ no_unit_overrides() {
   test -z "$drops" || fail 'connector service has overrides; automatic modification refused'
 }
 normalize_previous_unit() {
-  sed -e 's/0\.1\.[1235678]/0.3.0/g' \
-    -e 's/0\.2\.0/0.3.0/g' \
+  sed -e 's/0\.1\.[1235678]/0.4.0/g' \
+    -e 's/0\.2\.0/0.4.0/g' \
+    -e 's/0\.3\.0/0.4.0/g' \
     -e '/^Type=simple$/c\
 Type=notify\
 NotifyAccess=main\
@@ -167,7 +174,7 @@ TimeoutStartSec=30s' \
 }
 if test "$role" = connector; then named_units=$(collect_named_units); fi
 
-prefix=/opt/owntransit-preview/0.3.0
+prefix=/opt/owntransit-preview/0.4.0
 case "$role" in
   client) binary=owntransit; alias=owntransit-preview ;;
   connector) binary=owntransit-connector; alias=owntransit-connector-preview ;;
@@ -182,7 +189,7 @@ if test -e "$alias_path" || test -L "$alias_path"; then
   previous_alias=$(readlink "$alias_path")
   case "$previous_alias" in
     "$alias_target") ;;
-    "/opt/owntransit-preview/0.1.1/$role/$binary"|"/opt/owntransit-preview/0.1.2/$role/$binary"|"/opt/owntransit-preview/0.1.3/$role/$binary"|"/opt/owntransit-preview/0.1.5/$role/$binary"|"/opt/owntransit-preview/0.1.6/$role/$binary"|"/opt/owntransit-preview/0.1.7/$role/$binary"|"/opt/owntransit-preview/0.1.8/$role/$binary"|"/opt/owntransit-preview/0.2.0/$role/$binary")
+    "/opt/owntransit-preview/0.1.1/$role/$binary"|"/opt/owntransit-preview/0.1.2/$role/$binary"|"/opt/owntransit-preview/0.1.3/$role/$binary"|"/opt/owntransit-preview/0.1.5/$role/$binary"|"/opt/owntransit-preview/0.1.6/$role/$binary"|"/opt/owntransit-preview/0.1.7/$role/$binary"|"/opt/owntransit-preview/0.1.8/$role/$binary"|"/opt/owntransit-preview/0.2.0/$role/$binary"|"/opt/owntransit-preview/0.3.0/$role/$binary")
       test -f "$previous_alias" && test ! -L "$previous_alias" || fail 'unsafe previous preview executable'
       test "$(stat -c %u:%g:%a:%h "$previous_alias")" = 0:0:755:1 || fail 'previous preview executable metadata differs'
       ;;
@@ -238,7 +245,12 @@ if test "$action" = uninstall; then
     rm -- "$unit"
     /usr/bin/systemctl daemon-reload
   elif test "$role" = relay; then
-    "$alias_target" uninstall-managed
+    if test "$instance_set" = yes; then
+      "$alias_target" uninstall-managed --instance "$relay_instance" --package-lock-fd 9
+      printf 'Relay instance %s stopped. Shared relay software and all retained instance identities remain installed.\n' "$relay_instance"
+      exit 0
+    fi
+    "$alias_target" uninstall-all-managed --package-lock-fd 9
   fi
   if test -L "$normal_alias" && test "$(stat -c %u "$normal_alias")" = 0 && test "$(readlink "$normal_alias")" = "$alias_target"; then rm -- "$normal_alias"; fi
   rm -- "$alias_path"
@@ -318,7 +330,7 @@ if test "$role" = connector; then
   trap cleanup_unit EXIT HUP INT TERM
   cat > "$unit_stage" <<EOF
 [Unit]
-Description=OwnTransit 0.3.0 preview receiver pairing broker
+Description=OwnTransit 0.4.0 preview receiver pairing broker
 After=network-online.target
 Wants=network-online.target
 ConditionPathIsDirectory=/var/lib/owntransit-pair
@@ -389,7 +401,7 @@ EOF
   install_exact "$unit_stage" "$prefix/connector/service.template" 644
   cleanup_unit
   trap - EXIT HUP INT TERM
-  printf 'OwnTransit 0.3.0 %s installed for linux/%s.\n' "$role" "$arch"
+  printf 'OwnTransit 0.4.0 %s installed for linux/%s.\n' "$role" "$arch"
   if test -d /var/lib/owntransit-pair; then
     printf '%s\n' 'Pairing retained. Activate the upgrade:'
     printf '%s\n' '  sudo systemctl restart owntransit-connector-pair.service'
@@ -404,13 +416,19 @@ EOF
   printf 'Add another client tunnel: sudo %s pair setup --tunnel laptop\n' "$public_command"
   printf 'List local tunnels: sudo %s pair list\n' "$public_command"
 elif test "$role" = client; then
-  printf 'OwnTransit 0.3.0 client installed for linux/%s. Pairing and SSH settings preserved.\n' "$arch"
+  printf 'OwnTransit 0.4.0 client installed for linux/%s. Pairing and SSH settings preserved.\n' "$arch"
   printf 'Next: %s pair setup\n' "$public_command"
   printf '%s\n' 'Then answer its prompts: your relay URL, VPS registration code (otrelay1.), and private SSH-machine code (otpair1.).'
   printf 'Select another tunnel: %s pair setup --tunnel office\n' "$public_command"
 else
-  printf 'OwnTransit 0.3.0 relay package installed for linux/%s.\n' "$arch"
-  if test "$next" = manual; then printf 'Next: sudo %s setup\n' "$public_command"; else printf '%s\n' 'Starting relay setup now; answer its prompts below.'; fi
-  printf '%s\n' 'Use your existing public URL for upgrades; keys and website routing are preserved.'
+  printf 'OwnTransit 0.4.0 relay package installed for linux/%s.\n' "$arch"
+  printf 'Selected relay instance: %s\n' "$relay_instance"
+  if test "$next" = manual; then printf 'Next: sudo %s setup --instance %s\n' "$public_command" "$relay_instance"; else printf '%s\n' 'Starting selected relay setup now; answer its prompts below.'; fi
+  printf '%s\n' "Use this instance's existing URL for upgrades. To add a separate relay, choose a new --instance NAME and a different HTTPS hostname."
+  printf 'List relay instances: sudo %s list\n' "$public_command"
 fi
-printf 'Uninstall: curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.3.0/install-preview-linux.sh | sudo sh -s -- %s --uninstall\n' "$role"
+if test "$role" = relay; then
+  printf 'Remove only this relay: curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-linux.sh | sudo sh -s -- relay --instance %s --uninstall\n' "$relay_instance"
+else
+  printf 'Uninstall: curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-linux.sh | sudo sh -s -- %s --uninstall\n' "$role"
+fi

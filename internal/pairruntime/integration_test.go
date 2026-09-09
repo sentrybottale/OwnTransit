@@ -159,7 +159,9 @@ func (f *integrated) start(t *testing.T) (context.CancelFunc, <-chan error) {
 	// completion so a pending RPC cannot delay shutdown. Use the production WS
 	// adapter above, including its abort-on-context-cancellation behavior.
 	stopIPC := context.AfterFunc(ctx, func() { _ = b.Close() })
+	agentExited := make(chan struct{})
 	go func() {
+		defer close(agentExited)
 		defer a.Close()
 		err := ServeAgent(a, a, ReceiverBackend{Path: f.serverPath})
 		if err != nil && ctx.Err() == nil {
@@ -167,7 +169,9 @@ func (f *integrated) start(t *testing.T) (context.CancelFunc, <-chan error) {
 		}
 	}()
 	done := make(chan error, 1)
+	workerExited := make(chan struct{})
 	go func() {
+		defer close(workerExited)
 		defer b.Close()
 		gate, e := Admission(f.serverPath)
 		if e != nil {
@@ -195,7 +199,23 @@ func (f *integrated) start(t *testing.T) (context.CancelFunc, <-chan error) {
 		}
 		done <- err
 	}()
-	t.Cleanup(func() { cancel(); b.Close(); stopIPC() })
+	t.Cleanup(func() {
+		cancel()
+		b.Close()
+		stopIPC()
+		// Cancellation is not a join: the agent can still finish a durable
+		// record write after its worker exits. Both goroutines must stop before
+		// the earlier TempDir cleanup deletes their private state directories.
+		deadline := time.NewTimer(5 * time.Second)
+		defer deadline.Stop()
+		for _, exited := range []<-chan struct{}{workerExited, agentExited} {
+			select {
+			case <-exited:
+			case <-deadline.C:
+				t.Fatal("integration fixture did not finish shutdown before state cleanup")
+			}
+		}
+	})
 	return cancel, done
 }
 

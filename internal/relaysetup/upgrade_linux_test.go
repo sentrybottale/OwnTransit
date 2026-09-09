@@ -50,7 +50,7 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			prev := savedConfig{"owntransit.relay-setup.v1", "wss://relay.example/connects", "/usr/bin/podman", "sha256:" + strings.Repeat("a", 64)}
+			prev := savedConfig{Schema: "owntransit.relay-setup.v1", URL: "wss://relay.example/connects", Engine: "/usr/bin/podman", Image: "sha256:" + strings.Repeat("a", 64)}
 			next := prev
 			next.Image = "sha256:" + strings.Repeat("b", 64)
 			b, _ := json.Marshal(prev)

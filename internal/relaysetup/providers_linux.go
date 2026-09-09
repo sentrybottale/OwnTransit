@@ -37,6 +37,13 @@ func (r *routeChange) reload(ctx context.Context) error {
 var apacheFile = regexp.MustCompile(`\((/[^()]+):[0-9]+\)`)
 
 func prepareOtherRoute(ctx context.Context, hostname string) (*routeChange, error) {
+	return prepareOtherRouteForPort(ctx, hostname, 9087)
+}
+
+func prepareOtherRouteForPort(ctx context.Context, hostname string, port int) (*routeChange, error) {
+	if _, err := routeLoopback(port); err != nil {
+		return nil, err
+	}
 	for _, candidate := range []struct{ program, service string }{{"/usr/sbin/apache2ctl", "apache2.service"}, {"/usr/sbin/apachectl", "httpd.service"}} {
 		if _, err := os.Stat(candidate.program); err != nil {
 			continue
@@ -60,7 +67,7 @@ func prepareOtherRoute(ctx context.Context, hostname string) (*routeChange, erro
 			if err != nil {
 				return nil, err
 			}
-			edit, err := ApacheRoute(data, hostname)
+			edit, err := ApacheRouteForPort(data, hostname, port)
 			if errors.Is(err, ErrNoSite) {
 				continue
 			}
@@ -86,7 +93,7 @@ func prepareOtherRoute(ctx context.Context, hostname string) (*routeChange, erro
 			if err != nil {
 				return nil, err
 			}
-			edit, err := CaddyRoute(data, hostname)
+			edit, err := CaddyRouteForPort(data, hostname, port)
 			if err != nil {
 				return nil, err
 			}

@@ -64,9 +64,9 @@ func TestMacInstallerIsolatedLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	top := "owntransit-preview-0.3.0-darwin-arm64"
+	top := "owntransit-preview-0.4.0-darwin-arm64"
 	files := map[string][]byte{
-		"CAPSULE": []byte("schema=owntransit.development-capsule.v1\nversion=0.3.0\nos=darwin\narch=arm64\n"),
+		"CAPSULE": []byte("schema=owntransit.development-capsule.v1\nversion=0.4.0\nos=darwin\narch=arm64\n"),
 		"LICENSE": []byte("fixture license\n"), "NOTICE": []byte("fixture notices\n"),
 		"owntransit": []byte("#!/bin/sh\nprintf 'fixture-client\\n'\n"), "install-macos.sh": source,
 	}
@@ -107,7 +107,7 @@ func TestMacInstallerIsolatedLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(filepath.Join(assets, top+".tar.gz"), archive.Bytes(), 0600)
-	members := []string{"DEVELOPMENT.txt", "install-preview-linux.sh", "install-preview-macos.sh", top + ".tar.gz", "owntransit-preview-0.3.0-linux-amd64.tar.gz", "owntransit-preview-0.3.0-linux-arm64.tar.gz"}
+	members := []string{"DEVELOPMENT.txt", "install-preview-linux.sh", "install-preview-macos.sh", top + ".tar.gz", "owntransit-preview-0.4.0-linux-amd64.tar.gz", "owntransit-preview-0.4.0-linux-arm64.tar.gz"}
 	sort.Strings(members)
 	sums.Reset()
 	for _, name := range members {
@@ -150,27 +150,29 @@ func TestMacInstallerIsolatedLifecycle(t *testing.T) {
 	}
 	run(true, "client") // exact reinstall
 	software := filepath.Join(home, "Library/Application Support/OwnTransitSoftware")
-	previous := filepath.Join(software, "0.2.0")
-	if err := os.Rename(filepath.Join(software, "0.3.0"), previous); err != nil {
-		t.Fatal(err)
-	}
-	write(filepath.Join(previous, "CAPSULE"), []byte("schema=owntransit.development-capsule.v1\nversion=0.2.0\nos=darwin\narch=arm64\n"), 0644)
-	for _, command := range []string{alias, filepath.Join(home, ".local/bin/owntransit")} {
-		if err := os.Remove(command); err != nil {
+	for _, previousVersion := range []string{"0.2.0", "0.3.0"} {
+		previous := filepath.Join(software, previousVersion)
+		if err := os.Rename(filepath.Join(software, "0.4.0"), previous); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Symlink(filepath.Join(previous, "owntransit"), command); err != nil {
-			t.Fatal(err)
+		write(filepath.Join(previous, "CAPSULE"), []byte(fmt.Sprintf("schema=owntransit.development-capsule.v1\nversion=%s\nos=darwin\narch=arm64\n", previousVersion)), 0644)
+		for _, command := range []string{alias, filepath.Join(home, ".local/bin/owntransit")} {
+			if err := os.Remove(command); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Join(previous, "owntransit"), command); err != nil {
+				t.Fatal(err)
+			}
 		}
-	}
-	run(true, "client") // Known prior package upgrades without overwriting other commands.
-	for _, command := range []string{alias, filepath.Join(home, ".local/bin/owntransit")} {
-		if to, err := os.Readlink(command); err != nil || to != filepath.Join(software, "0.3.0/owntransit") {
-			t.Fatal("upgrade failed to select new client")
+		run(true, "client") // Known prior package upgrades without overwriting other commands.
+		for _, command := range []string{alias, filepath.Join(home, ".local/bin/owntransit")} {
+			if to, err := os.Readlink(command); err != nil || to != filepath.Join(software, "0.4.0/owntransit") {
+				t.Fatal("upgrade failed to select new client")
+			}
 		}
-	}
-	if _, err := os.Stat(filepath.Join(previous, "owntransit")); err != nil {
-		t.Fatal("upgrade removed previous software")
+		if _, err := os.Stat(filepath.Join(previous, "owntransit")); err != nil {
+			t.Fatal("upgrade removed previous software")
+		}
 	}
 	state := filepath.Join(home, "Library/Application Support/owntransit-pair")
 	if err := os.Mkdir(state, 0700); err != nil {

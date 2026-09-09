@@ -42,7 +42,7 @@ type relayRuntimeSource struct {
 }
 
 func main() {
-	if len(os.Args) > 1 && (os.Args[1] == "setup" || os.Args[1] == "register" || os.Args[1] == "cleanup-container" || os.Args[1] == "uninstall-managed") {
+	if len(os.Args) > 1 && (os.Args[1] == "setup" || os.Args[1] == "register" || os.Args[1] == "list" || os.Args[1] == "cleanup-container" || os.Args[1] == "uninstall-managed" || os.Args[1] == "uninstall-all-managed") {
 		os.Exit(runManagedRelay(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 	}
 	code := executeRelay(os.Args[1:], os.Stdout, os.Stderr, productionRelayCommands())

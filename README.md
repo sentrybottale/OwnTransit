@@ -23,9 +23,9 @@ It can observe addresses, timing and traffic sizes, or deny service. It must
 not read the inner stream, impersonate an endpoint accepted by its peer, or
 choose where the receiver sends traffic.
 
-## Install 0.3.0
+## Install 0.4.0
 
-0.3.0 is the signed receiver-owned release line, separate from the older 0.1.0
+0.4.0 is the signed receiver-owned release line, separate from the older 0.1.0
 package/qualification profile. Linux amd64/x86_64 and arm64/aarch64 use the same
 command. Existing preview filenames and aliases remain for compatibility;
 normal command names are added where available. Follow the command printed by
@@ -34,19 +34,19 @@ the installer if a legacy name conflicts. No unrelated command is overwritten.
 First, on the public VPS (installation starts relay setup):
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.3.0/install-preview-linux.sh | sudo sh -s -- relay
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-linux.sh | sudo sh -s -- relay
 ```
 
 Then install the package on the private SSH server:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.3.0/install-preview-linux.sh | sudo sh -s -- connector
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-linux.sh | sudo sh -s -- connector
 ```
 
 On a Linux client:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.3.0/install-preview-linux.sh | sudo sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-linux.sh | sudo sh -s -- client
 ```
 
 For a new pairing, follow **Pair and connect** below once both packages are
@@ -68,7 +68,7 @@ relay and any route changed by setup. Start the relay before endpoint setup.
 On an Apple-silicon Mac, install the client **without sudo**:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.3.0/install-preview-macos.sh | sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-macos.sh | sh -s -- client
 ```
 
 The Mac installer prints the exact setup command, normally
@@ -83,11 +83,11 @@ macOS use and recovery. **Do not use the old 0.1.0 curl command for this flow.**
 
 ## Upgrade without new pairing codes
 
-0.3.0 includes the 0.1.8 fix for the relay timer that closed active tunnels.
+0.4.0 includes the 0.1.8 fix for the relay timer that closed active tunnels.
 Endpoint authentication and wire compatibility are unchanged.
 
-Use the same 0.3.0 installer above for each installed role. It preserves pairing
-state and accepts known 0.1.1/0.1.2/0.1.3/0.1.5/0.1.6/0.1.7/0.1.8 preview packages; stable 0.1.0 remains
+Use the same 0.4.0 installer above for each installed role. It preserves pairing
+state and accepts known 0.1.1/0.1.2/0.1.3/0.1.5/0.1.6/0.1.7/0.1.8 and 0.2.0/0.3.0 packages; stable 0.1.0 remains
 separate. On the relay, supply the existing URL. Managed upgrade restarts onto
 the new image, verifies it and the public route, and rolls back on failure;
 it does not rewrite website routing or relay keys. Rerunning after an interrupted
@@ -107,16 +107,65 @@ On Mac, rerun the same installer and use its printed executable path in your
 ProxyCommand. Existing pairing state is reused. Older manually installed Mac
 binaries are not overwritten or selected silently.
 
-## Uninstall without deleting pairing state
+## More than one relay on the same VPS
 
-For Linux 0.3.0, use the same installer with the local role and `--uninstall`:
+Use a different local **instance name** and HTTPS hostname for each relay:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.3.0/install-preview-linux.sh | sudo sh -s -- client --uninstall
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-linux.sh | sudo sh -s -- relay --instance work wss://work.example/connects
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-linux.sh | sudo sh -s -- relay --instance personal wss://personal.example/connects
 ```
 
-Replace `client` with `connector` or `relay` as appropriate. Upgrade older
-packages to 0.3.0 first. Receiver removal stops/disables its service. Relay
+Each instance has separate relay keys, private state, container, reboot service
+and a persistent loopback-only host port. Setup selects only the requested HTTPS
+site. Existing unnamed installations remain `default`, with their original keys,
+URL and port. Omit `--instance` when upgrading that existing default relay.
+
+After package installation, the equivalent commands are:
+
+```sh
+sudo owntransit-relay setup --instance work --url wss://work.example/connects
+sudo owntransit-relay register --instance work RECEIVER_ID
+sudo owntransit-relay list
+```
+
+Receiver setup prints a registration command with `--url` filled in. That selects
+the exact configured local instance by URL, so you do not need to know its VPS
+label. You may use either `register --instance NAME` or `register --url PUBLIC_URL`,
+never both. An unknown or unavailable selected relay is an error, not a fallback.
+
+Choose this relay's URL on the receiving SSH machine and client. Relay
+`--instance` selects local VPS plumbing; endpoint `--tunnel` selects an independent
+pairing. Those names need not match. One relay instance can still carry many
+tunnels. An existing pairing never switches relay, automatically or otherwise;
+using a different relay requires a new pairing with its own identities.
+
+Rerun the same named install/setup command to upgrade that instance. Other
+instances are not restarted. Their keys and reservations remain independent,
+but they share the VPS's resources and failure exposure—not separate trusted hosts.
+Adding a missing website route reloads the shared webserver; its reload behavior
+may affect existing connections, so keep independent access during setup.
+
+## Uninstall without deleting pairing state
+
+For Linux 0.4.0, use the same installer with the local role and `--uninstall`:
+
+```sh
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-linux.sh | sudo sh -s -- client --uninstall
+```
+
+Replace `client` with `connector` or `relay` as appropriate. **Unqualified relay
+package removal stops all managed relay instances.** To stop only one and keep
+the shared package and other instances, specify its name:
+
+```sh
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-linux.sh | sudo sh -s -- relay --instance work --uninstall
+```
+
+Its keys, disabled service, website route and URL/port reservation remain for
+explicit reinstall. Use `--instance default` to select only the original relay.
+Upgrade older
+packages to 0.4.0 first. Receiver removal stops/disables its service. Relay
 removal disables its verified managed unit and removes the stopped container;
 its keys, disabled unit configuration, website route and rollback images are
 retained for explicit reinstall/setup. Modified/unrecognized files are not
@@ -125,7 +174,7 @@ silently removed. SSH configuration and pairing state are never purged.
 On Mac, use the installer's printed uninstall command, normally:
 
 ```sh
-sh "$HOME/Library/Application Support/OwnTransitSoftware/0.3.0/install-macos.sh" --uninstall
+sh "$HOME/Library/Application Support/OwnTransitSoftware/0.4.0/install-macos.sh" --uninstall
 ```
 
 Reinstalling restores software without requiring new pairing codes.
@@ -164,12 +213,14 @@ the code expires after 24 hours and is spent when pairing commits.
 
 ### 2. On the relay
 
-In another terminal, register the public receiver ID:
+In another terminal on your VPS, run the registration command printed by receiver
+setup. It includes the exact relay URL. For example:
 
 ```sh
-sudo owntransit-relay-preview register RECEIVER_ID
+sudo owntransit-relay-preview register --url wss://relay.example/connects RECEIVER_ID
 ```
 
+Use your actual URL and public ID from receiver setup, not the example domain.
 Copy the printed relay code to the client. The running receiver retrieves
 its relay registration automatically.
 
@@ -203,7 +254,7 @@ pairing, SCP syntax and restart instructions.
 
 ## More than one tunnel
 
-Named tunnel commands require the 0.3.0 client/connector. Existing compatible
+Named tunnel commands require the 0.3.0 or newer client/connector. Existing compatible
 relays can carry them without new relay configuration or pairing migration.
 
 One VPS relay and public URL can carry several independent client–receiver
@@ -309,7 +360,7 @@ guarantee that SSH-started jobs stop.
 
 ## Scope and current limits
 
-0.3.0 uses bounded source/security, fast timer/reconnect/concurrency and
+0.4.0 uses bounded source/security, fast timer/reconnect/concurrency and
 alarm/rebuild fixtures, isolated installer checks, authenticated artifacts and
 a brief final end-to-end check. **Extended soak testing, pristine-host
 certification and independent security assessment are not claimed.** Historical

@@ -8,8 +8,8 @@ LC_ALL=C
 export LC_ALL
 unset CDPATH ENV BASH_ENV TAR_OPTIONS GZIP SSH_AUTH_SOCK SSH_ASKPASS DISPLAY
 umask 077
-version=0.3.0
-base=https://github.com/sentrybottale/OwnTransit/releases/download/v0.3.0
+version=0.4.0
+base=https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0
 stage=
 fail() { printf 'owntransit-install: %s\n' "$*" >&2; exit 1; }
 cleanup() {
@@ -29,13 +29,33 @@ trap cleanup EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
-test "$#" -ge 1 && test "$#" -le 2 || fail 'usage: sudo sh install-preview-linux.sh client|connector|relay [PUBLIC_RELAY_URL|--uninstall]'
+test "$#" -ge 1 || fail 'usage: sudo sh install-preview-linux.sh client|connector|relay [PUBLIC_RELAY_URL] [--instance NAME] [--uninstall]'
 role=$1
-setup_url=${2-}
+shift
+setup_url=
+relay_instance=default
+instance_set=no
 action=install
-if test "$setup_url" = --uninstall; then action=uninstall; setup_url=; fi
-test "$#" -eq 1 || test "$role" = relay || test "$action" = uninstall || fail 'a public URL can be passed only for relay setup'
+while test "$#" -gt 0; do
+  case "$1" in
+    --instance)
+      test "$#" -ge 2 && test "$instance_set" = no || fail '--instance requires one name and may occur only once'
+      relay_instance=$2; instance_set=yes; shift 2 ;;
+    --instance=*)
+      test "$instance_set" = no || fail '--instance may occur only once'
+      relay_instance=${1#--instance=}; instance_set=yes; shift ;;
+    --uninstall)
+      test "$action" = install || fail '--uninstall may occur only once'
+      action=uninstall; shift ;;
+    -*) fail 'unknown installer option' ;;
+    *) test -z "$setup_url" || fail 'only one public relay URL is accepted'; setup_url=$1; shift ;;
+  esac
+done
 case "$role" in client|connector|relay) ;; *) fail 'role must be client, connector or relay' ;; esac
+test "$instance_set" = no || test "$role" = relay || fail '--instance applies only to the relay role'
+case "$relay_instance" in ''|*[!a-z0-9-]*|[!a-z]*|all) fail 'invalid relay instance name' ;; esac
+test "${#relay_instance}" -le 32 || fail 'relay instance names are limited to 32 characters'
+test -z "$setup_url" || { test "$role" = relay && test "$action" = install; } || fail 'a public URL is accepted only for relay setup, not removal'
 test "$(id -u)" = 0 || fail 'run through sudo'
 test "$(uname -s)" = Linux || fail 'Linux is required'
 case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; *) fail 'Linux amd64 or arm64 is required' ;; esac
@@ -72,6 +92,13 @@ fetch() {
 }
 
 printf 'OwnTransit %s: %s %s for Linux %s.\n' "$version" "$action" "$role" "$arch"
+if test "$role" = relay; then
+  if test "$action" = uninstall && test "$instance_set" = no; then
+    printf '%s\n' 'Removing the relay package stops ALL managed relay instances. To remove only one, add --instance NAME.'
+  else
+    printf 'Selected relay instance: %s\n' "$relay_instance"
+  fi
+fi
 printf '%s\n' 'Pairing and SSH settings are preserved.'
 fetch distribution-public.key 4096
 test "$(sha256sum "$stage/distribution-public.key" | awk '{print $1}')" = 55d97d90f4b81628aa534ba28960b63685ea5d1d4eeef489ffb28de632dc0a9e || fail 'distribution key does not match the pinned authority'
@@ -87,7 +114,7 @@ awk '
   BEGIN { ok=1; previous="" }
   {
     if (NF!=2 || length($1)!=64 || $1 !~ /^[0-9a-f]+$/ || $0!=$1 "  " $2 || seen[$2]++ || (previous!="" && previous >= $2)) ok=0
-    if ($2!="DEVELOPMENT.txt" && $2!="install-preview-linux.sh" && $2!="install-preview-macos.sh" && $2!="owntransit-preview-0.3.0-darwin-arm64.tar.gz" && $2!="owntransit-preview-0.3.0-linux-amd64.tar.gz" && $2!="owntransit-preview-0.3.0-linux-arm64.tar.gz") ok=0
+    if ($2!="DEVELOPMENT.txt" && $2!="install-preview-linux.sh" && $2!="install-preview-macos.sh" && $2!="owntransit-preview-0.4.0-darwin-arm64.tar.gz" && $2!="owntransit-preview-0.4.0-linux-amd64.tar.gz" && $2!="owntransit-preview-0.4.0-linux-arm64.tar.gz") ok=0
     previous=$2
   }
   END { exit ok ? 0 : 1 }
@@ -117,12 +144,14 @@ next=manual
 if test "$role" = relay && test "$action" = install; then
   if test -n "$setup_url" || ( : </dev/tty ) 2>/dev/null; then next=automatic; fi
 fi
-env -i PATH="$PATH" LC_ALL=C "$stage/$top/install-linux.sh" --bundle "$stage/$top" --role "$role" --action "$action" --next "$next"
+set -- --bundle "$stage/$top" --role "$role" --action "$action" --next "$next"
+if test "$instance_set" = yes; then set -- "$@" --instance "$relay_instance"; fi
+env -i PATH="$PATH" LC_ALL=C "$stage/$top/install-linux.sh" "$@"
 if test "$role" = relay && test "$action" = install; then
   if test -n "$setup_url"; then
-    env -i PATH="$PATH" LC_ALL=C /usr/local/bin/owntransit-relay-preview setup --url "$setup_url"
+    env -i PATH="$PATH" LC_ALL=C /usr/local/bin/owntransit-relay-preview setup --instance "$relay_instance" --url "$setup_url"
   elif ( : </dev/tty ) 2>/dev/null; then
-    env -i PATH="$PATH" LC_ALL=C /usr/local/bin/owntransit-relay-preview setup </dev/tty
+    env -i PATH="$PATH" LC_ALL=C /usr/local/bin/owntransit-relay-preview setup --instance "$relay_instance" </dev/tty
   fi
 fi
 }

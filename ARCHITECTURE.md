@@ -1,5 +1,12 @@
 # OwnTransit architecture
 
+The 0.4.0 managed installer supports explicitly named independent relay instances
+on one host. Local instance names select separate root-protected configuration,
+relay data mounts, containers, units and loopback ports; they are not endpoint
+identities. Endpoint tunnels remain cryptographically bound to their original
+relay origin. There is no relay discovery, switching or automatic failover.
+The unnamed/default deployment retains its existing paths, keys and port.
+
 Relay installation now has one provider-independent local setup interface. The
 public URL selects a website, while Docker/Podman and supported webserver adapters
 handle its host integration. Runtime relay protocol, endpoint authorization and

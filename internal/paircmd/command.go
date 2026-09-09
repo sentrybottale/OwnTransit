@@ -294,10 +294,10 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 			} else {
 				fmt.Fprintf(output, "Start this receiver: owntransit-connector pair serve --state %s\n", *state)
 			}
-			fmt.Fprintf(output, "\nNEXT — on your relay:\n  sudo owntransit-relay-preview register %s\nThen on your client:\n  %s\nPaste the relay's code and the private pairing code above when asked.\n", attempt.ReceiverID, pairCommand("owntransit-preview", "setup", "", *tunnel))
+			fmt.Fprintf(output, "\nNEXT — on your relay:\n  %s\nThen on your client:\n  %s\nPaste the relay's code and the private pairing code above when asked.\n", relayRegistrationCommand(*origin, attempt.ReceiverID), pairCommand("owntransit-preview", "setup", "", *tunnel))
 		} else {
 			var relayCode, privateCode []byte
-			relayCode, err = promptValidated(ctx, input, reader, diagnostics, "VPS registration code (otrelay1., hidden): ", "Get the complete otrelay1. code from: sudo owntransit-relay-preview register RECEIVER_ID on the VPS.", pairrelaycmd.MaxRegistrationCode, true, func(v []byte) error { _, e := pairrelaycmd.DecodeRegistration(string(v)); return e })
+			relayCode, err = promptValidated(ctx, input, reader, diagnostics, "VPS registration code (otrelay1., hidden): ", "Run the URL-specific relay registration command printed by receiver setup on your VPS; paste its complete otrelay1. code here.", pairrelaycmd.MaxRegistrationCode, true, func(v []byte) error { _, e := pairrelaycmd.DecodeRegistration(string(v)); return e })
 			if err != nil {
 				break
 			}

@@ -35,3 +35,15 @@ func TestConnectOutputIsShortAndSelectsExactClientAndState(t *testing.T) {
 		t.Fatal("connection example did not retain literal arguments")
 	}
 }
+
+func TestReceiverRegistrationCommandSelectsExactURLAndQuotesArguments(t *testing.T) {
+	for _, origin := range []string{"wss://relay.example/connects", "wss://data.example/' $(false); `false` %h"} {
+		command := relayRegistrationCommand(origin, "public-receiver-id")
+		// Decode the printed command as data; do not execute sudo or the relay.
+		parsed, err := exec.Command("sh", "-c", "set -- "+command+"; printf '%s\\n' \"$@\"").Output()
+		want := "sudo\nowntransit-relay-preview\nregister\n--url\n" + origin + "\npublic-receiver-id\n"
+		if err != nil || string(parsed) != want {
+			t.Fatalf("registration arguments changed: %v %q", err, parsed)
+		}
+	}
+}
