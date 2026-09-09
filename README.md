@@ -129,6 +129,11 @@ sudo owntransit-relay register --instance work RECEIVER_ID
 sudo owntransit-relay list
 ```
 
+Receiver setup prints a registration command with `--url` filled in. That selects
+the exact configured local instance by URL, so you do not need to know its VPS
+label. You may use either `register --instance NAME` or `register --url PUBLIC_URL`,
+never both. An unknown or unavailable selected relay is an error, not a fallback.
+
 Choose this relay's URL on the receiving SSH machine and client. Relay
 `--instance` selects local VPS plumbing; endpoint `--tunnel` selects an independent
 pairing. Those names need not match. One relay instance can still carry many
@@ -208,12 +213,14 @@ the code expires after 24 hours and is spent when pairing commits.
 
 ### 2. On the relay
 
-In another terminal, register the public receiver ID:
+In another terminal on your VPS, run the registration command printed by receiver
+setup. It includes the exact relay URL. For example:
 
 ```sh
-sudo owntransit-relay-preview register RECEIVER_ID
+sudo owntransit-relay-preview register --url wss://relay.example/connects RECEIVER_ID
 ```
 
+Use your actual URL and public ID from receiver setup, not the example domain.
 Copy the printed relay code to the client. The running receiver retrieves
 its relay registration automatically.
 

@@ -8,6 +8,9 @@ The original default relay retains its state paths, keys and port 9087. Named
 instances require bounded lowercase labels, distinct canonical URLs and reserved
 loopback host ports. Their protected local binding records precede activation;
 ports and URLs are not freed by failed setup or non-purging removal.
+Registration can explicitly select the exact protected local instance by URL
+instead of name. Unknown/unavailable URLs fail; no network discovery, relay
+fallback or endpoint-origin update is performed by that lookup.
 
 Named setup never adopts a discovered legacy/default relay. Container ownership,
 cleanup hooks, saved configuration and upgrade journals bind the exact instance,

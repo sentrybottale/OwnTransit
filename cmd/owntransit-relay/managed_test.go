@@ -11,6 +11,10 @@ import (
 )
 
 func TestManagedRelaySelectorsFailBeforeOperations(t *testing.T) {
+	id, err := protocol.NewID()
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, args := range [][]string{
 		{"setup", "--instance", "../default"},
 		{"setup", "--instance", ""},
@@ -22,6 +26,10 @@ func TestManagedRelaySelectorsFailBeforeOperations(t *testing.T) {
 		{"setup", "--state", "/private/state"},
 		{"setup", "--package-lock-fd", "9"},
 		{"register", "--instance", "office", "not-a-receiver-id"},
+		{"register", "--instance", "office", "--url", "wss://office.example/connects", "not-a-receiver-id"},
+		{"register", "--url", "", id.String()},
+		{"register", "--url", "http://office.example/connects", id.String()},
+		{"register", "--url", "wss://office.example/connects", "--url", "wss://other.example/connects", "not-a-receiver-id"},
 		{"list", "--instance", "office"},
 		{"list", "unexpected"},
 		{"uninstall-all-managed", "--instance", "office"},
@@ -60,6 +68,7 @@ func TestManagedRelayDispatchKeepsScopeAndLegacyDefault(t *testing.T) {
 		{[]string{"setup", "--instance", "office", "--url", "wss://office.example/connects"}, "setup:office:wss://office.example/connects", 0},
 		{[]string{"register", id.String()}, "register:default:" + id.String(), 0},
 		{[]string{"register", "--instance", "office", id.String()}, "register:office:" + id.String(), 0},
+		{[]string{"register", "--url", "https://OFFICE.example:443/connects", id.String()}, "register-url:wss://office.example/connects:" + id.String(), 0},
 		{[]string{"uninstall-managed", "--instance", "office"}, "uninstall:office", 0},
 		{[]string{"uninstall-managed", "--instance", "office", "--package-lock-fd", "9"}, "uninstall:office", 9},
 		{[]string{"uninstall-all-managed", "--package-lock-fd", "9"}, "uninstall-all", 9},
@@ -78,6 +87,10 @@ func TestManagedRelayDispatchKeepsScopeAndLegacyDefault(t *testing.T) {
 				},
 				register: func(_ context.Context, name, receiver string) (string, error) {
 					called = "register:" + name + ":" + receiver
+					return "fixture-relay-code", nil
+				},
+				registerURL: func(_ context.Context, url, receiver string) (string, error) {
+					called = "register-url:" + url + ":" + receiver
 					return "fixture-relay-code", nil
 				},
 				cleanup:      func(_ context.Context, name, _, _ string) error { called = "cleanup:" + name; return nil },

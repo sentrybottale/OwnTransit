@@ -17,6 +17,7 @@ import (
 type managedOperations struct {
 	setup        func(context.Context, string, string, io.Writer) error
 	register     func(context.Context, string, string) (string, error)
+	registerURL  func(context.Context, string, string) (string, error)
 	cleanup      func(context.Context, string, string, string) error
 	uninstall    func(context.Context, string) error
 	uninstallAll func(context.Context) error
@@ -44,7 +45,7 @@ func runManagedRelay(arguments []string, input io.Reader, output, diagnostics io
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	return executeManagedRelay(ctx, arguments, input, output, diagnostics, managedOperations{
-		setup: relaysetup.SetupInstance, register: relaysetup.RegisterInstance,
+		setup: relaysetup.SetupInstance, register: relaysetup.RegisterInstance, registerURL: relaysetup.RegisterURL,
 		cleanup: relaysetup.CleanupInstance, uninstall: relaysetup.UninstallInstance,
 		uninstallAll: relaysetup.UninstallAllManaged, list: relaysetup.ListInstances,
 		lockPackage: relaysetup.LockPackage,
@@ -53,7 +54,7 @@ func runManagedRelay(arguments []string, input io.Reader, output, diagnostics io
 
 func executeManagedRelay(ctx context.Context, arguments []string, input io.Reader, output, diagnostics io.Writer, operations managedOperations) int {
 	usage := func() int {
-		fmt.Fprintln(diagnostics, "usage: owntransit-relay setup [--instance NAME] [--url PUBLIC_URL] | register [--instance NAME] RECEIVER_ID | list | uninstall-managed [--instance NAME]")
+		fmt.Fprintln(diagnostics, "usage: owntransit-relay setup [--instance NAME] [--url PUBLIC_URL] | register [--instance NAME | --url PUBLIC_URL] RECEIVER_ID | list | uninstall-managed [--instance NAME]")
 		return 2
 	}
 	if len(arguments) == 0 {
@@ -72,7 +73,7 @@ func executeManagedRelay(ctx context.Context, arguments []string, input io.Reade
 	if action != "list" && action != "uninstall-all-managed" {
 		flags.Var(&instance, "instance", "local managed relay instance (default keeps the existing relay)")
 	}
-	if action == "setup" {
+	if action == "setup" || action == "register" {
 		flags.Var(&publicURL, "url", "this instance's public URL, for example wss://relay.example/connects")
 	}
 	if action == "uninstall-managed" || action == "uninstall-all-managed" {
@@ -86,6 +87,10 @@ func executeManagedRelay(ctx context.Context, arguments []string, input io.Reade
 	}
 	if err := relaysetup.ValidateInstanceName(instance.value); err != nil || (instance.set && instance.value == "") {
 		fmt.Fprintln(diagnostics, "Relay instance must be 1..32 lowercase letters, digits or hyphens, starting with a letter; 'all' is reserved.")
+		return 2
+	}
+	if action == "register" && instance.set && publicURL.set {
+		fmt.Fprintln(diagnostics, "Select registration by either --instance or --url, not both.")
 		return 2
 	}
 	fd := 0
@@ -132,6 +137,14 @@ func executeManagedRelay(ctx context.Context, arguments []string, input io.Reade
 		}
 		publicURL.value = canonical
 	}
+	if action == "register" && publicURL.set {
+		canonical, err := relaysetup.PublicURL(publicURL.value)
+		if err != nil {
+			fmt.Fprintln(diagnostics, "Registration needs the public relay URL printed by your receiving SSH machine.")
+			return 2
+		}
+		publicURL.value = canonical
+	}
 	// Cleanup is a systemd hook invoked while setup may own the package/global
 	// locks. It deliberately uses only exact-instance ownership checks instead
 	// of reacquiring those locks and deadlocking the parent operation.
@@ -153,9 +166,18 @@ func executeManagedRelay(ctx context.Context, arguments []string, input io.Reade
 		err = operations.setup(ctx, instance.value, publicURL.value, output)
 	case "register":
 		var code string
-		code, err = operations.register(ctx, instance.value, flags.Arg(0))
+		if publicURL.set {
+			code, err = operations.registerURL(ctx, publicURL.value, flags.Arg(0))
+		} else {
+			code, err = operations.register(ctx, instance.value, flags.Arg(0))
+		}
 		if err == nil {
-			fmt.Fprintf(diagnostics, "Relay instance: %s\nVPS registration code (give to your client):\n", instance.value)
+			if publicURL.set {
+				fmt.Fprintf(diagnostics, "Relay URL: %s\n", publicURL.value)
+			} else {
+				fmt.Fprintf(diagnostics, "Relay instance: %s\n", instance.value)
+			}
+			fmt.Fprintln(diagnostics, "VPS registration code (give to your client):")
 			fmt.Fprintln(output, code)
 			fmt.Fprintln(diagnostics, "\nNEXT — on your client:\n  owntransit-preview pair setup --tunnel NAME\nChoose your client-local tunnel name. Enter this relay's URL, the VPS code above, and the private code from your receiving SSH machine. Never give that private code to the relay.")
 		}

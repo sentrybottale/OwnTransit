@@ -464,10 +464,8 @@ func RegisterInstance(ctx context.Context, name, id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Receiver IDs are fixed public values, never an option or pairing secret.
-	parsed, err := protocol.ParseID(id)
-	if err != nil || parsed == (protocol.ID{}) {
-		return "", errors.New("invalid public receiver ID")
+	if err := validatePublicReceiverID(id); err != nil {
+		return "", err
 	}
 	root, lock, err := managerRoot(true)
 	if err != nil {
@@ -479,6 +477,56 @@ func RegisterInstance(ctx context.Context, name, id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return s.register(ctx, id)
+}
+
+// RegisterURL selects exactly one retained local relay by its explicit public
+// URL. It performs no network discovery and never retries another instance.
+func RegisterURL(ctx context.Context, rawURL, id string) (string, error) {
+	url, err := PublicURL(rawURL)
+	if err != nil {
+		return "", err
+	}
+	if err := validatePublicReceiverID(id); err != nil {
+		return "", err
+	}
+	root, lock, err := managerRoot(true)
+	if err != nil {
+		return "", err
+	}
+	defer root.Close()
+	defer lock.Close()
+	specs, err := scanInstances(root)
+	if err != nil {
+		return "", err
+	}
+	var selected instanceSpec
+	found := false
+	for _, s := range specs {
+		if s.url != url {
+			continue
+		}
+		if found {
+			return "", errors.New("public URL matches conflicting relay instances")
+		}
+		selected, found = s, true
+	}
+	if !found {
+		return "", errors.New("no saved relay instance matches that public URL")
+	}
+	return selected.register(ctx, id)
+}
+
+func validatePublicReceiverID(id string) error {
+	// Receiver IDs are fixed public values, never an option or pairing secret.
+	parsed, err := protocol.ParseID(id)
+	if err != nil || parsed == (protocol.ID{}) {
+		return errors.New("invalid public receiver ID")
+	}
+	return nil
+}
+
+func (s instanceSpec) register(ctx context.Context, id string) (string, error) {
 	c, err := s.loadConfig()
 	if err != nil {
 		return "", err

@@ -14,6 +14,8 @@ or publish artifacts automatically.
 Explicitly named independent relay instances on one VPS.
 
 - Add relay `--instance NAME` setup/registration/removal and local instance listing.
+- Print receiver registration with its exact relay URL; explicit local URL lookup
+  chooses only the matching configured instance and never falls back elsewhere.
 - Preserve the original default relay; give named instances separate keys,
   protected state, containers, reboot services and persistent loopback ports.
 - Bind website routing, upgrade recovery, container cleanup and reservations to

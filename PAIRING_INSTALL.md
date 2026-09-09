@@ -173,11 +173,19 @@ network connections are outbound. Its SSH target is fixed to
 
 ## 3. Register the receiver at the relay
 
-In another relay terminal, replace `RECEIVER_ID` with the public ID:
+In another VPS terminal, copy the receiver's printed registration command; it
+already includes the exact relay URL. The example form is:
 
 ```sh
-sudo owntransit-relay-preview register RECEIVER_ID
+sudo owntransit-relay-preview register --url wss://relay.example/connects RECEIVER_ID
 ```
+
+Use your real URL and public receiver ID. `--url` selects only an exact protected
+local instance registration; it cannot create a relay, switch an endpoint origin
+or fall back to another instance. `--instance NAME` is an alternative selector,
+not an additional flag. The URL selector requires the 0.4.0 relay administration
+tool; the older unqualified registration command remains the default-instance
+form for compatible older tools.
 
 Copy the printed relay code to the client. The running receiver picks up its
 registration automatically; you do not paste that code back into the receiver.

@@ -18,6 +18,7 @@ import (
 
 	"github.com/sentrybottale/owntransit/internal/pairrelay"
 	"github.com/sentrybottale/owntransit/internal/pairrelaycmd"
+	"github.com/sentrybottale/owntransit/internal/protocol"
 )
 
 func fixtureSpec(t *testing.T, name string, port int) instanceSpec {
@@ -158,6 +159,7 @@ func TestNamedRelayLifecycleIsolation(t *testing.T) {
 	newImage := "sha256:" + strings.Repeat("b", 64)
 	selectedImage := oldImage
 	failedURL := ""
+	registrationUnavailable := false
 	var calls []string
 	find := func(name string) (instanceSpec, bool) {
 		for _, s := range specs {
@@ -319,6 +321,9 @@ func TestNamedRelayLifecycleIsolation(t *testing.T) {
 				t.Fatal("registration escaped selected instance")
 			}
 			if len(args) > 4 && args[4] == "register" {
+				if registrationUnavailable && s.name == a.name {
+					return nil, errors.New("fixture receiver is not advertising on alpha")
+				}
 				return []byte("fixture registration for " + s.name), nil
 			}
 			return json.Marshal(info(s))
@@ -381,10 +386,72 @@ func TestNamedRelayLifecycleIsolation(t *testing.T) {
 	if containers[a.container].Image != newImage {
 		t.Fatal("wrong upgraded image")
 	}
-	registration, err := RegisterInstance(context.Background(), a.name, strings.Repeat("a", 64))
+	publicID := (protocol.ID{1}).String()
+	registration, err := RegisterInstance(context.Background(), a.name, publicID)
 	if err != nil || registration != "fixture registration for alpha" {
 		t.Fatal("scoped registration", err)
 	}
+	assertOnlyAlphaCalls := func(from int) {
+		t.Helper()
+		for _, call := range calls[from:] {
+			if !strings.Contains(call, " "+a.container+" ") && !strings.HasSuffix(call, " "+a.container) {
+				t.Fatal("URL registration touched another instance", call)
+			}
+		}
+	}
+	urlStart := len(calls)
+	registration, err = RegisterURL(context.Background(), "https://ALPHA.example:443/", publicID)
+	if err != nil || registration != "fixture registration for alpha" {
+		t.Fatal("canonical URL registration did not select alpha", err)
+	}
+	assertOnlyAlphaCalls(urlStart)
+	for _, request := range []struct{ url, id string }{
+		{"wss://unknown.example/connects", publicID},
+		{a.url, "otpair1.invalid-fixture"},
+		{"http://alpha.example/connects", publicID},
+	} {
+		urlStart = len(calls)
+		if _, err := RegisterURL(context.Background(), request.url, request.id); err == nil {
+			t.Fatal("invalid or unknown URL registration accepted")
+		}
+		if len(calls) != urlStart {
+			t.Fatal("invalid or unknown URL registration reached a host command")
+		}
+	}
+	containers[a.container].State.Running = false
+	urlStart = len(calls)
+	if _, err := RegisterURL(context.Background(), a.url, publicID); err == nil {
+		t.Fatal("unavailable alpha fell back to another relay")
+	}
+	assertOnlyAlphaCalls(urlStart)
+	containers[a.container].State.Running = true
+	registrationUnavailable = true
+	urlStart = len(calls)
+	if _, err := RegisterURL(context.Background(), a.url, publicID); err == nil {
+		t.Fatal("unavailable alpha registration fell back to another relay")
+	}
+	assertOnlyAlphaCalls(urlStart)
+	registrationUnavailable = false
+	br, err := b.openRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	conflict, _ := json.Marshal(instanceBinding{"owntransit.relay-instance.v1", b.name, a.url, b.port})
+	if err := br.ReplaceFile("instance.json", conflict, 0600); err != nil {
+		t.Fatal(err)
+	}
+	urlStart = len(calls)
+	if _, err := RegisterURL(context.Background(), a.url, publicID); err == nil {
+		t.Fatal("conflicting URL registration selected a relay")
+	}
+	if len(calls) != urlStart {
+		t.Fatal("conflicting URL registration reached a host command")
+	}
+	bound, _ := json.Marshal(instanceBinding{"owntransit.relay-instance.v1", b.name, b.url, b.port})
+	if err := br.ReplaceFile("instance.json", bound, 0600); err != nil {
+		t.Fatal(err)
+	}
+	br.Close()
 	selectedImage = oldImage
 	failedURL = a.url
 	if err := SetupInstance(context.Background(), a.name, a.url, io.Discard); err == nil {

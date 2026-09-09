@@ -28,6 +28,12 @@ func RegisterInstance(ctx context.Context, name, id string) (string, error) {
 	}
 	return RegisterManaged(ctx, id)
 }
+func RegisterURL(ctx context.Context, rawURL, id string) (string, error) {
+	if _, err := PublicURL(rawURL); err != nil {
+		return "", err
+	}
+	return RegisterManaged(ctx, id)
+}
 func CleanupInstance(ctx context.Context, name, engine, image string) error {
 	if err := ValidateInstanceName(name); err != nil {
 		return err
