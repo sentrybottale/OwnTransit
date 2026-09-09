@@ -22,6 +22,7 @@ import (
 	"github.com/sentrybottale/owntransit/internal/pairrelay"
 	"github.com/sentrybottale/owntransit/internal/securefs"
 	"github.com/sentrybottale/owntransit/internal/strictjson"
+	"golang.org/x/sys/unix"
 )
 
 const migrationFile = "migration.json"
@@ -317,13 +318,24 @@ func knownManualUnit(data []byte, s instanceSpec, engine, image string) bool {
 	return bytes.Equal([]byte(normal), s.legacyUnit(image, engine))
 }
 func noOverrides(ctx context.Context, s instanceSpec) error {
-	b, err := command(ctx, "/usr/bin/systemctl", "show", s.unitName, "--property=DropInPaths", "--value")
-	if err != nil || len(bytes.TrimSpace(b)) != 0 {
-		return errors.New("relay service overrides prevent migration")
+	if err := noDropIns(ctx, s); err != nil {
+		return err
 	}
 	fragment, err := command(ctx, "/usr/bin/systemctl", "show", s.unitName, "--property=FragmentPath", "--value")
 	if err != nil || strings.TrimSpace(string(fragment)) != s.unitPath {
 		return errors.New("relay unit is not the expected local systemd file")
+	}
+	return nil
+}
+func noDropIns(ctx context.Context, s instanceSpec) error {
+	for _, base := range []string{"/etc/systemd/system/", "/run/systemd/system/"} {
+		if _, err := os.Lstat(base + s.unitName + ".d"); !errors.Is(err, os.ErrNotExist) {
+			return errors.New("relay service override directory prevents migration")
+		}
+	}
+	b, err := command(ctx, "/usr/bin/systemctl", "show", s.unitName, "--property=DropInPaths", "--value")
+	if err != nil || len(bytes.TrimSpace(b)) != 0 {
+		return errors.New("relay service overrides prevent migration")
 	}
 	return nil
 }
@@ -355,8 +367,11 @@ func discoverManual(ctx context.Context, u string, specs []instanceSpec) (*migra
 	var found *migrationSource
 	var all []containerInfo
 	for _, engine := range enginePaths {
-		if _, err := protectedMetadata(engine, 256<<20); err != nil {
+		if _, err := os.Lstat(engine); errors.Is(err, os.ErrNotExist) {
 			continue
+		}
+		if _, err := protectedMetadata(engine, 256<<20); err != nil {
+			return nil, errors.New("an installed container engine has unsafe or unreadable metadata; migration inventory cannot be completed")
 		}
 		ids, err := command(ctx, engine, "ps", "--all", "--quiet", "--no-trunc")
 		if err != nil {
@@ -494,9 +509,40 @@ func identityDigests(s instanceSpec) (map[string]string, error) {
 	if err := s.validateData(); err != nil {
 		return nil, err
 	}
-	names, err := boundedNames(s.dataRoot()+"/relay", 8)
+	if err := protectedDirectoryChain(filepath.Dir(s.dataRoot())); err != nil {
+		return nil, err
+	}
+	dataFD, err := unix.Open(s.dataRoot(), unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, err
+	}
+	data := os.NewFile(uintptr(dataFD), "relay-data")
+	defer data.Close()
+	if err := checkIdentityDirectory(data); err != nil {
+		return nil, err
+	}
+	dataNames, err := data.Readdirnames(2)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	if len(dataNames) != 1 || dataNames[0] != "relay" {
+		return nil, errors.New("relay data directory has unexpected members")
+	}
+	relayFD, err := unix.Openat(dataFD, "relay", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	relay := os.NewFile(uintptr(relayFD), "relay-state")
+	defer relay.Close()
+	if err := checkIdentityDirectory(relay); err != nil {
+		return nil, err
+	}
+	names, err := relay.Readdirnames(9)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	if len(names) > 7 {
+		return nil, errors.New("relay state inventory exceeds its bound")
 	}
 	allowed := map[string]bool{"service.lock": true, "control.sock": true}
 	for _, name := range relayIdentityFiles {
@@ -507,59 +553,84 @@ func identityDigests(s instanceSpec) (map[string]string, error) {
 			return nil, errors.New("unrecognized relay state member")
 		}
 		if name == "service.lock" || name == "control.sock" {
-			info, err := os.Lstat(s.dataRoot() + "/relay/" + name)
-			if err != nil {
+			var st unix.Stat_t
+			if err := unix.Fstatat(relayFD, name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 				return nil, err
 			}
-			st, ok := info.Sys().(*syscall.Stat_t)
-			if !ok || st.Uid != 65532 || st.Gid != 65532 || st.Nlink != 1 || info.Mode().Perm() != 0600 || (name == "service.lock" && (!info.Mode().IsRegular() || info.Size() != 0)) || (name == "control.sock" && info.Mode()&os.ModeSocket == 0) {
+			kind := uint32(unix.S_IFREG)
+			if name == "control.sock" {
+				kind = unix.S_IFSOCK
+			}
+			if st.Uid != 65532 || st.Gid != 65532 || st.Nlink != 1 || st.Mode != kind|0600 || (name == "service.lock" && st.Size != 0) {
 				return nil, errors.New("unsafe relay service state")
 			}
 		}
 	}
-	lock, err := os.Lstat(s.dataRoot() + "/relay/service.lock")
-	if err != nil || !lock.Mode().IsRegular() {
-		return nil, errors.New("relay service lock is missing")
+	if len(names) < 6 {
+		return nil, errors.New("relay state inventory is incomplete")
 	}
-	dataNames, err := boundedNames(s.dataRoot(), 1)
-	if err != nil || len(dataNames) != 1 || dataNames[0] != "relay" {
-		return nil, errors.New("relay data directory has unexpected members")
+	lockFound := false
+	for _, name := range names {
+		lockFound = lockFound || name == "service.lock"
+	}
+	if !lockFound {
+		return nil, errors.New("relay service lock is missing")
 	}
 	out := map[string]string{}
 	for _, name := range relayIdentityFiles {
-		path := s.dataRoot() + "/relay/" + name
-		info, err := os.Lstat(path)
+		digest, err := hashIdentityMember(relayFD, name)
 		if err != nil {
 			return nil, err
 		}
-		st, ok := info.Sys().(*syscall.Stat_t)
-		mode := os.FileMode(0600)
-		if strings.HasSuffix(name, "cert.pem") {
-			mode = 0644
-		}
-		if !ok || !info.Mode().IsRegular() || info.Mode().Perm() != mode || st.Uid != 65532 || st.Gid != 65532 || st.Nlink != 1 || info.Size() > 32768 {
-			return nil, errors.New("unsafe retained relay identity file")
-		}
-		f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
-		if err != nil {
-			return nil, err
-		}
-		opened, e := f.Stat()
-		if e != nil || !os.SameFile(info, opened) {
-			f.Close()
-			return nil, errors.New("relay identity changed during inspection")
-		}
-		h := sha256.New()
-		count, e := io.Copy(h, io.LimitReader(f, 32769))
-		final, finalErr := f.Stat()
-		closeErr := f.Close()
-		if e != nil || closeErr != nil || finalErr != nil {
-			return nil, errors.Join(e, closeErr, finalErr)
-		}
-		if count != info.Size() || final.Size() != info.Size() || !final.ModTime().Equal(info.ModTime()) {
-			return nil, errors.New("relay identity changed during inspection")
-		}
-		out[name] = hex.EncodeToString(h.Sum(nil))
+		out[name] = digest
 	}
 	return out, nil
+}
+
+func checkIdentityDirectory(f *os.File) error {
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || !info.IsDir() || info.Mode().Perm() != 0700 || st.Uid != 65532 || st.Gid != 65532 {
+		return errors.New("unsafe opened relay identity directory")
+	}
+	return nil
+}
+
+func hashIdentityMember(relayFD int, name string) (string, error) {
+	// Nonblocking open prevents an unprivileged file-to-FIFO replacement from
+	// hanging the privileged manager before it can inspect the opened inode.
+	fd, err := unix.Openat(relayFD, name, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return "", err
+	}
+	f := os.NewFile(uintptr(fd), "relay-identity")
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return "", err
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	mode := os.FileMode(0600)
+	if strings.HasSuffix(name, "cert.pem") {
+		mode = 0644
+	}
+	if !ok || !info.Mode().IsRegular() || info.Mode().Perm() != mode || st.Uid != 65532 || st.Gid != 65532 || st.Nlink != 1 || info.Size() > 32768 {
+		return "", errors.New("unsafe opened relay identity file")
+	}
+	h := sha256.New()
+	count, err := io.Copy(h, io.LimitReader(f, 32769))
+	if err != nil {
+		return "", err
+	}
+	final, err := f.Stat()
+	if err != nil {
+		return "", err
+	}
+	if count != info.Size() || final.Size() != info.Size() || !final.ModTime().Equal(info.ModTime()) {
+		return "", errors.New("relay identity changed during inspection")
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }

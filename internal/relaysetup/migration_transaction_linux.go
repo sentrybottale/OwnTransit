@@ -48,16 +48,43 @@ func incompleteReservation(ctx context.Context, s instanceSpec) ([]byte, []byte,
 		if len(unit) > 0 && !s.knownUnit(unit, c) {
 			return nil, nil, errors.New("unused relay unit was modified")
 		}
-		if err := s.prevalidateContainer(ctx, c, false); err != nil {
-			return nil, nil, err
-		}
 	} else if len(unit) > 0 {
 		return nil, nil, errors.New("unused unit lacks a matching pending record")
+	}
+	for _, engine := range enginePaths {
+		if _, err := os.Lstat(engine); errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if _, err := protectedMetadata(engine, 256<<20); err != nil {
+			return nil, nil, errors.New("container engine metadata prevents complete reservation inspection")
+		}
+		ids, err := command(ctx, engine, "ps", "--all", "--quiet", "--no-trunc", "--filter", "name="+s.container)
+		if err != nil {
+			return nil, nil, errors.New("container inventory is unavailable for the unused reservation")
+		}
+		values := strings.Fields(string(ids))
+		if len(values) > 256 {
+			return nil, nil, errors.New("reservation container inventory exceeds bound")
+		}
+		for _, id := range values {
+			if !validImage("sha256:" + id) {
+				return nil, nil, errors.New("invalid reservation container identity")
+			}
+			container, err := inspect(ctx, engine, id)
+			if err != nil || container.ID != id {
+				return nil, nil, errors.New("reservation container inspection changed")
+			}
+			if strings.TrimPrefix(container.Name, "/") == s.container {
+				return nil, nil, errors.New("migration reservation already has a container; local ownership needs inspection")
+			}
+		}
 	}
 	if len(unit) > 0 {
 		if err := noOverrides(ctx, s); err != nil {
 			return nil, nil, err
 		}
+	} else if err := noDropIns(ctx, s); err != nil {
+		return nil, nil, err
 	}
 	for _, op := range []string{"is-active", "is-enabled"} {
 		if _, err := command(ctx, "/usr/bin/systemctl", op, "--quiet", s.unitName); err == nil {
@@ -133,10 +160,16 @@ func saveMigration(root *securefs.Root, j migrationIntent, create bool) error {
 		return errors.New("migration journal exceeds bound")
 	}
 	if create {
-		return root.CreateExclusive(migrationFile, b, 0600)
+		if _, err := root.ReadFile(migrationFile, migrationLimit); !errors.Is(err, os.ErrNotExist) {
+			return errors.New("a relay migration already has a journal")
+		}
 	}
+	// The manager lock excludes another publisher. Atomic replacement also
+	// publishes the initial intent whole; a crash cannot leave partial JSON.
 	return root.ReplaceFile(migrationFile, b, 0600)
 }
+
+var publishMigration = saveMigration
 
 func (s instanceSpec) migrate(ctx context.Context, manager *securefs.Root, source migrationSource, out io.Writer) (returnErr error) {
 	pending, oldUnit, err := incompleteReservation(ctx, s)
@@ -177,7 +210,7 @@ func (s instanceSpec) migrate(ctx context.Context, manager *securefs.Root, sourc
 	if current == nil || planDigest(current) != planDigest(source) {
 		return errors.New("legacy relay changed before migration")
 	}
-	if err := saveMigration(manager, j, true); err != nil {
+	if err := publishMigration(manager, j, true); err != nil {
 		return err
 	}
 	defer func() {
@@ -240,8 +273,10 @@ func (s instanceSpec) migrate(ctx context.Context, manager *securefs.Root, sourc
 		}
 	}
 	j.Phase = "committed"
-	if err := saveMigration(manager, j, false); err != nil {
-		j.Phase = "prepared"
+	if err := publishMigration(manager, j, false); err != nil {
+		// Rename may already have published the committed decision before its
+		// directory sync failed. Never roll back against that possible decision;
+		// the next invocation reads the actual journal and recovers accordingly.
 		return err
 	}
 	if err := finishMigration(ctx, manager, j); err != nil {

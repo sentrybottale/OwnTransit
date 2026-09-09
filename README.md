@@ -18,9 +18,8 @@ receiving machine. OwnTransit does not configure SSH accounts, keys or permissio
 
 ## Quickstart
 
-This is the **0.6.0 source candidate**; its release links become available after
-publication. Linux supports amd64/x86_64 and arm64/aarch64. The Mac client
-supports Apple silicon.
+Install **0.6.0** on each role. Linux supports amd64/x86_64 and arm64/aarch64.
+The Mac client supports Apple silicon.
 
 Run one block at a time. When a program asks a question, answer it—do not paste
 the next shell command into its prompt.

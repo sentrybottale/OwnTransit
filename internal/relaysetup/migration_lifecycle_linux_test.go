@@ -16,6 +16,9 @@ import (
 
 	"github.com/sentrybottale/owntransit/internal/pairrelay"
 	"github.com/sentrybottale/owntransit/internal/pairrelaycmd"
+	"github.com/sentrybottale/owntransit/internal/protocol"
+	"github.com/sentrybottale/owntransit/internal/securefs"
+	"golang.org/x/sys/unix"
 )
 
 type migrationFixture struct {
@@ -41,6 +44,7 @@ func newMigrationFixture(t *testing.T) *migrationFixture {
 	}
 	for _, name := range []string{managedUnit, "owntransit-relay-alpha.service", managedContainer + "-work.service"} {
 		_ = os.Remove("/etc/systemd/system/" + name)
+		_ = os.RemoveAll("/etc/systemd/system/" + name + ".d")
 	}
 	for _, dir := range []string{"/run/systemd/system", "/etc/systemd/system", "/etc/nginx/sites-enabled"} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -164,7 +168,7 @@ func (f *migrationFixture) container(s instanceSpec, image, id string) container
 	c.Config.User = "65532:65532"
 	c.HostConfig.ReadonlyRootfs = true
 	c.HostConfig.AutoRemove = true
-	c.HostConfig.CapDrop = []string{"ALL"}
+	c.HostConfig.CapDrop = []string{"CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FOWNER", "CAP_FSETID", "CAP_KILL", "CAP_NET_BIND_SERVICE", "CAP_SETFCAP", "CAP_SETGID", "CAP_SETPCAP", "CAP_SETUID", "CAP_SYS_CHROOT"}
 	c.HostConfig.SecurityOpt = []string{"no-new-privileges"}
 	c.HostConfig.Memory = 268435456
 	c.HostConfig.PidsLimit = 128
@@ -326,9 +330,27 @@ func (f *migrationFixture) command(_ context.Context, program string, args ...st
 	return nil, errors.New("unexpected fixture command")
 }
 func TestManagedMigrationLifecycle(t *testing.T) {
-	for _, scenario := range []string{"success", "failed-probe", "changed-unit", "unconfirmed", "reservation-data", "reservation-active", "unknown-state", "shared-state", "guard", "stopped", "started", "retired"} {
+	for _, scenario := range []string{"success", "failed-probe", "changed-unit", "unconfirmed", "reservation-data", "reservation-active", "reservation-stopped", "reservation-dropin", "unknown-state", "shared-state", "guard", "stopped", "started", "retired", "commit-before-publication", "commit-after-publication", "tampered-journal"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newMigrationFixture(t)
+			commitFault := strings.HasPrefix(scenario, "commit-")
+			if commitFault {
+				original := publishMigration
+				fired := false
+				t.Cleanup(func() { publishMigration = original })
+				publishMigration = func(root *securefs.Root, j migrationIntent, create bool) error {
+					if j.Phase == "committed" && !fired {
+						fired = true
+						if scenario == "commit-after-publication" {
+							if err := saveMigration(root, j, create); err != nil {
+								return err
+							}
+						}
+						return errors.New("fixture commit publication failure")
+					}
+					return saveMigration(root, j, create)
+				}
+			}
 			before, _ := identityDigests(f.old)
 			defaultBefore := planDigest(f.containers[managedContainer])
 			defaultKeys, e := identityDigests(defaultInstance())
@@ -345,6 +367,22 @@ func TestManagedMigrationLifecycle(t *testing.T) {
 			if scenario == "reservation-active" {
 				f.enabled[f.target.unitName] = true
 			}
+			if scenario == "reservation-stopped" {
+				c := f.container(f.target, f.oldImage, "8")
+				c.State.Running = false
+				f.containers[f.target.container] = c
+			}
+			if scenario == "reservation-dropin" {
+				if err := os.Remove(f.target.unitPath); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Mkdir(f.target.unitPath+".d", 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(f.target.unitPath+".d/override.conf", []byte("[Service]\nExecStartPost=/bin/true\n"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if scenario == "unknown-state" {
 				if err := os.WriteFile(f.old.dataRoot()+"/relay/unexpected", nil, 0600); err != nil {
 					t.Fatal(err)
@@ -352,11 +390,12 @@ func TestManagedMigrationLifecycle(t *testing.T) {
 			}
 			if scenario == "shared-state" {
 				c := f.containers[managedContainer]
+				c.ID, c.Name = strings.Repeat("9", 64), "unrelated"
 				c.Mounts[0].Source = f.old.dataRoot()
 				f.containers["unrelated"] = c
 			}
 			plan, err := PrepareSetup(context.Background(), "", f.old.url)
-			if scenario == "reservation-data" || scenario == "reservation-active" || scenario == "unknown-state" || scenario == "shared-state" {
+			if scenario == "reservation-data" || scenario == "reservation-active" || scenario == "reservation-stopped" || scenario == "reservation-dropin" || scenario == "unknown-state" || scenario == "shared-state" {
 				if err == nil {
 					t.Fatal("unsafe migration prepared")
 				}
@@ -378,6 +417,9 @@ func TestManagedMigrationLifecycle(t *testing.T) {
 			if scenario == "guard" || scenario == "stopped" || scenario == "started" || scenario == "retired" {
 				f.crash = scenario
 			}
+			if scenario == "tampered-journal" {
+				f.crash = "guard"
+			}
 			func() {
 				defer func() {
 					if r := recover(); r != nil && !f.crashed {
@@ -390,6 +432,30 @@ func TestManagedMigrationLifecycle(t *testing.T) {
 				if err := UninstallAllManaged(context.Background()); err == nil {
 					t.Fatal("package removal bypassed pending migration")
 				}
+				if scenario == "tampered-journal" {
+					path := managedRoot + "/" + migrationFile
+					original, e := os.ReadFile(path)
+					if e != nil {
+						t.Fatal(e)
+					}
+					bad := bytes.Replace(original, []byte(`"Phase":"prepared"`), []byte(`"Phase":"unknown"`), 1)
+					if bytes.Equal(original, bad) {
+						t.Fatal("fixture did not change journal")
+					}
+					if e := os.WriteFile(path, bad, 0600); e != nil {
+						t.Fatal(e)
+					}
+					count := len(f.calls)
+					if _, e := PrepareSetup(context.Background(), "", f.old.url); e == nil {
+						t.Fatal("tampered journal accepted")
+					}
+					if len(f.calls) != count {
+						t.Fatal("tampered journal reached host command")
+					}
+					if e := os.WriteFile(path, original, 0600); e != nil {
+						t.Fatal(e)
+					}
+				}
 				plan, e := PrepareSetup(context.Background(), "", f.old.url)
 				if e != nil {
 					t.Fatal(e)
@@ -399,7 +465,23 @@ func TestManagedMigrationLifecycle(t *testing.T) {
 					t.Fatal("one retry did not recover and complete migration", err)
 				}
 			}
-			if scenario == "success" || f.crashed {
+			if commitFault {
+				if err == nil {
+					t.Fatal("commit fault did not interrupt migration")
+				}
+				if !f.containers[f.target.container].State.Running {
+					t.Fatal("uncertain commit rolled back verified service")
+				}
+				p, e := PrepareSetup(context.Background(), "", f.old.url)
+				if e != nil {
+					t.Fatal(e)
+				}
+				if e := ApplySetup(context.Background(), p, true, io.Discard); e != nil {
+					t.Fatal("commit recovery", e)
+				}
+				err = nil
+			}
+			if scenario == "success" || f.crashed || commitFault {
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -422,7 +504,7 @@ func TestManagedMigrationLifecycle(t *testing.T) {
 						t.Fatal("rerun restarted relay")
 					}
 				}
-				if _, err := RegisterURL(context.Background(), f.old.url, strings.Repeat("1", 32)); err != nil {
+				if _, err := RegisterURL(context.Background(), f.old.url, (protocol.ID{1}).String()); err != nil {
 					t.Fatal("ordinary URL approval selection failed", err)
 				}
 				if err := UninstallInstance(context.Background(), "work"); err != nil {
@@ -456,5 +538,43 @@ func TestManagedMigrationLifecycle(t *testing.T) {
 				t.Fatal("migration changed website")
 			}
 		})
+	}
+}
+
+func TestManagedMigrationIdentitySpecialFiles(t *testing.T) {
+	f := newMigrationFixture(t)
+	fd, err := unix.Open(f.old.dataRoot()+"/relay", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(fd)
+	path := f.old.dataRoot() + "/relay/relay-key.pem"
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Mkfifo(path, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chown(path, 65532, 65532); err != nil {
+		t.Fatal(err)
+	}
+	completed := make(chan error, 1)
+	go func() { _, err := hashIdentityMember(fd, "relay-key.pem"); completed <- err }()
+	select {
+	case err := <-completed:
+		if err == nil {
+			t.Fatal("FIFO identity accepted")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("identity FIFO blocked the privileged manager")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("relay-ca-key.pem", path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := hashIdentityMember(fd, "relay-key.pem"); err == nil {
+		t.Fatal("symlink identity accepted")
 	}
 }

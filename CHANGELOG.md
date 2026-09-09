@@ -9,7 +9,7 @@ becomes a publication record only after its authenticated evidence, signed
 qualification record and release decision are complete. Git tags never create
 or publish artifacts automatically.
 
-## [Unreleased — 0.6.0]
+## [0.6.0]
 
 - Select relay setup by its entered public URL unless an instance name is
   explicitly supplied. Never silently repoint an existing instance.
