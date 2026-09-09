@@ -47,13 +47,7 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 var command = runCommand
 var firstProbeTimeout = 5 * time.Second
 var routeProbeTimeout = 30 * time.Second
-var probeServer = func(ctx context.Context, rawURL string) (pairrelay.ServerInfo, error) {
-	c, e := pairrelay.NewPublicClient(rawURL, nil)
-	if e != nil {
-		return pairrelay.ServerInfo{}, e
-	}
-	return c.FetchServerInfo(ctx)
-}
+var probeServer = adminProbeServer
 
 func runCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
@@ -440,12 +434,16 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 // public URL, pins a locally installed image and verifies the real protocol
 // through that URL. Other website locations are not rewrite targets.
 func (s instanceSpec) setup(ctx context.Context, inputURL string, output io.Writer) (returnErr error) {
+	ctx = ensureVerificationResult(ctx)
 	if os.Geteuid() != 0 {
 		return errors.New("run relay setup with sudo")
 	}
 	publicURL, err := PublicURL(inputURL)
 	if err != nil {
 		return err
+	}
+	if s.url == "" {
+		s.url = publicURL
 	}
 	if _, err := os.Stat("/run/systemd/system"); err != nil {
 		return errors.New("this managed setup requires systemd")
@@ -573,7 +571,7 @@ func (s instanceSpec) setup(ctx context.Context, inputURL string, output io.Writ
 		if err := s.upgradeManaged(ctx, root, saved, s.config(publicURL, e, image), output); err != nil {
 			return err
 		}
-		fmt.Fprintf(output, "Relay ready at %s.\n", publicURL)
+		fmt.Fprintf(output, "Local relay setup completed for %s.\n", publicURL)
 		return nil
 	}
 	contents := s.unit(image, e)
@@ -613,6 +611,11 @@ func (s instanceSpec) setup(ctx context.Context, inputURL string, output io.Writ
 	if err := s.validateData(); err != nil {
 		return err
 	}
+	evidence, err := s.captureVerificationEvidence(ctx, e, route)
+	if err != nil {
+		return err
+	}
+	ctx = withVerificationEvidence(ctx, evidence)
 	changedRoute := false
 	newStarted := false
 	oldStopped := false
@@ -695,40 +698,32 @@ func (s instanceSpec) setup(ctx context.Context, inputURL string, output io.Writ
 	if strictjson.Decode(localBytes, &local) != nil {
 		return errors.New("local relay identity could not be verified")
 	}
-	if s.named() {
-		verified, err := s.managedIdentity(ctx, e, image)
-		if err != nil {
-			return err
-		}
-		local = verified
+	verifiedLocal, err := s.managedIdentity(ctx, e, image)
+	if err != nil {
+		return err
 	}
-	verify := func(timeout time.Duration) bool {
-		probeCtx, cancel := context.WithTimeout(ctx, timeout)
-		defer cancel()
-		for probeCtx.Err() == nil {
-			remote, err := probeServer(probeCtx, publicURL)
-			if err == nil && remote.LeafSPKISHA256 == local.LeafSPKISHA256 && bytes.Equal(remote.CAPEM, local.CAPEM) {
-				return true
-			}
-			select {
-			case <-probeCtx.Done():
-			case <-time.After(time.Second):
-			}
-		}
-		return false
+	local = verifiedLocal
+	if !sameIdentity(local, evidence.Identity) {
+		return errProbeIdentityMismatch
 	}
-	verified := verify(firstProbeTimeout)
-	if !verified {
+	verify := func(timeout time.Duration) error {
+		return s.verifyRunningRelay(ctx, s.config(publicURL, e, image), timeout)
+	}
+	verificationErr := verify(firstProbeTimeout)
+	if errors.Is(verificationErr, errProbeIdentityMismatch) {
+		return verificationErr
+	}
+	if verificationErr != nil {
 		if route != nil {
 			if err := route.apply(ctx, root); err != nil {
 				return err
 			}
 			changedRoute = !route.edit.Reused
-			verified = verify(routeProbeTimeout)
+			verificationErr = verify(routeProbeTimeout)
 		}
 	}
-	if !verified {
-		return errors.New("the selected website did not reach this relay; setup is rolling back its changes")
+	if verificationErr != nil {
+		return errors.Join(errors.New("relay verification did not complete; setup is rolling back its changes"), verificationErr)
 	}
 	configBytes, _ := json.Marshal(s.config(publicURL, e, image))
 	if err := root.ReplaceFile("setup.json", configBytes, 0600); err != nil {
@@ -739,7 +734,8 @@ func (s instanceSpec) setup(ctx context.Context, inputURL string, output io.Writ
 			return err
 		}
 	}
-	fmt.Fprintf(output, "Relay is ready at %s and enabled for reboot.\n", publicURL)
+	reportVerification(output, currentVerification(ctx))
+	fmt.Fprintf(output, "Local relay setup completed for %s and enabled for reboot.\n", publicURL)
 	return nil
 }
 

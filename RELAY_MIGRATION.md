@@ -12,8 +12,9 @@ relay switching or a new network authority.
 A recognized manual relay has an exact OwnTransit systemd launch contract,
 same-named container, digest-selected image, derived state path, fixed container
 command, loopback-only host publication and expected unprivileged confinement.
-The selected existing website route and public relay identity must match that
-local deployment. Modified units, overrides, conflicting owners, unknown state
+The selected existing website route and relay identity must match that
+local deployment. Public verification is normally required; the narrowly
+reported HTTP 403 case below is separate. Modified units, overrides, conflicting owners, unknown state
 files or inaccessible required inventories stop migration before ownership
 changes. Setup does not guess at arbitrary services or containers.
 
@@ -99,3 +100,27 @@ services; shared state; failed public verification; interrupted prepared and
 committed phases; and preservation of an independent default relay and website.
 Then test the installed command flow through receiver setup, approval, client
 pairing and SSH. Package installation alone is not end-to-end completion.
+
+## Access policies that block the VPS's own probe
+
+Some sites permit their intended client networks but deny requests originating
+from the VPS. An administration-only WebSocket probe may classify HTTP 403 only
+after direct, certificate-verified TLS 1.3 to the exact selected hostname. It
+does not follow redirects, use ambient proxies, change DNS targets or accept a
+private address. Endpoint dialers and authentication remain unchanged.
+
+A denial is never converted into invented server information or ordinary
+public-verification success. The separate **local-route-http-403** result requires
+an exact protected local site-to-port mapping, the running immutable image and
+confinement, and the retained locally verified identity and key-file digests.
+Migration consent and final output disclose that public reachability remains
+unverified from this VPS. Receiver and client setup from permitted networks
+must complete the real public connection normally; there are no extra codes.
+
+DNS/connect/TLS errors, redirects, other HTTP statuses, bad WebSocket protocol
+and a successful response with the wrong identity still fail. A previously
+public-verified migration cannot silently downgrade to local-only verification
+during cutover. Fresh setup must install its approved route and reread it as
+the exact mapping before it can report limited completion. Older upgrade
+journals without the required identity baseline retain strict public checks.
+This changes neither the access policy nor OwnTransit endpoint trust.

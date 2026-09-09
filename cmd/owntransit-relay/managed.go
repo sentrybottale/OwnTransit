@@ -17,7 +17,7 @@ import (
 
 type managedOperations struct {
 	prepareSetup func(context.Context, string, string) (relaysetup.SetupPlan, error)
-	applySetup   func(context.Context, relaysetup.SetupPlan, bool, io.Writer) error
+	applySetup   func(context.Context, relaysetup.SetupPlan, bool, io.Writer) (relaysetup.SetupResult, error)
 	register     func(context.Context, string, string) (string, error)
 	registerURL  func(context.Context, string, string) (string, error)
 	cleanup      func(context.Context, string, string, string) error
@@ -47,7 +47,7 @@ func runManagedRelay(arguments []string, input io.Reader, output, diagnostics io
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	return executeManagedRelay(ctx, arguments, input, output, diagnostics, managedOperations{
-		prepareSetup: relaysetup.PrepareSetup, applySetup: relaysetup.ApplySetup,
+		prepareSetup: relaysetup.PrepareSetup, applySetup: relaysetup.ApplySetupWithResult,
 		register: relaysetup.RegisterInstance, registerURL: relaysetup.RegisterURL,
 		cleanup: relaysetup.CleanupInstance, uninstall: relaysetup.UninstallInstance,
 		uninstallAll: relaysetup.UninstallAllManaged, list: relaysetup.ListInstances,
@@ -186,11 +186,18 @@ func executeManagedRelay(ctx context.Context, arguments []string, input io.Reade
 			if plan.Port != 0 {
 				fmt.Fprintf(output, "Loopback port: %d\n", plan.Port)
 			}
+			if plan.Verification == relaysetup.VerificationLocal403 {
+				fmt.Fprintln(output, "Verification: local relay identity and selected website route only. The public HTTPS route returned HTTP 403 from THIS VPS; public reachability is unverified here.")
+			}
 			confirmed := false
 			if plan.Kind == "migration" {
 				fmt.Fprintf(output, "Adopt the existing relay into local instance %s.\nSource service: %s\nSource container: %s\nRetained relay state: %s\n", plan.Instance, plan.LegacyUnit, plan.LegacyContainer, plan.LegacyState)
 				fmt.Fprintln(output, "Setup will stop this source service and replace its container while preserving its relay URL, keys and port. Paired endpoints retain their identities. After verification, setup removes the old service and its restart configuration. If cutover fails, setup attempts to restore the old relay and reports any recovery needed.")
-				fmt.Fprint(output, "Adopt this exact relay on THIS VPS? Type yes, then press Enter: ")
+				if plan.Verification == relaysetup.VerificationLocal403 {
+					fmt.Fprint(output, "Adopt this exact relay using local verification, with public reachability unverified from THIS VPS? Type yes, then press Enter: ")
+				} else {
+					fmt.Fprint(output, "Adopt this exact relay on THIS VPS? Type yes, then press Enter: ")
+				}
 				answer, readErr := readManagedLine(ctx, reader, 16)
 				if readErr != nil || strings.TrimSpace(answer) != "yes" {
 					fmt.Fprintln(diagnostics, "Relay adoption cancelled; no relay was changed. On THIS VPS, rerun the same setup command to review and adopt this relay.")
@@ -198,9 +205,10 @@ func executeManagedRelay(ctx context.Context, arguments []string, input io.Reade
 				}
 				confirmed = true
 			}
-			err = operations.applySetup(ctx, plan, confirmed, output)
+			var result relaysetup.SetupResult
+			result, err = operations.applySetup(ctx, plan, confirmed, output)
 			if err == nil {
-				printRelaySetupHandoff(output, plan.URL, plan.Kind)
+				err = printRelaySetupHandoff(output, plan.URL, plan.Kind, result.Verification)
 			}
 		}
 	case "register", "approve":
@@ -292,11 +300,20 @@ func readManagedLine(ctx context.Context, reader *bufio.Reader, maximum int) (st
 	}
 }
 
-func printRelaySetupHandoff(output io.Writer, publicURL, kind string) {
-	fmt.Fprintf(output, "THIS VPS is finished. Relay URL: %s\n", publicURL)
+func printRelaySetupHandoff(output io.Writer, publicURL, kind, verification string) error {
+	switch verification {
+	case relaysetup.VerificationPublic:
+		fmt.Fprintf(output, "THIS VPS is finished. Relay URL: %s\n", publicURL)
+	case relaysetup.VerificationLocal403:
+		fmt.Fprintf(output, "Relay setup on THIS VPS is finished with local verification only. Relay URL: %s\n", publicURL)
+		fmt.Fprintln(output, "Public reachability is unverified from THIS VPS: the public HTTPS route returned HTTP 403. Complete receiver and client setup from networks allowed by this website; a successful endpoint connection provides the remaining public reachability check.")
+	default:
+		return errors.New("setup returned no recognized verification result; public reachability was not established")
+	}
 	if kind == "managed" || kind == "migration" {
-		fmt.Fprintln(output, "Existing paired endpoints keep using this relay with their retained identities. For a new connection, continue below.")
+		fmt.Fprintln(output, "Paired endpoints retain their existing identities and relay URL. For a new connection, continue below.")
 	}
 	fmt.Fprintln(output, "NEXT — on your RECEIVING SSH MACHINE (the private computer running your SSH server):\n  curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.0/install-preview-linux.sh | sudo sh -s -- connector\nThen, for a new pairing, run on that receiving SSH machine:\n  sudo owntransit-connector-preview pair setup")
 	fmt.Fprintf(output, "Enter %s. Receiver setup prints one VPS approval command and one private code for your client computer. Return to THIS VPS only to run that approval command.\n", publicURL)
+	return nil
 }

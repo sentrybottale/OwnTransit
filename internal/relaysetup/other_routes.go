@@ -68,13 +68,18 @@ func CaddyRouteForPort(data []byte, hostname string, port int) (RouteEdit, error
 	var existing *block
 	for i := range site.children {
 		b := &site.children[i]
+		matched := false
 		for _, w := range b.words {
 			if strings.Contains(w.text, "/connects") {
 				if len(b.words) != 2 || b.words[0].text != "handle" || b.words[1].text != "/connects" || existing != nil {
 					return RouteEdit{}, ErrRoute
 				}
 				existing = b
+				matched = true
 			}
+		}
+		if !matched && blockMentionsPath(*b, "/connects") {
+			return RouteEdit{}, ErrRoute
 		}
 	}
 	for _, d := range site.directives {
@@ -105,6 +110,30 @@ func CaddyRouteForPort(data []byte, hostname string, port int) (RouteEdit, error
 	after = append(after, addition...)
 	after = append(after, data[site.open+1:]...)
 	return RouteEdit{append([]byte(nil), data...), after, false}, nil
+}
+
+// Unknown matchers/handlers may compete with the recognized exact route.
+// The parser has already bounded tree depth and token count; do not interpret
+// an unrecognized nested path as evidence of a simple alternate relay port.
+func blockMentionsPath(b block, path string) bool {
+	for _, word := range b.words {
+		if strings.Contains(word.text, path) {
+			return true
+		}
+	}
+	for _, directive := range b.directives {
+		for _, word := range directive {
+			if strings.Contains(word.text, path) {
+				return true
+			}
+		}
+	}
+	for _, child := range b.children {
+		if blockMentionsPath(child, path) {
+			return true
+		}
+	}
+	return false
 }
 
 var virtualHostOpen = regexp.MustCompile(`(?im)^[\t ]*<VirtualHost\s+([^>]+)>`)

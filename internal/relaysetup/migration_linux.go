@@ -48,6 +48,8 @@ func noMigration(root *securefs.Root) error {
 
 type migrationSource struct {
 	Label, Engine, Image, ContainerID string
+	Verification                      string `json:"verification,omitempty"`
+	RouteDigest                       string `json:"route_digest,omitempty"`
 	Port                              int
 	Unit                              []byte
 	Identity                          pairrelay.ServerInfo
@@ -82,8 +84,15 @@ func validateMigration(j migrationIntent) error {
 	p, pe := instanceFromBinding(j.PreviousBinding)
 	n, ne := instanceFromBinding(j.NextBinding)
 	s := j.Source
-	if pe != nil || ne != nil || !p.named() || p.name != n.name || p.url != n.url || p.legacyDataLabel != "" || n.legacyDataLabel != s.Label || n.port != s.Port || !validLegacyLabel(s.Label) || !validEngine(s.Engine) || !validImage(s.Image) || !validImage("sha256:"+s.ContainerID) || !n.validSaved(j.Next) || j.Next.Engine != s.Engine || j.Schema != "owntransit.relay-migration.v1" || (j.Phase != "prepared" && j.Phase != "committed") {
+	if pe != nil || ne != nil || !p.named() || p.name != n.name || p.url != n.url || p.legacyDataLabel != "" || n.legacyDataLabel != s.Label || n.port != s.Port || !validLegacyLabel(s.Label) || !validEngine(s.Engine) || !validImage(s.Image) || !validImage("sha256:"+s.ContainerID) || !n.validSaved(j.Next) || j.Next.Engine != s.Engine || (j.Schema != "owntransit.relay-migration.v1" && j.Schema != "owntransit.relay-migration.v2") || (j.Phase != "prepared" && j.Phase != "committed") {
 		return errors.New("migration journal ownership mismatch")
+	}
+	if j.Schema == "owntransit.relay-migration.v1" {
+		if s.Verification != "" || s.RouteDigest != "" {
+			return errors.New("legacy migration journal contains unsupported verification evidence")
+		}
+	} else if !n.validVerificationEvidence(s.evidence(n.url)) {
+		return errors.New("invalid migration verification evidence")
 	}
 	if !knownManualUnit(s.Unit, legacySpec(s.Label, n.url, s.Port), s.Engine, s.Image) || len(s.Digests) != 5 {
 		return errors.New("invalid retained legacy ownership")
@@ -231,9 +240,14 @@ func (s instanceSpec) binding() instanceBinding {
 }
 func migrationPlan(name, u string, source migrationSource) SetupPlan {
 	s := legacySpec(source.Label, u, source.Port)
-	return SetupPlan{Instance: name, URL: u, Kind: "migration", Port: source.Port, LegacyUnit: s.unitName, LegacyContainer: s.container, LegacyState: s.dataRoot()}
+	level := source.Verification
+	if level == "" {
+		level = VerificationPublic
+	}
+	return SetupPlan{Instance: name, URL: u, Kind: "migration", Verification: level, Port: source.Port, LegacyUnit: s.unitName, LegacyContainer: s.container, LegacyState: s.dataRoot()}
 }
 func ApplySetup(ctx context.Context, plan SetupPlan, migrationConfirmed bool, out io.Writer) error {
+	ctx = ensureVerificationResult(ctx)
 	if plan.evidence == "" || ValidateInstanceName(plan.Instance) != nil || plan.Instance == "" {
 		return errors.New("prepare relay setup before applying it")
 	}
@@ -466,13 +480,16 @@ func discoverManual(ctx context.Context, u string, specs []instanceSpec) (*migra
 			probeCtx, cancel := context.WithTimeout(ctx, firstProbeTimeout)
 			remote, err := probeServer(probeCtx, u)
 			cancel()
-			if err != nil || !sameIdentity(local, remote) {
+			verification := VerificationPublic
+			if errors.Is(err, errProbeForbidden) {
+				verification = VerificationLocal403
+			} else if err != nil || !sameIdentity(local, remote) {
 				return nil, errors.New("the selected public URL did not verify the existing relay identity")
 			}
 			if found != nil && (found.ContainerID != id || found.Engine != engine) {
 				return nil, errors.New("selected URL has conflicting legacy relay owners")
 			}
-			found = &migrationSource{Label: label, Engine: engine, Image: c.Image, ContainerID: id, Port: port, Unit: unit, Identity: local, Digests: digests}
+			found = &migrationSource{Label: label, Engine: engine, Image: c.Image, ContainerID: id, Port: port, Unit: unit, Identity: local, Digests: digests, Verification: verification, RouteDigest: routeDigest(route, false)}
 		}
 	}
 	if found != nil {

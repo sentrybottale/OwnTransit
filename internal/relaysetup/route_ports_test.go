@@ -62,6 +62,8 @@ func TestOtherAdaptersDoNotClassifyAmbiguousRoutesAsPortConflicts(t *testing.T) 
 		"relay.example {\n handle /connects {\n reverse_proxy 127.0.0.1:19087\n reverse_proxy 127.0.0.1:19088\n }\n}\n",
 		"relay.example {\n handle /connects {\n reverse_proxy 127.0.0.1:19087\n }\n handle /connects {\n reverse_proxy 127.0.0.1:19088\n }\n}\n",
 		"relay.example {\n handle /connects {\n reverse_proxy 127.0.0.1:19087\n }\n handle /connects* {\n respond blocked\n }\n}\n",
+		"relay.example {\n @other {\n path /connects\n }\n handle /connects {\n reverse_proxy 127.0.0.1:19087\n }\n}\n",
+		"relay.example {\n route {\n handle {\n rewrite * /connects\n }\n }\n handle /connects {\n reverse_proxy 127.0.0.1:19087\n }\n}\n",
 	} {
 		if _, err := CaddyRouteForPort([]byte(input), "relay.example", 19089); !errors.Is(err, ErrRoute) || errors.Is(err, ErrRoutePortConflict) {
 			t.Fatal("ambiguous Caddy route became a port conflict")

@@ -196,7 +196,7 @@ func (s instanceSpec) migrate(ctx context.Context, manager *securefs.Root, sourc
 	if err != nil {
 		return err
 	}
-	j := migrationIntent{Schema: "owntransit.relay-migration.v1", Phase: "prepared", Source: source, PreviousBinding: s.binding(), NextBinding: nextBinding, PreviousPending: pending, PreviousUnit: oldUnit, Next: next.config(s.url, source.Engine, image)}
+	j := migrationIntent{Schema: "owntransit.relay-migration.v2", Phase: "prepared", Source: source, PreviousBinding: s.binding(), NextBinding: nextBinding, PreviousPending: pending, PreviousUnit: oldUnit, Next: next.config(s.url, source.Engine, image)}
 	// Inspect once more after image loading; the prepared public identity and
 	// exact source ID/unit/state must still be the current deployment.
 	specs, err := scanInstances(manager)
@@ -282,7 +282,8 @@ func (s instanceSpec) migrate(ctx context.Context, manager *securefs.Root, sourc
 	if err := finishMigration(ctx, manager, j); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "Relay migration verified at %s. The old unit and container were retired; the existing relay keys and website route are retained.\n", s.url)
+	reportVerification(out, currentVerification(ctx))
+	fmt.Fprintf(out, "Local relay migration completed for %s. The old unit and container were retired; the existing relay keys and website route are retained.\n", s.url)
 	return nil
 }
 func checkIdentityDigests(s instanceSpec, want map[string]string) error {
@@ -296,6 +297,9 @@ func checkIdentityDigests(s instanceSpec, want map[string]string) error {
 	return nil
 }
 func verifyMigration(ctx context.Context, s instanceSpec, j migrationIntent) error {
+	if j.Schema == "owntransit.relay-migration.v2" {
+		ctx = withVerificationEvidence(ctx, j.Source.evidence(s.url))
+	}
 	if err := s.verifyRunningRelay(ctx, j.Next, routeProbeTimeout); err != nil {
 		return err
 	}
@@ -457,7 +461,11 @@ func restoreMigration(ctx context.Context, manager *securefs.Root, j migrationIn
 	if _, err := command(ctx, "/usr/bin/systemctl", "enable", "--now", old.unitName); err != nil {
 		return err
 	}
-	if err := old.verifyRunningRelay(ctx, old.config(old.url, j.Source.Engine, j.Source.Image), routeProbeTimeout); err != nil {
+	verifyCtx := ctx
+	if j.Schema == "owntransit.relay-migration.v2" {
+		verifyCtx = withVerificationEvidence(ctx, j.Source.evidence(old.url))
+	}
+	if err := old.verifyRunningRelay(verifyCtx, old.config(old.url, j.Source.Engine, j.Source.Image), routeProbeTimeout); err != nil {
 		return err
 	}
 	if err := checkIdentityDigests(next, j.Source.Digests); err != nil {

@@ -13,6 +13,14 @@ restart guards, managed cutover, exact cleanup and recovery. No secrets are copi
 or reset and unrelated relays/sites are not cleanup targets. Other management
 cannot bypass an unfinished migration. [Full contract](RELAY_MIGRATION.md).
 
+An admin-only, authenticated HTTPS 403 may produce a distinctly reported
+local-verification result after exact local route, image, confinement, identity
+and key-digest checks. It is not public reachability proof and never fabricates
+relay information. Migration consent discloses that limitation; endpoint setup
+must still verify the public path from an allowed network. Other transport,
+certificate, protocol or identity failures remain fatal. No endpoint dialer,
+access-control rule, SSH policy or cryptographic check is weakened.
+
 ## 0.5.0 one-code setup
 
 The short private code retains 256-bit randomness. An independent full HMAC

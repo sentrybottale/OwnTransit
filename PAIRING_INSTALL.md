@@ -85,6 +85,13 @@ sudo owntransit-relay-preview setup
 
 Keep the relay running before setting up either endpoint.
 
+If the website returns HTTP 403 to requests from the VPS, setup can finish only
+with a clearly labelled local-verification result after checking the exact local
+route, running relay and identity. It does not claim public reachability or change
+your access rules. Continue on the receiving machine and client from allowed
+networks; their normal pairing verifies the public path. Other failures, including
+TLS errors or the wrong relay identity, do not qualify for this result.
+
 ### Migrating an older manual relay
 
 Run that same installer/setup command and enter the existing URL. For a

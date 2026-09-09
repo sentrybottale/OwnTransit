@@ -135,7 +135,9 @@ func TestManagedRelayDispatchKeepsScopeAndLegacyDefault(t *testing.T) {
 					called = "setup:" + name + ":" + url
 					return relaysetup.SetupPlan{Instance: name, URL: url, Kind: "managed", Port: 9087}, nil
 				},
-				applySetup: func(context.Context, relaysetup.SetupPlan, bool, io.Writer) error { return nil },
+				applySetup: func(context.Context, relaysetup.SetupPlan, bool, io.Writer) (relaysetup.SetupResult, error) {
+					return relaysetup.SetupResult{Verification: relaysetup.VerificationPublic}, nil
+				},
 				register: func(_ context.Context, name, receiver string) (string, error) {
 					called = "register:" + name + ":" + receiver
 					return "fixture-relay-code", nil
@@ -168,7 +170,9 @@ func TestManagedRelaySetupPromptExplainsInstanceAndNoSwitch(t *testing.T) {
 			called = name == "office" && url == "wss://office.example/connects"
 			return relaysetup.SetupPlan{Instance: name, URL: url, Kind: "managed", Port: 9088}, nil
 		},
-		applySetup: func(context.Context, relaysetup.SetupPlan, bool, io.Writer) error { return nil },
+		applySetup: func(context.Context, relaysetup.SetupPlan, bool, io.Writer) (relaysetup.SetupResult, error) {
+			return relaysetup.SetupResult{Verification: relaysetup.VerificationPublic}, nil
+		},
 	}
 	code := executeManagedRelay(context.Background(), []string{"setup", "--instance", "office"}, strings.NewReader("wss://office.example/connects\n"), &out, &diag, ops)
 	if code != 0 || !called || !strings.Contains(out.String(), "office") || !strings.Contains(out.String(), "Public relay URL") {
@@ -187,12 +191,12 @@ func TestManagedRelayURLFirstDisplayedFlowAndMachineHandoff(t *testing.T) {
 			}
 			return relaysetup.SetupPlan{Instance: "office", URL: url, Kind: "reserved", Port: 9088}, nil
 		},
-		applySetup: func(_ context.Context, plan relaysetup.SetupPlan, consent bool, _ io.Writer) error {
+		applySetup: func(_ context.Context, plan relaysetup.SetupPlan, consent bool, _ io.Writer) (relaysetup.SetupResult, error) {
 			if plan.Instance != "office" || plan.Kind != "reserved" || consent {
 				t.Fatalf("selected reservation changed or invented consent: %#v consent=%v", plan, consent)
 			}
 			applied = true
-			return nil
+			return relaysetup.SetupResult{Verification: relaysetup.VerificationPublic}, nil
 		},
 	}
 	code := executeManagedRelay(context.Background(), []string{"setup"}, strings.NewReader("sudo owntransit-relay setup\nwss://office.example/connects\n"), &out, &diag, ops)
@@ -220,12 +224,12 @@ func TestManagedRelayMigrationConsentIsExactAndPassedToBackend(t *testing.T) {
 				prepareSetup: func(_ context.Context, instance, url string) (relaysetup.SetupPlan, error) {
 					return relaysetup.SetupPlan{Instance: "office", URL: url, Kind: "migration", Port: 9088, LegacyUnit: "owntransit-relay-pair-office.service", LegacyContainer: "owntransit-relay-pair-office", LegacyState: "/var/lib/owntransit-relay-pair-office"}, nil
 				},
-				applySetup: func(_ context.Context, plan relaysetup.SetupPlan, consent bool, _ io.Writer) error {
+				applySetup: func(_ context.Context, plan relaysetup.SetupPlan, consent bool, _ io.Writer) (relaysetup.SetupResult, error) {
 					if !consent || plan.Kind != "migration" || plan.Instance != "office" {
 						t.Fatal("migration did not carry exact selection and confirmed consent")
 					}
 					applied = true
-					return nil
+					return relaysetup.SetupResult{Verification: relaysetup.VerificationPublic}, nil
 				},
 			}
 			code := executeManagedRelay(context.Background(), []string{"setup"}, strings.NewReader("wss://office.example/connects\n"+answer), &out, &diag, ops)
@@ -251,9 +255,9 @@ func TestManagedRelayExplicitConflictDoesNotSwitchAndProvidesRetry(t *testing.T)
 			}
 			return relaysetup.SetupPlan{}, errors.New("this URL is reserved for local instance office")
 		},
-		applySetup: func(context.Context, relaysetup.SetupPlan, bool, io.Writer) error {
+		applySetup: func(context.Context, relaysetup.SetupPlan, bool, io.Writer) (relaysetup.SetupResult, error) {
 			t.Fatal("conflict applied")
-			return nil
+			return relaysetup.SetupResult{}, nil
 		},
 	}
 	code := executeManagedRelay(context.Background(), []string{"setup", "--instance", "default", "--url", "wss://office.example/connects"}, strings.NewReader(""), &out, &diag, ops)
@@ -285,5 +289,79 @@ func TestManagedRelayReservedApprovalExplainsHowToFinishSetup(t *testing.T) {
 		if !strings.Contains(diag.String(), text) {
 			t.Fatalf("incomplete setup lacks operational hint %q: %s", text, diag.String())
 		}
+	}
+}
+
+func TestManagedRelayFinalVerificationUsesApplyResult(t *testing.T) {
+	for _, tc := range []struct {
+		name, planned, final string
+		wantCode             int
+	}{
+		{"local-remains-local", relaysetup.VerificationLocal403, relaysetup.VerificationLocal403, 0},
+		{"local-improves-to-public", relaysetup.VerificationLocal403, relaysetup.VerificationPublic, 0},
+		{"new-local-result", "", relaysetup.VerificationLocal403, 0},
+		{"missing-result", relaysetup.VerificationPublic, "", 1},
+		{"unknown-result", relaysetup.VerificationPublic, "other", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out, diag bytes.Buffer
+			kind := "new"
+			if tc.planned == relaysetup.VerificationLocal403 {
+				kind = "migration"
+			}
+			ops := managedOperations{
+				lockPackage: func(int) (io.Closer, error) { return io.NopCloser(strings.NewReader("")), nil },
+				prepareSetup: func(context.Context, string, string) (relaysetup.SetupPlan, error) {
+					return relaysetup.SetupPlan{Instance: "office", URL: "wss://office.example/connects", Kind: kind, Port: 19088, Verification: tc.planned, LegacyUnit: "owntransit-relay-pair-office.service", LegacyContainer: "owntransit-relay-pair-office", LegacyState: "/var/lib/owntransit-relay-pair-office"}, nil
+				},
+				applySetup: func(_ context.Context, plan relaysetup.SetupPlan, confirmed bool, _ io.Writer) (relaysetup.SetupResult, error) {
+					if plan.Verification != tc.planned || confirmed != (kind == "migration") {
+						t.Fatal("reviewed verification or migration consent changed")
+					}
+					if kind == "migration" && !strings.Contains(out.String(), "Adopt this exact relay using local verification, with public reachability unverified from THIS VPS?") {
+						t.Fatal("local-only adoption was not disclosed before consent")
+					}
+					return relaysetup.SetupResult{Verification: tc.final}, nil
+				},
+			}
+			code := executeManagedRelay(context.Background(), []string{"setup", "--url", "wss://office.example/connects"}, strings.NewReader("yes\n"), &out, &diag, ops)
+			if code != tc.wantCode {
+				t.Fatalf("code=%d diagnostics=%s", code, diag.String())
+			}
+			text := out.String()
+			if tc.final == relaysetup.VerificationPublic {
+				if !strings.Contains(text, "THIS VPS is finished. Relay URL:") || strings.Contains(text, "finished with local verification only") {
+					t.Fatal("improved public result was not used")
+				}
+			} else if tc.final == relaysetup.VerificationLocal403 {
+				for _, wanted := range []string{"finished with local verification only", "Public reachability is unverified from THIS VPS", "HTTP 403", "networks allowed by this website", "remaining public reachability check", "RECEIVING SSH MACHINE", "one private code"} {
+					if !strings.Contains(text, wanted) {
+						t.Fatalf("local result omitted %q", wanted)
+					}
+				}
+				if strings.Contains(text, "THIS VPS is finished. Relay URL:") || strings.Contains(text, "public READY") {
+					t.Fatal("local verification claimed public readiness")
+				}
+			} else if strings.Contains(text, "is finished") || !strings.Contains(diag.String(), "no recognized verification result") {
+				t.Fatal("missing verification result reported success")
+			}
+		})
+	}
+}
+
+func TestManagedRelayLocalVerificationConsentCanBeDeclined(t *testing.T) {
+	var out, diag bytes.Buffer
+	ops := managedOperations{
+		lockPackage: func(int) (io.Closer, error) { return io.NopCloser(strings.NewReader("")), nil },
+		prepareSetup: func(context.Context, string, string) (relaysetup.SetupPlan, error) {
+			return relaysetup.SetupPlan{Instance: "office", URL: "wss://office.example/connects", Kind: "migration", Verification: relaysetup.VerificationLocal403}, nil
+		},
+		applySetup: func(context.Context, relaysetup.SetupPlan, bool, io.Writer) (relaysetup.SetupResult, error) {
+			t.Fatal("declined local verification reached apply")
+			return relaysetup.SetupResult{}, nil
+		},
+	}
+	if code := executeManagedRelay(context.Background(), []string{"setup", "--url", "wss://office.example/connects"}, strings.NewReader("no\n"), &out, &diag, ops); code != 1 || !strings.Contains(diag.String(), "adoption cancelled") || strings.Contains(out.String(), "is finished") {
+		t.Fatal("declined local verification was not cancelled")
 	}
 }

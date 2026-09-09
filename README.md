@@ -39,7 +39,12 @@ replace and asks for confirmation. It preserves the relay keys, URL and existing
 website route, then removes the superseded service/container after verification.
 Other relay instances and websites are not selected for cleanup.
 
-Wait for **THIS VPS is finished**. Keep this terminal for step 3.
+Wait for setup's **NEXT** instruction. Keep this terminal for step 3.
+
+If your access policy returns HTTP 403 to the VPS itself, setup may report
+**local verification only**. It does not weaken that policy or claim public
+reachability. Receiver/client setup from an allowed network checks the public
+path as part of the normal flow below.
 
 ### 2. On the private machine running your SSH server
 
@@ -136,7 +141,8 @@ OwnTransit pairing code.
   reach the same SSH machine.
 - **Interrupted client pairing:** use `pair resume` with the same tunnel/state.
   Keep the saved request; do not regenerate keys to solve a network failure.
-- **Inspect:** use `owntransit-relay list` on the VPS or `pair list` on an endpoint.
+- **Inspect:** use `sudo owntransit-relay-preview list` on the VPS or the
+  `pair list` subcommand of your endpoint executable.
 - **Security alarm:** `pair alarm --tunnel NAME` permanently disables that pairing.
   Recovery requires deliberate fresh pairing; ordinary outages never trigger it.
 

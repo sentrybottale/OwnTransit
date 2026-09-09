@@ -170,7 +170,11 @@ func TestNamedRelayLifecycleIsolation(t *testing.T) {
 		return instanceSpec{}, false
 	}
 	info := func(s instanceSpec) pairrelay.ServerInfo {
-		return pairrelay.ServerInfo{ServerName: "relay.pairrelay.v2.owntransit.invalid", CAPEM: []byte("public fixture " + s.name), LeafSPKISHA256: "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}
+		value, err := readPublicIdentity(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return value
 	}
 	oldCommand, oldProbe, oldFirst, oldLater := command, probeServer, firstProbeTimeout, routeProbeTimeout
 	defer func() {
@@ -332,7 +336,8 @@ func TestNamedRelayLifecycleIsolation(t *testing.T) {
 	}
 	probeServer = func(_ context.Context, url string) (pairrelay.ServerInfo, error) {
 		s, ok := find(url)
-		if !ok || url == failedURL {
+		container := containers[s.container]
+		if !ok || (url == failedURL && (container == nil || container.Image == selectedImage)) {
 			return pairrelay.ServerInfo{}, errors.New("fixture public route unavailable")
 		}
 		data, _ := os.ReadFile(site)
