@@ -40,6 +40,7 @@ func TestPairCommandDispatchesExactSurface(t *testing.T) {
 		{[]string{"init", "--state", "/private/state"}, "summary\n", "init:/private/state"},
 		{[]string{"serve", "--state", "/private/state"}, "", "serve:/private/state"},
 		{[]string{"register", "--state", "/private/state", receiverID.String()}, "relay-code\n", "register:/private/state"},
+		{[]string{"approve", "--state", "/private/state", receiverID.String()}, "Receiver approved. No VPS code to copy.\n", "register:/private/state"},
 	}
 	for _, test := range tests {
 		var output, diagnostics bytes.Buffer
@@ -80,11 +81,27 @@ func TestPairCommandFailsClosedAndHidesOperationDetails(t *testing.T) {
 	for _, arguments := range [][]string{
 		{}, {"init"}, {"serve", "--state", "/private/state", "extra"},
 		{"register", "--state", "/private/state", "not-an-id"}, {"unknown", "--state", "/private/state"},
+		{"approve", "--state", "/private/state", "not-an-id"},
+		{"approve", "--state", "/private/state"},
 	} {
 		output.Reset()
 		diagnostics.Reset()
 		if code := executePairCommand(arguments, &output, &diagnostics, pairOperations{}); code != 2 || output.Len() != 0 || diagnostics.Len() == 0 {
 			t.Fatalf("%v code=%d output=%q diagnostics=%q", arguments, code, output.String(), diagnostics.String())
 		}
+	}
+}
+
+func TestPairApproveDoesNotPrintSuccessOnRegistrationFailure(t *testing.T) {
+	id, err := protocol.NewID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out, diag bytes.Buffer
+	ops := pairOperations{register: func(string, protocol.ID) (string, error) {
+		return "unusable-routing-data", errors.New("private-operation-detail")
+	}}
+	if status := executePairCommand([]string{"approve", "--state", "/private/state", id.String()}, &out, &diag, ops); status != 1 || out.Len() != 0 || diag.String() != "owntransit-relay pair approve: operation failed\n" {
+		t.Fatal("approval failure leaked details or printed success")
 	}
 }

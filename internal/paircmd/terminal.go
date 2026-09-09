@@ -8,7 +8,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"time"
 
 	"github.com/sentrybottale/owntransit/internal/pairruntime"
 	"golang.org/x/sys/unix"
@@ -33,11 +32,17 @@ func configureSecretTerminal(t *unix.Termios) {
 func readSecretTerminal(ctx context.Context, f *os.File, reader *bufio.Reader, limit int) (value []byte, err error) {
 	out := make([]byte, 0, min(limit, 4096))
 	pasting, pasted := false, false
+	rejected, endMatched := false, 0
+	reject := func() {
+		clear(out)
+		out = out[:0]
+		rejected = true
+	}
 	defer func() {
-		// A paste can still be arriving when Enter, cancellation or a bound
-		// ends this read. Keep echo disabled until the bounded quiet drain
-		// completes; the caller then restores termios and flushes kernel input.
-		drainErr := drainSecretTerminal(f, reader, pasting)
+		// Enter or cancellation ends this entry. Discard already queued
+		// type-ahead before the caller restores termios and flushes kernel
+		// input. We cannot predict input written after the entry has ended.
+		drainErr := drainSecretTerminal(f, reader)
 		if err == nil {
 			err = ctx.Err()
 			if err == nil {
@@ -49,26 +54,52 @@ func readSecretTerminal(ctx context.Context, f *os.File, reader *bufio.Reader, l
 			value = nil
 		}
 	}()
+input:
 	for {
 		b, err := readSecretTerminalByte(ctx, f, reader)
 		if err != nil {
 			return nil, err
 		}
 		switch b {
+		case 3, 26: // Ctrl-C / Ctrl-Z: cancel even while discarding an entry.
+			return nil, context.Canceled
+		case 4: // Ctrl-D
+			return nil, io.EOF
+		}
+		if rejected {
+			// A rejected entry is still being entered. Keep it hidden and
+			// consume without retaining bytes until its actual boundary,
+			// rather than treating a pause in a fragmented paste as its end.
+			if pasting {
+				const endPaste = "\x1b[201~"
+				if b == endPaste[endMatched] {
+					endMatched++
+					if endMatched == len(endPaste) {
+						pasting = false
+					}
+				} else if b == endPaste[0] {
+					endMatched = 1
+				} else {
+					endMatched = 0
+				}
+			} else if b == '\n' || b == '\r' {
+				return nil, pairruntime.ErrState
+			}
+			continue
+		}
+		switch b {
 		case '\n', '\r':
 			if pasting {
 				// A pasted newline must not submit a valid prefix while the
 				// rest of a command block remains in the terminal queue.
-				return nil, pairruntime.ErrState
+				reject()
+				continue
 			}
 			return out, nil
-		case 3, 26: // Ctrl-C / Ctrl-Z: cancel, never suspend with echo disabled.
-			return nil, context.Canceled
-		case 4: // Ctrl-D
-			return nil, io.EOF
 		case 8, 127: // Backspace / Delete
 			if pasting {
-				return nil, pairruntime.ErrState
+				reject()
+				continue
 			}
 			pasted = false
 			if len(out) > 0 {
@@ -77,7 +108,8 @@ func readSecretTerminal(ctx context.Context, f *os.File, reader *bufio.Reader, l
 			}
 		case 21: // Ctrl-U: clear this entry.
 			if pasting {
-				return nil, pairruntime.ErrState
+				reject()
+				continue
 			}
 			pasted = false
 			clear(out)
@@ -86,7 +118,8 @@ func readSecretTerminal(ctx context.Context, f *os.File, reader *bufio.Reader, l
 			// Accept only the known bracketed-paste delimiters around one
 			// complete bounded payload. No general escape/ANSI stripping.
 			if pasted || (!pasting && len(out) != 0) {
-				return nil, pairruntime.ErrState
+				reject()
+				continue
 			}
 			suffix := "[200~"
 			if pasting {
@@ -104,13 +137,21 @@ func readSecretTerminal(ctx context.Context, f *os.File, reader *bufio.Reader, l
 					return nil, io.EOF
 				}
 				if next != suffix[i] {
-					return nil, pairruntime.ErrState
+					reject()
+					if !pasting && (next == '\n' || next == '\r') {
+						return nil, pairruntime.ErrState
+					}
+					if pasting && next == 27 {
+						endMatched = 1
+					}
+					continue input
 				}
 			}
 			pasting, pasted = !pasting, pasting
 		default:
 			if b < 32 || b > 126 || pasted || len(out) == limit {
-				return nil, pairruntime.ErrState
+				reject()
+				continue
 			}
 			out = append(out, b)
 		}
@@ -148,27 +189,13 @@ func readSecretTerminalByte(ctx context.Context, f *os.File, reader *bufio.Reade
 	}
 }
 
-// Drain queued input and ordinary fragmented paste tails without waiting on a
-// background reader. The absolute cap also bounds cancellation under continuous
-// input. Input arriving after this quiet/capped window is a later terminal event.
-func drainSecretTerminal(f *os.File, reader *bufio.Reader, pasting bool) error {
+// Drain currently queued input without a background reader or a guessed paste
+// timeout. A fixed read budget bounds cleanup under continuous input/signals;
+// the caller's termios restoration also flushes the kernel queue.
+func drainSecretTerminal(f *os.File, reader *bufio.Reader) error {
 	var result error
-	const endPaste = "\x1b[201~"
-	endMatched := 0
 	discard := func(data []byte) {
 		for _, b := range data {
-			if pasting {
-				if b == endPaste[endMatched] {
-					endMatched++
-					if endMatched == len(endPaste) {
-						pasting = false
-					}
-				} else if b == endPaste[0] {
-					endMatched = 1
-				} else {
-					endMatched = 0
-				}
-			}
 			if b == 3 || b == 26 {
 				result = context.Canceled
 			} else if b != '\r' && b != '\n' && result == nil {
@@ -184,24 +211,14 @@ func drainSecretTerminal(f *os.File, reader *bufio.Reader, pasting bool) error {
 	reader.Reset(f)
 	var scratch [4096]byte
 	defer clear(scratch[:])
-	deadline := time.Now().Add(750 * time.Millisecond)
-	for {
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
-			return result
-		}
+	for attempt := 0; attempt < 64; attempt++ {
 		fds := []unix.PollFd{{Fd: int32(f.Fd()), Events: unix.POLLIN}}
-		n, err := unix.Poll(fds, min(75, int(remaining.Milliseconds())+1))
+		n, err := unix.Poll(fds, 0)
 		if errors.Is(err, unix.EINTR) {
 			continue
 		}
 		if err != nil {
 			return err
-		}
-		if n == 0 && pasting {
-			// An observed start delimiter identifies the pending paste even
-			// across a delivery pause. Drain through its end or the hard cap.
-			continue
 		}
 		if n == 0 || fds[0].Revents&unix.POLLIN == 0 {
 			return result
@@ -213,6 +230,10 @@ func drainSecretTerminal(f *os.File, reader *bufio.Reader, pasting bool) error {
 		if err != nil {
 			return err
 		}
+		if n == 0 {
+			return result
+		}
 		discard(scratch[:n])
 	}
+	return result
 }

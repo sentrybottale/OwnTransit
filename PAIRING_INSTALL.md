@@ -191,6 +191,18 @@ The VPS prints **Receiver approved**, not another code. The receiver and client
 pick up public registration data automatically. Never paste the private
 receiver code into the VPS.
 
+**Existing manual containers:** the managed `approve --url` command cannot
+discover or adopt them. Use their existing engine, container name and state
+path explicitly. For example, if those are Podman, `owntransit-relay-manual`
+and `/state/relay`:
+
+```sh
+sudo podman exec owntransit-relay-manual /owntransit-relay pair approve --state /state/relay RECEIVER_ID
+```
+
+This uses the same local registration authority and prints no routing code.
+It does not migrate website routes or manufacture managed-instance records.
+
 ## 4. Install and pair a Linux client
 
 ```sh

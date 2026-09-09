@@ -39,7 +39,7 @@ func TestPastePTYHelper(t *testing.T) {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	ctx, timeout := context.WithTimeout(ctx, 5*time.Second)
+	ctx, timeout := context.WithTimeout(ctx, 20*time.Second)
 	defer timeout()
 	limit := 56
 	if mode == "legacy" {
@@ -79,7 +79,7 @@ import termios
 import threading
 import time
 
-def check(label, chunks, expected=b"", status="ok", mode="short", stop=None):
+def check(label, chunks, expected=b"", status="ok", mode="short", stop=None, queued=False, pending=False):
     master, slave = pty.openpty()
     original = termios.tcgetattr(slave)
     original[3] |= termios.ICANON | termios.ECHO | termios.ECHONL | termios.ISIG
@@ -94,7 +94,7 @@ def check(label, chunks, expected=b"", status="ok", mode="short", stop=None):
     transcript = bytearray()
     writer_errors = []
     writer = None
-    deadline = time.monotonic() + 8
+    deadline = time.monotonic() + 25
 
     def read_until(needle):
         while needle not in transcript:
@@ -114,21 +114,35 @@ def check(label, chunks, expected=b"", status="ok", mode="short", stop=None):
         try:
             for delay, chunk in chunks:
                 time.sleep(delay)
+                if pending:
+                    flags = termios.tcgetattr(slave)[3]
+                    assert not flags & (termios.ICANON | termios.ECHO | termios.ECHONL)
                 view = memoryview(chunk)
                 while view:
                     count = os.write(master, view[:512])
                     view = view[count:]
-        except OSError:
+        except (OSError, AssertionError):
             writer_errors.append(True)
 
     try:
         read_until(b"HIDDEN: ")
         during = termios.tcgetattr(slave)
         assert not during[3] & (termios.ICANON | termios.ECHO | termios.ECHONL), label
+        if queued:
+            # Establish that ALL type-ahead is in the kernel queue before the
+            # helper sees Enter/cancellation. Input written after those events
+            # belongs to a later terminal interaction, not this assertion.
+            proc.send_signal(signal.SIGSTOP)
+            _, stopped = os.waitpid(proc.pid, os.WUNTRACED)
+            assert os.WIFSTOPPED(stopped), label + ": helper did not stop"
         writer = threading.Thread(target=write_chunks, daemon=True)
         writer.start()
+        if queued or stop is not None:
+            writer.join(timeout=3)
+            assert not writer.is_alive() and not writer_errors, label + ": enqueue failed"
+        if queued:
+            proc.send_signal(signal.SIGCONT)
         if stop is not None:
-            time.sleep(0.03)
             proc.send_signal(stop)
         read_until(b"RESULT ")
         read_until(b"\nPASS")
@@ -163,7 +177,11 @@ for ending in (b"\r", b"\n", b"\r\n"):
 check("fragmented-framing", [(0.003, bytes([b])) for b in start + code + end + b"\r"], code)
 check("legacy-framed", [(0, start + b"x" * 32768 + end + b"\r")], b"x" * 32768, mode="legacy")
 check("backspace", [(0, b"discard\x15" + code[:-1] + b"z\x7f" + code[-1:] + b"\n")], code)
-check("oversize-drain", [(0, b"x" * 57)] + [(0.02, b"fragment") for _ in range(8)], status="error")
+check("oversize-drain", [(0, b"x" * 57)] + [(0.02, b"fragment") for _ in range(8)] + [(0, b"\n")], status="error", pending=True)
+# Rejection must retain ownership of the unfinished entry across a pause longer
+# than both the former 75 ms quiet guess and its 750 ms absolute drain limit.
+check("oversize-delayed-submit", [(0, b"x" * 57), (1, b"fragment"), (0, b"\n")], status="error", pending=True)
+check("oversize-cancel", [(0, b"x" * 57), (1, b"fragment\x03")], status="cancel", pending=True)
 check("framed-oversize", [(0, start + code + b"x" + end + b"\n")], status="error")
 for label, payload in (
     ("embedded-newline", start + code + b"\nshell-command\n" + end + b"\n"),
@@ -178,13 +196,14 @@ for label, payload in (
     ("tab", code[:20] + b"\t" + code[20:] + b"\n"),
 ):
     check(label, [(0, payload)], status="error")
-check("type-ahead-after-submit", [(0, code + b"\n"), (0.02, b"shell-command\n")], status="error")
-check("framed-delayed-rejected-tail", [(0, start + code + b"\n"), (0.15, b"shell-command\n" + end + b"\n")], status="error")
-check("ctrl-c-drain", [(0, code[:20] + b"\x03"), (0.02, b"fragment\n")], status="cancel")
-check("ctrl-c-in-frame", [(0, start + code[:20] + b"\x03" + end + b"\n")], status="cancel")
-check("ctrl-z-drain", [(0, code[:20] + b"\x1a"), (0.02, b"fragment\n")], status="cancel")
-check("ctrl-d-drain", [(0, code[:20] + b"\x04"), (0.02, b"fragment\n")], status="eof")
-check("sigterm-drain", [(0, code[:20]), (0.05, b"fragment\n")], status="cancel", stop=signal.SIGTERM)
+check("queued-type-ahead-after-submit", [(0, code + b"\nshell-command\n")], status="error", queued=True)
+check("framed-delayed-rejected-tail", [(0, start + code + b"\n"), (1, b"shell-command\n" + end + b"\n")], status="error", pending=True)
+check("ctrl-c-drain", [(0, code[:20] + b"\x03fragment\n")], status="cancel", queued=True)
+check("ctrl-c-in-frame", [(0, start + code[:20] + b"\x03" + end + b"\n")], status="cancel", queued=True)
+check("ctrl-z-drain", [(0, code[:20] + b"\x1afragment\n")], status="cancel", queued=True)
+check("ctrl-d-drain", [(0, code[:20] + b"\x04fragment\n")], status="eof", queued=True)
+check("sigterm-drain", [(0, code[:20] + b"fragment")], status="cancel", stop=signal.SIGTERM)
+check("oversize-sigterm", [(0, b"x" * 57)], status="cancel", stop=signal.SIGTERM)
 check("unterminated-frame-sigterm", [(0, start + code)], status="cancel", stop=signal.SIGTERM)
 print("PTY: short/legacy framing, exact input, rejection, bounded drain and cancellation passed")
 `
