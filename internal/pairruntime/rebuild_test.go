@@ -115,16 +115,70 @@ func TestReceiverRebuildWaitsForActiveWorkers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
-	defer cancel()
-	_, _, err = RebuildReceiver(ctx, f.serverPath, s.Meta.Origin, s.Meta.ServerInfo, "")
-	gate.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	done := make(chan error, 1)
+	finished := false
+	defer func() {
+		cancel()
+		if !finished {
+			select {
+			case <-done:
+			case <-time.After(10 * time.Second):
+				t.Error("cancelled rebuild did not finish")
+			}
+		}
+		gate.Close()
+	}()
+	go func() {
+		_, _, err := RebuildReceiver(ctx, f.serverPath, s.Meta.Origin, s.Meta.ServerInfo, "")
+		done <- err
+	}()
+	// Candidate preparation precedes retirement and may legitimately outlast
+	// a short deadline without locking the old pair. Cancel only after durable
+	// denial exists, while the admitted worker still prevents replacement.
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		policy, err := ReadPolicy(f.serverPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if policy.Locked {
+			break
+		}
+		select {
+		case err := <-done:
+			finished = true
+			t.Fatalf("rebuild ended before durable retirement: %v", err)
+		case <-ctx.Done():
+			t.Fatal("rebuild did not reach durable retirement")
+		case <-ticker.C:
+		}
+	}
+	cancel()
+	select {
+	case err = <-done:
+		finished = true
+	case <-time.After(10 * time.Second):
+		t.Fatal("retirement did not stop after cancellation")
+	}
 	if err == nil {
 		t.Fatal("replaced state with old worker still admitted")
 	}
 	p, err := ReadPolicy(f.serverPath)
 	if err != nil || !p.Locked {
 		t.Fatal("interrupted retirement did not fail closed")
+	}
+	receiver, err := receiverpairing.Open(filepath.Join(f.serverPath, "authority"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err := receiver.Status()
+	if err != nil || status.ReceiverID != s.Status.ReceiverID {
+		t.Fatal("interrupted retirement replaced the active identity")
+	}
+	if err := gate.Close(); err != nil {
+		t.Fatal(err)
 	}
 	next, _, err := RebuildReceiver(context.Background(), f.serverPath, s.Meta.Origin, s.Meta.ServerInfo, "")
 	if err != nil || next.ReceiverID == s.Status.ReceiverID {
