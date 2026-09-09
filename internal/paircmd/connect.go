@@ -52,15 +52,17 @@ func printReceiverCode(output io.Writer, receiverID string, code []byte, legacy 
 func printReceiverNext(output io.Writer, origin, receiverID, tunnel string, legacyCodes bool) {
 	client := pairCommand("owntransit-preview", "setup", "", tunnel)
 	if legacyCodes {
-		fmt.Fprintf(output, "\nNEXT — on your relay:\n  %s\nThen on your client:\n  %s --legacy-codes\nPaste the relay's code and the private pairing code above when asked.\n", relayRegistrationCommand(origin, receiverID), client)
+		fmt.Fprintf(output, "\nNEXT — on your PUBLIC RELAY VPS:\n  %s\nThen on your CLIENT COMPUTER, as your ordinary user without sudo:\n  %s --legacy-codes\nPaste the relay's code and the private pairing code above when asked.\n", relayRegistrationCommand(origin, receiverID), client)
 		return
 	}
-	fmt.Fprintf(output, "\n1. On your VPS:\n  %s\n2. On your client:\n  %s --relay %s\nPaste the private 56-character code above when asked. No VPS code to copy.\n", relayApprovalCommand(origin, receiverID), client, shellQuote(origin))
+	linuxClient := pairCommand("/usr/local/bin/owntransit-preview", "setup", "", tunnel)
+	macClient := `"$HOME/.local/bin/owntransit-preview"` + strings.TrimPrefix(client, "owntransit-preview")
+	fmt.Fprintf(output, "\nTHIS RECEIVING SSH MACHINE is ready for pairing.\nNEXT — on your PUBLIC RELAY VPS:\n  %s\nAfter Receiver approved, run on your CLIENT COMPUTER without sudo:\nLinux: %s --relay %s\nMac:   %s --relay %s\nPaste the one private 56-character code above when asked. No VPS code to copy.\n", relayApprovalCommand(origin, receiverID), linuxClient, shellQuote(origin), macClient, shellQuote(origin))
 }
 
 func printConnect(w io.Writer, status, executable, state string, tunnel ...string) {
 	// There are two shells: the user's command line and SSH's ProxyCommand.
 	// Escape SSH percent tokens as well; paths are local data, never code.
 	proxy := strings.ReplaceAll(pairCommand(executable, "proxy", state, tunnel...), "%", "%%")
-	fmt.Fprintf(w, "%s Connect:\n  ssh -o %s USER@SSH_ALIAS\nUse your SSH account, key and verified host identity.\n", status, shellQuote("ProxyCommand="+proxy))
+	fmt.Fprintf(w, "%s Connect from THIS CLIENT COMPUTER:\n  ssh -o %s USER@SSH_ALIAS\nUse your SSH account, key and verified host identity.\n", status, shellQuote("ProxyCommand="+proxy))
 }

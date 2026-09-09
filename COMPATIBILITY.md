@@ -1,5 +1,16 @@
 # OwnTransit wire compatibility
 
+## Relay management in 0.6.0
+
+The local `owntransit.relay-instance.v2` binding adds a validated derived legacy
+data label for explicit manual relay migration. The bounded
+`owntransit.relay-migration.v1` journal covers ownership cutover and recovery.
+These are local manager formats, not a new carrier/enrollment protocol. Existing
+v1 instances remain supported; older managers reject imported v2 bindings instead
+of guessing data paths. See [migration and rollback](RELAY_MIGRATION.md).
+
+The 0.5.0 one-code pairing and runtime wire profiles below remain unchanged.
+
 OwnTransit is the only public product and artifact name. A small set of
 authenticated byte strings predates that name and remains frozen in the v1
 wire profile:

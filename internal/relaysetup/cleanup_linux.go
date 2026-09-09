@@ -50,7 +50,7 @@ func (s instanceSpec) cleanupStopped(ctx context.Context, engine string, images 
 		}
 		bind := false
 		for _, m := range c.Mounts {
-			if m.Type == "bind" && m.Source == s.root+"/data" && m.Destination == "/state" {
+			if m.Type == "bind" && m.Source == s.dataRoot() && m.Destination == "/state" {
 				bind = true
 			}
 		}

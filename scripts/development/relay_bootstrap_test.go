@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -30,6 +31,42 @@ func TestRelayBootstrapRejectsAmbiguousOrCrossRoleScope(t *testing.T) {
 		if err == nil || bytes.Contains(out, []byte("run through sudo")) || bytes.Contains(out, []byte("Linux is required")) || bytes.Contains(out, []byte("Downloading")) {
 			t.Fatalf("selector was not rejected before host operations: %v err=%v output=%s", args, err, out)
 		}
+	}
+}
+
+// Run the actual post-install shell handoff with an inert executable. This
+// catches the curl entrypoint accidentally converting an omitted selector into
+// --instance default even when the Go command itself preserves URL selection.
+func TestRelayBootstrapSetupHandoffPreservesSelectorPresence(t *testing.T) {
+	source, err := os.ReadFile("../../install-preview-linux.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := strings.Index(string(source), "if test \"$role\" = relay && test \"$action\" = install; then\n  set -- setup\n")
+	if start < 0 {
+		t.Fatal("relay setup handoff missing")
+	}
+	end := strings.LastIndex(string(source), "\n}\nmain \"$@\"")
+	if end < start {
+		t.Fatal("cannot delimit relay setup handoff")
+	}
+	fixture := filepath.Join(t.TempDir(), "relay-fixture")
+	if err := os.WriteFile(fixture, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	fragment := strings.ReplaceAll(string(source[start:end]), "/usr/local/bin/owntransit-relay-preview", "'"+strings.ReplaceAll(fixture, "'", "'\\''")+"'")
+	for _, tc := range []struct{ set, name, want string }{
+		{"no", "default", "setup\n--url\nwss://office.example/connects\n"},
+		{"yes", "default", "setup\n--instance\ndefault\n--url\nwss://office.example/connects\n"},
+		{"yes", "office", "setup\n--instance\noffice\n--url\nwss://office.example/connects\n"},
+	} {
+		t.Run(tc.set+"-"+tc.name, func(t *testing.T) {
+			script := "set -eu\nrole=relay\naction=install\nsetup_url=wss://office.example/connects\ninstance_set=" + tc.set + "\nrelay_instance=" + tc.name + "\n" + fragment
+			out, err := exec.Command("sh", "-c", script).CombinedOutput()
+			if err != nil || string(out) != tc.want {
+				t.Fatalf("handoff changed selector: err=%v got=%q want=%q", err, out, tc.want)
+			}
+		})
 	}
 }
 

@@ -1,5 +1,26 @@
 # OwnTransit security policy
 
+## 0.6.0 relay migration
+
+Unqualified setup selects only the operator-entered URL's protected local
+instance. Explicit instance selection remains restrictive. Recognized manual
+relay migration requires exact unit/container/state/port/confinement ownership,
+the matching existing website route and public identity, and explicit local
+confirmation revalidated before mutation. The v2 binding permits only a derived,
+validated historical data root, not arbitrary paths or shared/default state.
+Prepared/committed journal phases cover reservation replacement, old-service
+restart guards, managed cutover, exact cleanup and recovery. No secrets are copied
+or reset and unrelated relays/sites are not cleanup targets. Other management
+cannot bypass an unfinished migration. [Full contract](RELAY_MIGRATION.md).
+
+An admin-only, authenticated HTTPS 403 may produce a distinctly reported
+local-verification result after exact local route, image, confinement, identity
+and key-digest checks. It is not public reachability proof and never fabricates
+relay information. Migration consent discloses that limitation; endpoint setup
+must still verify the public path from an allowed network. Other transport,
+certificate, protocol or identity failures remain fatal. No endpoint dialer,
+access-control rule, SSH policy or cryptographic check is weakened.
+
 ## 0.5.0 one-code setup
 
 The short private code retains 256-bit randomness. An independent full HMAC

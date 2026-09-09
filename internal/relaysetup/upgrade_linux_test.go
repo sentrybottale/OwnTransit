@@ -45,6 +45,24 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 			if _, err := pairrelaycmd.Init(managedRoot+"/data/relay", time.Now()); err != nil {
 				t.Fatal(err)
 			}
+			if err := filepath.Walk(managedRoot+"/data", func(path string, _ os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				return os.Chown(path, 65532, 65532)
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll("/etc/nginx/sites-enabled", 0755); err != nil {
+				t.Fatal(err)
+			}
+			const site = "/etc/nginx/sites-enabled/upgrade-fixture.conf"
+			if err := os.WriteFile("/usr/sbin/nginx", []byte("disposable fixture"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(site, []byte("server { listen 443 ssl; server_name relay.example; location = /connects { proxy_pass http://127.0.0.1:9087/connects; } }\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
 			keyPath := managedRoot + "/data/relay/relay-key.pem"
 			beforeKey, err := os.ReadFile(keyPath)
 			if err != nil {
@@ -70,9 +88,18 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 			savedCommand, savedProbe, savedTimeout := command, probeServer, routeProbeTimeout
 			defer func() { command, probeServer, routeProbeTimeout = savedCommand, savedProbe, savedTimeout }()
 			routeProbeTimeout = 30 * time.Millisecond
-			local := pairrelay.ServerInfo{ServerName: "relay.example", CAPEM: []byte("public test CA"), LeafSPKISHA256: "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}
+			local, err := readPublicIdentity(defaultInstance())
+			if err != nil {
+				t.Fatal(err)
+			}
 			command = func(_ context.Context, program string, args ...string) ([]byte, error) {
 				calls = append(calls, program+" "+strings.Join(args, " "))
+				if program == "/usr/sbin/nginx" {
+					if len(args) == 1 && args[0] == "-T" {
+						return []byte("# configuration file " + site + ":\n"), nil
+					}
+					return nil, errors.New("website mutation forbidden")
+				}
 				if filepath.Base(program) == "systemctl" {
 					switch args[0] {
 					case "show", "daemon-reload":
@@ -135,7 +162,7 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 					}
 					c := containerInfo{ID: strings.Repeat("c", 64), Name: "/" + managedContainer, Image: currentImage}
 					c.Config.Entrypoint = []string{"/owntransit-relay"}
-					c.Mounts = []struct{ Type, Source, Destination string }{{"bind", managedRoot + "/data", "/state"}}
+					c.Mounts = []inspectionMount{{"bind", managedRoot + "/data", "/state", true}}
 					c.State.Running = running
 					return json.Marshal([]containerInfo{c})
 				}
@@ -145,7 +172,7 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 				return nil, errors.New("unexpected engine command")
 			}
 			probeServer = func(context.Context, string) (pairrelay.ServerInfo, error) {
-				if scenario == "failed-public-probe" || scenario == "stopped-disabled" {
+				if (scenario == "failed-public-probe" && currentImage == next.Image) || scenario == "stopped-disabled" {
 					return pairrelay.ServerInfo{}, errors.New("probe unavailable")
 				}
 				return local, nil
@@ -175,7 +202,7 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 				}
 			}
 			if scenario == "interrupted" {
-				journal, _ := json.Marshal(upgradeIntent{"owntransit.relay-upgrade.v1", prev, next, true, true, nil})
+				journal, _ := json.Marshal(upgradeIntent{"owntransit.relay-upgrade.v1", prev, next, true, true, nil, nil})
 				if err := root.CreateExclusive("upgrade.json", journal, 0600); err != nil {
 					t.Fatal(err)
 				}
@@ -232,7 +259,7 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 				t.Fatal("completed rollback/upgrade retained active journal")
 			}
 			for _, call := range calls {
-				if strings.Contains(call, "nginx") || strings.Contains(call, "apache") || strings.Contains(call, "caddy") {
+				if (strings.Contains(call, "nginx") && call != "/usr/sbin/nginx -T") || strings.Contains(call, "apache") || strings.Contains(call, "caddy") {
 					t.Fatal("managed upgrade touched website routing")
 				}
 			}

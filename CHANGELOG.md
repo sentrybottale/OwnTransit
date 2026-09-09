@@ -1,13 +1,28 @@
 # Changelog
 
-OwnTransit records user-visible and security-relevant changes here. An
-immutable prerelease candidate is moved out of `Unreleased` when its source is
-frozen so its exact version can be bound into build and qualification evidence.
-That heading is not a release decision or production claim. A stable-version
-heading may freeze the intended release bytes before qualification, but it
-becomes a publication record only after its authenticated evidence, signed
-qualification record and release decision are complete. Git tags never create
-or publish artifacts automatically.
+OwnTransit records user-visible and security-relevant changes here. Moving a
+version out of `Unreleased` freezes its intended source; the heading alone is
+not a publication or assurance claim. Publication requires the checks and
+authenticated artifacts of the documented release lane. The legacy 0.1.0 lane
+additionally requires its signed qualification record. Git tags do not publish
+artifacts automatically.
+
+## [0.6.0]
+
+- Select relay setup by its entered public URL unless an instance name is
+  explicitly supplied. Never silently repoint an existing instance.
+- Add a checked migration from recognized manual OwnTransit relay deployments,
+  retaining their identity and public route while removing superseded active
+  service/container plumbing. Preserve unrelated relays and website settings.
+- Reconcile interrupted/incomplete relay setup through a durable transaction;
+  restore the previous service on failure instead of leaving partial adoption.
+- Make installer/setup handoffs identify the machine for each next command and
+  show recovery actions rather than raw filesystem errors.
+- Classify large unrelated proxy fragments without relaxing limits on actual
+  site configurations; validate routes and ownership before creating identities.
+- Report an explicitly limited local-verification result when a verified HTTPS
+  probe receives HTTP 403 and all local route/identity checks pass. Preserve
+  access policies and mandatory endpoint verification from allowed networks.
 
 ## [0.5.0]
 

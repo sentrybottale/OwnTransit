@@ -18,12 +18,22 @@ import (
 )
 
 type upgradeIntent struct {
-	Schema       string      `json:"schema"`
-	Previous     savedConfig `json:"previous"`
-	Next         savedConfig `json:"next"`
-	Enabled      bool        `json:"enabled"`
-	Running      bool        `json:"running"`
-	PreviousUnit []byte      `json:"previous_unit,omitempty"`
+	Schema       string                `json:"schema"`
+	Previous     savedConfig           `json:"previous"`
+	Next         savedConfig           `json:"next"`
+	Enabled      bool                  `json:"enabled"`
+	Running      bool                  `json:"running"`
+	PreviousUnit []byte                `json:"previous_unit,omitempty"`
+	Verification *verificationEvidence `json:"verification,omitempty"`
+}
+
+const upgradeJournalLimit = 64 << 10
+
+func (s instanceSpec) validUpgradeVerification(j upgradeIntent) bool {
+	if j.Schema == "owntransit.relay-upgrade.v4" {
+		return j.Verification != nil && s.validVerificationEvidence(*j.Verification) && j.Verification.Engine == j.Previous.Engine
+	}
+	return j.Verification == nil
 }
 
 func validSaved(c savedConfig) bool {
@@ -54,13 +64,36 @@ func (s instanceSpec) managedIdentity(ctx context.Context, engine, image string)
 }
 
 func (s instanceSpec) verifyRunningRelay(ctx context.Context, c savedConfig, timeout time.Duration) error {
+	if s.url == "" {
+		s.url = c.URL
+	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	for {
 		local, err := s.managedIdentity(ctx, c.Engine, c.Image)
 		if err == nil {
+			evidence, hasEvidence := ctx.Value(verificationEvidenceKey{}).(verificationEvidence)
+			if hasEvidence {
+				if err := s.checkVerificationEvidence(ctx, evidence, local, c.Engine, false); err != nil {
+					return err
+				}
+			}
 			remote, e := probeServer(ctx, c.URL)
-			if e == nil && remote.LeafSPKISHA256 == local.LeafSPKISHA256 && bytes.Equal(remote.CAPEM, local.CAPEM) {
+			if e == nil && sameIdentity(remote, local) {
+				recordVerification(ctx, VerificationPublic)
+				return nil
+			}
+			if e == nil {
+				return errProbeIdentityMismatch
+			}
+			if errors.Is(e, errProbeForbidden) {
+				if !hasEvidence {
+					return errProbeForbidden
+				}
+				if err := s.checkVerificationEvidence(ctx, evidence, local, c.Engine, true); err != nil {
+					return err
+				}
+				recordVerification(ctx, VerificationLocal403)
 				return nil
 			}
 		}
@@ -75,8 +108,22 @@ func (s instanceSpec) verifyRunningRelay(ctx context.Context, c savedConfig, tim
 // The journal contains only protected local software selection and service
 // state. Relay identity files are neither rewritten nor restored by upgrades.
 func (s instanceSpec) restoreManaged(ctx context.Context, root *securefs.Root, j upgradeIntent) error {
+	if s.url == "" {
+		s.url = j.Previous.URL
+	}
 	if !s.validSaved(j.Previous) || !s.validSaved(j.Next) || !s.validJournalSchema(j.Schema) || j.Previous.URL != j.Next.URL || j.Previous.Engine != j.Next.Engine {
 		return errors.New("invalid relay upgrade journal")
+	}
+	if j.Schema == "owntransit.relay-upgrade.v4" {
+		if !s.validUpgradeVerification(j) {
+			return errors.New("invalid upgrade verification evidence")
+		}
+		ctx = withVerificationEvidence(ctx, *j.Verification)
+		if err := checkIdentityDigests(s, j.Verification.Digests); err != nil {
+			return err
+		}
+	} else if !s.validUpgradeVerification(j) {
+		return errors.New("legacy upgrade contains unsupported verification evidence")
 	}
 	previousUnit := j.PreviousUnit
 	if j.Schema == "owntransit.relay-upgrade.v1" {
@@ -143,12 +190,17 @@ func (s instanceSpec) restoreManaged(ctx context.Context, root *securefs.Root, j
 			case <-time.After(100 * time.Millisecond):
 			}
 		}
+		if j.Schema == "owntransit.relay-upgrade.v4" {
+			if err := s.verifyRunningRelay(ctx, j.Previous, routeProbeTimeout); err != nil {
+				return err
+			}
+		}
 	}
 	return root.UnlinkFile("upgrade.json")
 }
 
 func (s instanceSpec) recoverManaged(ctx context.Context, root *securefs.Root, output io.Writer) error {
-	b, err := s.readRecord(root, "upgrade.json", 8192)
+	b, err := s.readRecord(root, "upgrade.json", upgradeJournalLimit)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
@@ -164,6 +216,10 @@ func (s instanceSpec) recoverManaged(ctx context.Context, root *securefs.Root, o
 }
 
 func (s instanceSpec) upgradeManaged(ctx context.Context, root *securefs.Root, previous, next savedConfig, output io.Writer) (returnErr error) {
+	ctx = ensureVerificationResult(ctx)
+	if s.url == "" {
+		s.url = previous.URL
+	}
 	if !s.validSaved(previous) || !s.validSaved(next) || previous.Engine != next.Engine || previous.URL != next.URL {
 		return errors.New("use the existing relay URL and engine for an in-place upgrade")
 	}
@@ -183,6 +239,11 @@ func (s instanceSpec) upgradeManaged(ctx context.Context, root *securefs.Root, p
 			return errors.New("running relay does not match saved managed image; no service was changed")
 		}
 	}
+	evidence, err := s.captureVerificationEvidence(ctx, previous.Engine, nil)
+	if err != nil {
+		return err
+	}
+	ctx = withVerificationEvidence(ctx, evidence)
 	if previous == next && activeErr == nil && bytes.Equal(original, s.unit(next.Image, next.Engine)) {
 		if err := s.verifyRunningRelay(ctx, next, routeProbeTimeout); err != nil {
 			return errors.Join(errors.New("existing relay left running; check its public route"), err)
@@ -192,6 +253,7 @@ func (s instanceSpec) upgradeManaged(ctx context.Context, root *securefs.Root, p
 				return err
 			}
 		}
+		reportVerification(output, currentVerification(ctx))
 		fmt.Fprintln(output, "This relay version is already running; no container or website configuration was replaced.")
 		return nil
 	}
@@ -201,13 +263,15 @@ func (s instanceSpec) upgradeManaged(ctx context.Context, root *securefs.Root, p
 	if _, err := command(ctx, previous.Engine, "image", "inspect", "--format", "{{.Id}}", previous.Image); err != nil {
 		return errors.New("previous image is unavailable for rollback; relay left unchanged")
 	}
-	schema := "owntransit.relay-upgrade.v2"
-	if s.named() {
-		schema = "owntransit.relay-upgrade.v3"
-	}
-	j := upgradeIntent{schema, previous, next, enabledErr == nil, activeErr == nil, original}
+	j := upgradeIntent{Schema: "owntransit.relay-upgrade.v4", Previous: previous, Next: next, Enabled: enabledErr == nil, Running: activeErr == nil, PreviousUnit: original, Verification: &evidence}
 	encoded, _ := json.Marshal(j)
-	if err := root.CreateExclusive("upgrade.json", encoded, 0600); err != nil {
+	if len(encoded) > upgradeJournalLimit {
+		return errors.New("relay upgrade journal exceeds its bound")
+	}
+	if _, err := root.ReadFile("upgrade.json", upgradeJournalLimit); !errors.Is(err, os.ErrNotExist) {
+		return errors.New("an upgrade journal already exists")
+	}
+	if err := root.ReplaceFile("upgrade.json", encoded, 0600); err != nil {
 		return err
 	}
 	defer func() {
@@ -253,11 +317,15 @@ func (s instanceSpec) upgradeManaged(ctx context.Context, root *securefs.Root, p
 	if err := root.UnlinkFile("upgrade.json"); err != nil {
 		return err
 	}
-	fmt.Fprintln(output, "Relay upgrade verified: the new image is running and reachable. Existing receivers do not need new pairing codes.")
+	reportVerification(output, currentVerification(ctx))
+	fmt.Fprintln(output, "Local relay upgrade completed. Existing receivers retain their pairing identities.")
 	return nil
 }
 
 func (s instanceSpec) validJournalSchema(schema string) bool {
+	if schema == "owntransit.relay-upgrade.v4" {
+		return true
+	}
 	if s.named() {
 		return schema == "owntransit.relay-upgrade.v3"
 	}

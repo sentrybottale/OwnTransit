@@ -86,6 +86,9 @@ func TestClientSetupSelectsOneCodeUnlessLegacyExplicit(t *testing.T) {
 		if !strings.Contains(text, "OwnTransit "+buildinfo.Version+" client setup") {
 			t.Fatal("actual executable version missing")
 		}
+		if !strings.Contains(text, "THIS MACHINE: CLIENT COMPUTER") {
+			t.Fatal("client prompt did not identify the local machine's role")
+		}
 		if legacy {
 			if !strings.Contains(text, "legacy two-code setup") || !strings.Contains(text, "VPS registration code (") || strings.Contains(text, "Private receiver code (") {
 				t.Fatal("explicit legacy setup selected the wrong prompt")
@@ -93,6 +96,38 @@ func TestClientSetupSelectsOneCodeUnlessLegacyExplicit(t *testing.T) {
 		} else if !strings.Contains(text, "one private code") || !strings.Contains(text, "Private receiver code (otpair2., 56 characters, hidden):") || strings.Contains(text, "VPS registration code (") {
 			t.Fatal("default setup requested legacy codes")
 		}
+	}
+}
+
+func TestSetupBannersNameTheMachineWithoutChangingCodeProfiles(t *testing.T) {
+	for _, receiver := range []bool{false, true} {
+		var output bytes.Buffer
+		printSetupBanner(&output, receiver, false)
+		want := "THIS MACHINE: CLIENT COMPUTER"
+		if receiver {
+			want = "THIS MACHINE: RECEIVING SSH MACHINE"
+		}
+		if !strings.Contains(output.String(), want) || !strings.Contains(output.String(), "one private code (otpair2., 56 characters)") || strings.Contains(output.String(), "otrelay1.") {
+			t.Fatalf("role or one-code banner changed: %s", output.String())
+		}
+	}
+}
+
+func TestClientRootRejectionNamesTheCorrectMachines(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("root rejection is exercised in the isolated Linux root suite")
+	}
+	var output, diagnostics bytes.Buffer
+	if code := Run(false, []string{"setup"}, strings.NewReader(""), &output, &diagnostics); code != 1 || output.Len() != 0 {
+		t.Fatal("root client setup did not reject before setup")
+	}
+	for _, text := range []string{"CLIENT COMPUTER", "without sudo", "move to your RECEIVING SSH MACHINE", "on that receiving machine"} {
+		if !strings.Contains(diagnostics.String(), text) {
+			t.Fatalf("wrong-role rejection omitted %q: %s", text, diagnostics.String())
+		}
+	}
+	if strings.Contains(diagnostics.String(), "sudo sh -s -- client") {
+		t.Fatal("wrong-role rejection suggested installing a client on the VPS")
 	}
 }
 

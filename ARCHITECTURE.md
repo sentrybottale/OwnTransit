@@ -1,5 +1,12 @@
 # OwnTransit architecture
 
+0.6.0 adds URL-first local relay setup and explicit migration of recognized
+manual deployments into managed instances. A versioned protected binding may
+retain a strictly derived historical data root; the transaction keeps the
+existing relay identity and website route while replacing old service/container
+ownership. It adds no endpoint origin switching or network trust authority.
+See [migration boundaries and recovery](RELAY_MIGRATION.md).
+
 The 0.5.0 release reduces receiver-owned setup to one private code.
 The client fetches a public offer and authenticates it with the full code-derived
 MAC before using any receiver keys; the existing encrypted pairing and runtime

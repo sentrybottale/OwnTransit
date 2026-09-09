@@ -23,7 +23,7 @@ import (
 
 func fixtureSpec(t *testing.T, name string, port int) instanceSpec {
 	t.Helper()
-	s, err := instanceFromBinding(instanceBinding{"owntransit.relay-instance.v1", name, "wss://" + name + ".example/connects", port})
+	s, err := instanceFromBinding(instanceBinding{"owntransit.relay-instance.v1", name, "wss://" + name + ".example/connects", port, ""})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func ownedFixtureContainer(s instanceSpec, image string) containerInfo {
 	c := containerInfo{ID: strings.Repeat("c", 64), Image: image, Name: "/" + s.container}
 	c.Config.Entrypoint = []string{"/owntransit-relay"}
 	c.Config.Cmd = []string{"pair", "serve", "--state", "/state/relay"}
-	c.Mounts = []struct{ Type, Source, Destination string }{{"bind", s.root + "/data", "/state"}}
+	c.Mounts = []inspectionMount{{"bind", s.root + "/data", "/state", true}}
 	c.HostConfig.PortBindings = map[string][]struct{ HostIP, HostPort string }{"9087/tcp": {{"127.0.0.1", strconv.Itoa(s.port)}}}
 	return c
 }
@@ -170,7 +170,11 @@ func TestNamedRelayLifecycleIsolation(t *testing.T) {
 		return instanceSpec{}, false
 	}
 	info := func(s instanceSpec) pairrelay.ServerInfo {
-		return pairrelay.ServerInfo{ServerName: "relay.pairrelay.v2.owntransit.invalid", CAPEM: []byte("public fixture " + s.name), LeafSPKISHA256: "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}
+		value, err := readPublicIdentity(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return value
 	}
 	oldCommand, oldProbe, oldFirst, oldLater := command, probeServer, firstProbeTimeout, routeProbeTimeout
 	defer func() {
@@ -332,7 +336,8 @@ func TestNamedRelayLifecycleIsolation(t *testing.T) {
 	}
 	probeServer = func(_ context.Context, url string) (pairrelay.ServerInfo, error) {
 		s, ok := find(url)
-		if !ok || url == failedURL {
+		container := containers[s.container]
+		if !ok || (url == failedURL && (container == nil || container.Image == selectedImage)) {
 			return pairrelay.ServerInfo{}, errors.New("fixture public route unavailable")
 		}
 		data, _ := os.ReadFile(site)
@@ -436,7 +441,7 @@ func TestNamedRelayLifecycleIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conflict, _ := json.Marshal(instanceBinding{"owntransit.relay-instance.v1", b.name, a.url, b.port})
+	conflict, _ := json.Marshal(instanceBinding{"owntransit.relay-instance.v1", b.name, a.url, b.port, ""})
 	if err := br.ReplaceFile("instance.json", conflict, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -447,7 +452,7 @@ func TestNamedRelayLifecycleIsolation(t *testing.T) {
 	if len(calls) != urlStart {
 		t.Fatal("conflicting URL registration reached a host command")
 	}
-	bound, _ := json.Marshal(instanceBinding{"owntransit.relay-instance.v1", b.name, b.url, b.port})
+	bound, _ := json.Marshal(instanceBinding{"owntransit.relay-instance.v1", b.name, b.url, b.port, ""})
 	if err := br.ReplaceFile("instance.json", bound, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -675,11 +680,11 @@ func TestNamedRelayPendingSetupRecoveryAndReservations(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer br.Close()
-	good, _ := json.Marshal(instanceBinding{"owntransit.relay-instance.v1", b.name, b.url, b.port})
+	good, _ := json.Marshal(instanceBinding{"owntransit.relay-instance.v1", b.name, b.url, b.port, ""})
 	for _, bad := range []instanceBinding{
-		{"owntransit.relay-instance.v1", b.name, b.url, a.port},
-		{"owntransit.relay-instance.v1", b.name, a.url, b.port},
-		{"owntransit.relay-instance.v1", a.name, b.url, b.port},
+		{"owntransit.relay-instance.v1", b.name, b.url, a.port, ""},
+		{"owntransit.relay-instance.v1", b.name, a.url, b.port, ""},
+		{"owntransit.relay-instance.v1", a.name, b.url, b.port, ""},
 	} {
 		data, _ := json.Marshal(bad)
 		if err := br.ReplaceFile("instance.json", data, 0600); err != nil {

@@ -67,11 +67,11 @@ func Run(receiver bool, args []string, input io.Reader, output, diagnostics io.W
 		return discoverWorkerProfile(args[1:], output, true)
 	}
 	if receiver && (runtime.GOOS != "linux" || os.Geteuid() != 0) {
-		fmt.Fprintln(diagnostics, "owntransit connector pair: requires Linux root; the network worker drops privileges")
+		fmt.Fprintln(diagnostics, "Receiver commands run with sudo on the RECEIVING SSH MACHINE, the Linux computer running your SSH server. For new setup there, run: sudo owntransit-connector-preview pair setup")
 		return 1
 	}
 	if !receiver && os.Geteuid() == 0 {
-		fmt.Fprintln(diagnostics, "owntransit client pair: run as the local SSH client user, not root")
+		fmt.Fprintln(diagnostics, "Client commands run on your CLIENT COMPUTER, the computer you connect from, as your ordinary user without sudo. On that computer, use the client setup command printed by its installer.\nIf you are currently on the relay VPS, move to your RECEIVING SSH MACHINE first. Run the connector setup command on that receiving machine:\n  sudo owntransit-connector-preview pair setup")
 		return 1
 	}
 	base, err := defaultState(receiver)
@@ -565,7 +565,10 @@ func printSetupBanner(output io.Writer, receiver, legacyCodes bool) {
 		profile = "legacy two-code setup (otrelay1. and otpair1.)"
 	}
 	fmt.Fprintf(output, "OwnTransit %s %s setup — %s.\n", buildinfo.Version, role, profile)
-	if !receiver {
+	if receiver {
+		fmt.Fprintln(output, "THIS MACHINE: RECEIVING SSH MACHINE, the private Linux computer running your SSH server. Enter the relay URL printed by setup on your public VPS.")
+	} else {
+		fmt.Fprintln(output, "THIS MACHINE: CLIENT COMPUTER, the computer you connect from. Use the same relay URL as your receiving SSH machine.")
 		fmt.Fprintln(output, "Paste each answer into its prompt, then press Enter. Code input is hidden. Ctrl-C cancels.")
 	}
 }

@@ -28,17 +28,17 @@ func CaddyRouteForPort(data []byte, hostname string, port int) (RouteEdit, error
 		if i > 0 {
 			p := tokens[i-1]
 			linebreak := bytes.Contains(data[p.end:t.start], []byte("\n"))
-			if p.text != "{" && p.text != "}" && p.text != ";" && t.text != "{" && ((linebreak && !strings.HasSuffix(p.text, ",")) || t.text == "}") {
-				normalized = append(normalized, token{";", p.end, p.end})
+			if !p.isSymbol("{") && !p.isSymbol("}") && !p.isSymbol(";") && !t.isSymbol("{") && ((linebreak && !strings.HasSuffix(p.text, ",")) || t.isSymbol("}")) {
+				normalized = append(normalized, token{";", p.end, p.end, true})
 			}
 		}
-		if t.text == "{" && (len(normalized) == 0 || normalized[len(normalized)-1].text == "}") {
-			normalized = append(normalized, token{"__global", t.start, t.start})
+		if t.isSymbol("{") && (len(normalized) == 0 || normalized[len(normalized)-1].isSymbol("}")) {
+			normalized = append(normalized, token{"__global", t.start, t.start, false})
 		}
 		normalized = append(normalized, t)
 	}
-	if len(normalized) > 0 && normalized[len(normalized)-1].text != "}" {
-		normalized = append(normalized, token{";", len(data), len(data)})
+	if len(normalized) > 0 && !normalized[len(normalized)-1].isSymbol("}") {
+		normalized = append(normalized, token{";", len(data), len(data), true})
 	}
 	position := 0
 	tree, err := parseBlocks(normalized, &position, 0)
@@ -65,13 +65,20 @@ func CaddyRouteForPort(data []byte, hostname string, port int) (RouteEdit, error
 		return RouteEdit{}, ErrRoute
 	}
 	site := sites[0]
-	for _, b := range site.children {
-		if len(b.words) == 2 && b.words[0].text == "handle" && b.words[1].text == "/connects" {
-			for _, d := range b.directives {
-				if len(d) == 2 && d[0].text == "reverse_proxy" && d[1].text == upstream {
-					return RouteEdit{data, data, true}, nil
+	var existing *block
+	for i := range site.children {
+		b := &site.children[i]
+		matched := false
+		for _, w := range b.words {
+			if strings.Contains(w.text, "/connects") {
+				if len(b.words) != 2 || b.words[0].text != "handle" || b.words[1].text != "/connects" || existing != nil {
+					return RouteEdit{}, ErrRoute
 				}
+				existing = b
+				matched = true
 			}
+		}
+		if !matched && blockMentionsPath(*b, "/connects") {
 			return RouteEdit{}, ErrRoute
 		}
 	}
@@ -82,11 +89,51 @@ func CaddyRouteForPort(data []byte, hostname string, port int) (RouteEdit, error
 			}
 		}
 	}
+	if existing != nil {
+		if len(existing.children) != 0 || len(existing.directives) != 1 {
+			return RouteEdit{}, ErrRoute
+		}
+		d := existing.directives[0]
+		if len(d) != 2 || d[0].text != "reverse_proxy" {
+			return RouteEdit{}, ErrRoute
+		}
+		if d[1].text == upstream {
+			return RouteEdit{data, data, true}, nil
+		}
+		if literalRouteLoopback(d[1].text) {
+			return RouteEdit{}, ErrRoutePortConflict
+		}
+		return RouteEdit{}, ErrRoute
+	}
 	addition := []byte("\n  # OwnTransit: selected-site WebSocket route\n  handle /connects {\n    reverse_proxy " + upstream + "\n  }\n")
 	after := append([]byte(nil), data[:site.open+1]...)
 	after = append(after, addition...)
 	after = append(after, data[site.open+1:]...)
 	return RouteEdit{append([]byte(nil), data...), after, false}, nil
+}
+
+// Unknown matchers/handlers may compete with the recognized exact route.
+// The parser has already bounded tree depth and token count; do not interpret
+// an unrecognized nested path as evidence of a simple alternate relay port.
+func blockMentionsPath(b block, path string) bool {
+	for _, word := range b.words {
+		if strings.Contains(word.text, path) {
+			return true
+		}
+	}
+	for _, directive := range b.directives {
+		for _, word := range directive {
+			if strings.Contains(word.text, path) {
+				return true
+			}
+		}
+	}
+	for _, child := range b.children {
+		if blockMentionsPath(child, path) {
+			return true
+		}
+	}
+	return false
 }
 
 var virtualHostOpen = regexp.MustCompile(`(?im)^[\t ]*<VirtualHost\s+([^>]+)>`)
@@ -143,17 +190,40 @@ func ApacheRouteForPort(data []byte, hostname string, port int) (RouteEdit, erro
 	}
 	s := sites[0]
 	directive := `ProxyPassMatch "^/connects$" "ws://` + upstream + `/connects"`
+	existing := ""
+	depth := 0
 	for _, line := range strings.Split(string(data[s.begin:s.end]), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "#") {
 			continue
 		}
-		if line == directive {
-			return RouteEdit{data, data, true}, nil
+		if strings.HasPrefix(line, "<") {
+			if strings.HasPrefix(line, "</") {
+				depth--
+			} else {
+				depth++
+			}
+			if depth < 0 || depth > 32 {
+				return RouteEdit{}, ErrRoute
+			}
 		}
 		if strings.Contains(line, "/connects") {
-			return RouteEdit{}, ErrRoute
+			const prefix = `ProxyPassMatch "^/connects$" "ws://`
+			const suffix = `/connects"`
+			if depth != 0 || existing != "" || !strings.HasPrefix(line, prefix) || !strings.HasSuffix(line, suffix) || !literalRouteLoopback(strings.TrimSuffix(strings.TrimPrefix(line, prefix), suffix)) {
+				return RouteEdit{}, ErrRoute
+			}
+			existing = line
 		}
+	}
+	if depth != 0 {
+		return RouteEdit{}, ErrRoute
+	}
+	if existing == directive {
+		return RouteEdit{data, data, true}, nil
+	}
+	if existing != "" {
+		return RouteEdit{}, ErrRoutePortConflict
 	}
 	addition := []byte("\n  # OwnTransit: selected-site WebSocket route\n  " + directive + "\n")
 	after := append([]byte(nil), data[:s.begin]...)

@@ -31,13 +31,15 @@ const maxInstances = lastInstancePort - firstInstancePort + 2
 type instanceSpec struct {
 	name, root, container, unitName, unitPath, url string
 	port                                           int
+	legacyDataLabel                                string
 }
 
 type instanceBinding struct {
-	Schema string `json:"schema"`
-	Name   string `json:"name"`
-	URL    string `json:"url"`
-	Port   int    `json:"port"`
+	Schema          string `json:"schema"`
+	Name            string `json:"name"`
+	URL             string `json:"url"`
+	Port            int    `json:"port"`
+	LegacyDataLabel string `json:"legacy_data_label,omitempty"`
 }
 
 func defaultInstance() instanceSpec {
@@ -47,7 +49,8 @@ func defaultInstance() instanceSpec {
 func instanceFromBinding(b instanceBinding) (instanceSpec, error) {
 	name, err := normalizedInstanceName(b.Name)
 	u, ue := PublicURL(b.URL)
-	if err != nil || name != b.Name || ue != nil || u != b.URL || b.Schema != "owntransit.relay-instance.v1" {
+	legacy := b.Schema == "owntransit.relay-instance.v2" && name != "default" && validLegacyLabel(b.LegacyDataLabel)
+	if err != nil || name != b.Name || ue != nil || u != b.URL || (!legacy && (b.Schema != "owntransit.relay-instance.v1" || b.LegacyDataLabel != "")) {
 		return instanceSpec{}, errors.New("invalid relay instance binding")
 	}
 	s := defaultInstance()
@@ -64,10 +67,17 @@ func instanceFromBinding(b instanceBinding) (instanceSpec, error) {
 		return instanceSpec{}, errors.New("invalid default relay port")
 	}
 	s.url, s.port = b.URL, b.Port
+	s.legacyDataLabel = b.LegacyDataLabel
 	return s, nil
 }
 
 func (s instanceSpec) named() bool { return s.name != "default" }
+func (s instanceSpec) dataRoot() string {
+	if s.legacyDataLabel != "" {
+		return legacyRoot(s.legacyDataLabel) + "/data"
+	}
+	return s.root + "/data"
+}
 func (s instanceSpec) openRoot() (*securefs.Root, error) {
 	if err := protectedDirectoryChain(s.root); err != nil {
 		return nil, err
@@ -120,7 +130,16 @@ func (s instanceSpec) validateData() error {
 	if !s.named() {
 		return nil
 	}
-	for _, path := range []string{s.root + "/data", s.root + "/data/relay"} {
+	if s.legacyDataLabel != "" {
+		if err := protectedDirectoryChain(legacyRoot(s.legacyDataLabel)); err != nil {
+			return err
+		}
+		info, err := os.Lstat(legacyRoot(s.legacyDataLabel))
+		if err != nil || info.Mode().Perm() != 0700 || info.Sys().(*syscall.Stat_t).Gid != 0 {
+			return errors.New("unsafe retained relay state root")
+		}
+	}
+	for _, path := range []string{s.dataRoot(), s.dataRoot() + "/relay"} {
 		info, err := os.Lstat(path)
 		if err != nil {
 			return err
@@ -151,6 +170,9 @@ func (s instanceSpec) validSaved(c savedConfig) bool {
 }
 
 func (s instanceSpec) ownsContainer(c containerInfo, image string) bool {
+	if s.legacyDataLabel != "" && !confined(c) {
+		return false
+	}
 	if strings.TrimPrefix(c.Name, "/") != s.container || c.Image != image {
 		return false
 	}
@@ -160,7 +182,7 @@ func (s instanceSpec) ownsContainer(c containerInfo, image string) bool {
 	if len(c.Config.Entrypoint) != 1 || c.Config.Entrypoint[0] != "/owntransit-relay" || !equalStrings(c.Config.Cmd, []string{"pair", "serve", "--state", "/state/relay"}) {
 		return false
 	}
-	if len(c.Mounts) != 1 || c.Mounts[0].Type != "bind" || c.Mounts[0].Source != s.root+"/data" || c.Mounts[0].Destination != "/state" {
+	if len(c.Mounts) != 1 || c.Mounts[0].Type != "bind" || c.Mounts[0].Source != s.dataRoot() || c.Mounts[0].Destination != "/state" {
 		return false
 	}
 	if len(c.HostConfig.PortBindings) != 1 {
@@ -270,6 +292,9 @@ func boundedNames(path string, maximum int) ([]string, error) {
 // scanInstances includes stopped, removed and incomplete reservations. A URL
 // or port is never released by a failed setup or ordinary uninstall.
 func scanInstances(root *securefs.Root) ([]instanceSpec, error) {
+	if err := noMigration(root); err != nil {
+		return nil, err
+	}
 	var specs []instanceSpec
 	d, err := readBinding(root, "default")
 	if errors.Is(err, os.ErrNotExist) {
@@ -322,11 +347,18 @@ func scanInstances(root *securefs.Root) ([]instanceSpec, error) {
 		specs = append(specs, s)
 	}
 	seenURL, seenPort := map[string]bool{}, map[int]bool{}
-	for _, s := range specs {
-		if seenURL[s.url] || seenPort[s.port] {
+	seenData := map[string]bool{}
+	for i, s := range specs {
+		if seenURL[s.url] || seenPort[s.port] || seenData[s.dataRoot()] {
 			return nil, errors.New("conflicting relay URL or port reservations")
 		}
+		for _, other := range specs[:i] {
+			if overlapsPath(s.dataRoot(), other.dataRoot()) {
+				return nil, errors.New("conflicting relay state directories")
+			}
+		}
 		seenURL[s.url], seenPort[s.port] = true, true
+		seenData[s.dataRoot()] = true
 		if _, err := s.loadConfig(); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return nil, err
 		}
@@ -371,7 +403,7 @@ func reserveInstance(root *securefs.Root, name, url string) (instanceSpec, error
 			return instanceSpec{}, errors.New("no free managed relay instance port")
 		}
 	}
-	binding := instanceBinding{"owntransit.relay-instance.v1", name, url, port}
+	binding := instanceBinding{Schema: "owntransit.relay-instance.v1", Name: name, URL: url, Port: port}
 	s, err := instanceFromBinding(binding)
 	if err != nil {
 		return s, err
@@ -449,6 +481,9 @@ func SetupInstance(ctx context.Context, name, rawURL string, out io.Writer) erro
 	}
 	defer root.Close()
 	defer lock.Close()
+	if err := noMigration(root); err != nil {
+		return err
+	}
 	s, err := reserveInstance(root, name, url)
 	if err != nil {
 		return err
@@ -595,7 +630,7 @@ func legacyUnit(image, engine string) []byte    { return defaultInstance().legac
 func knownUnit(data []byte, c savedConfig) bool { return defaultInstance().knownUnit(data, c) }
 
 func noPendingOperation(root *securefs.Root) error {
-	for _, name := range []string{"upgrade.json", "pending-setup.json"} {
+	for _, name := range []string{"upgrade.json", "pending-setup.json", "migration.json"} {
 		if _, err := root.ReadFile(name, 8192); !errors.Is(err, os.ErrNotExist) {
 			return errors.New("finish or recover this relay setup before continuing")
 		}
