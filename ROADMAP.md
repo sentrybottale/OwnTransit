@@ -1,5 +1,16 @@
 # OwnTransit roadmap
 
+## 0.6.0 — complete relay setup and migration
+
+- URL-first local relay selection; explicit instance names remain restrictive.
+- Recognized manual-service migration with preserved keys, URL and loopback
+  route, ownership-checked cleanup, rollback and interruption recovery.
+- Correctly reconcile unused reservations without stealing another instance's
+  URL, port, service, state or container.
+- Verify the commands printed by setup through approval and client pairing;
+  each handoff must say which physical machine runs the next command.
+- Same supported platforms, one-code protocol, signer and bounded release lane.
+
 ## 0.5.0 — one-code setup
 
 - One 56-character private code from receiver to client; fetch and authenticate

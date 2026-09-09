@@ -9,6 +9,18 @@ becomes a publication record only after its authenticated evidence, signed
 qualification record and release decision are complete. Git tags never create
 or publish artifacts automatically.
 
+## [Unreleased — 0.6.0]
+
+- Select relay setup by its entered public URL unless an instance name is
+  explicitly supplied. Never silently repoint an existing instance.
+- Add a checked migration from recognized manual OwnTransit relay deployments,
+  retaining their identity and public route while removing superseded active
+  service/container plumbing. Preserve unrelated relays and website settings.
+- Reconcile interrupted/incomplete relay setup through a durable transaction;
+  restore the previous service on failure instead of leaving partial adoption.
+- Make installer/setup handoffs identify the machine for each next command and
+  show recovery actions rather than raw filesystem errors.
+
 ## [0.5.0]
 
 - Reduce default setup to one 56-character private receiver code. Fetch public

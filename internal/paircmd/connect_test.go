@@ -12,7 +12,7 @@ import (
 func TestConnectOutputIsShortAndSelectsExactClientAndState(t *testing.T) {
 	var out bytes.Buffer
 	printConnect(&out, "OwnTransit paired.", "/opt/bin/owntransit-preview", "")
-	want := "OwnTransit paired. Connect:\n  ssh -o 'ProxyCommand=/opt/bin/owntransit-preview pair proxy' USER@SSH_ALIAS\nUse your SSH account, key and verified host identity.\n"
+	want := "OwnTransit paired. Connect from THIS CLIENT COMPUTER:\n  ssh -o 'ProxyCommand=/opt/bin/owntransit-preview pair proxy' USER@SSH_ALIAS\nUse your SSH account, key and verified host identity.\n"
 	if out.String() != want {
 		t.Fatalf("unexpected success text: %q", out.String())
 	}
@@ -67,6 +67,12 @@ func TestReceiverNextStepsSelectExactCodeProfile(t *testing.T) {
 		if !strings.Contains(text, "pair setup --tunnel laptop") {
 			t.Fatal("client next step lost the selected tunnel")
 		}
+		if !strings.Contains(text, "PUBLIC RELAY VPS") || !strings.Contains(text, "CLIENT COMPUTER") || !strings.Contains(text, "without sudo") {
+			t.Fatal("next steps omitted which machine runs each command")
+		}
+		if !legacy && (!strings.Contains(text, `/usr/local/bin/owntransit-preview pair setup`) || !strings.Contains(text, `"$HOME/.local/bin/owntransit-preview" pair setup`)) {
+			t.Fatal("client handoff omitted usable installed Linux/Mac paths")
+		}
 		if legacy {
 			if !strings.Contains(text, " register --url ") || !strings.Contains(text, "--legacy-codes") || strings.Contains(text, " approve --url ") {
 				t.Fatal("legacy receiver selected one-code setup")
@@ -88,7 +94,7 @@ func TestShortReceiverPrintsOnlyOneCodeAndPublicIDOnlyInCommand(t *testing.T) {
 	if strings.Count(text, string(code)) != 1 || strings.Count(text, "public-receiver-id") != 1 || strings.Contains(text, "Receiver ID (") || !strings.Contains(text, "pair setup --relay 'wss://relay.example/connects'") {
 		t.Fatal("short receiver output duplicated a code or omitted the prefilled relay URL")
 	}
-	if strings.Count(text, "\n") > 11 {
+	if strings.Count(text, "\n") > 14 {
 		t.Fatal("short receiver handoff became a wall of text")
 	}
 }

@@ -30,7 +30,7 @@ const managedRoot = "/var/lib/owntransit-relay-setup"
 const managedContainer = "owntransit-relay-managed"
 const managedUnit = "owntransit-relay-managed.service"
 const unitPath = "/etc/systemd/system/" + managedUnit
-const imageTag = "owntransit-relay-pair:0.5.0"
+const imageTag = "owntransit-relay-pair:0.6.0"
 
 type boundedBuffer struct {
 	bytes.Buffer
@@ -205,20 +205,36 @@ func ensureEngine(ctx context.Context, output io.Writer) (string, error) {
 	return "", errors.New("this Linux distribution needs Docker or Podman installed before setup")
 }
 
+type inspectionMount struct {
+	Type, Source, Destination string
+	RW                        bool
+}
 type containerInfo struct {
-	ID     string `json:"Id"`
-	Image  string `json:"Image"`
-	Name   string `json:"Name"`
-	Config struct {
+	EffectiveCaps []string `json:"EffectiveCaps"`
+	BoundingCaps  []string `json:"BoundingCaps"`
+	ID            string   `json:"Id"`
+	Image         string   `json:"Image"`
+	Name          string   `json:"Name"`
+	Config        struct {
+		User       string
 		Entrypoint inspectionEntrypoint
 		Cmd        []string
 		Labels     map[string]string
 	} `json:"Config"`
 	State      struct{ Running bool } `json:"State"`
 	HostConfig struct {
-		PortBindings map[string][]struct{ HostIP, HostPort string }
+		RestartPolicy struct {
+			Name              string
+			MaximumRetryCount int
+		}
+		ReadonlyRootfs                                   bool
+		Privileged                                       bool
+		CapDrop, CapAdd, SecurityOpt                     []string
+		Memory, PidsLimit, CpuPeriod, CpuQuota, NanoCpus int64
+		AutoRemove                                       bool
+		PortBindings                                     map[string][]struct{ HostIP, HostPort string }
 	} `json:"HostConfig"`
-	Mounts []struct{ Type, Source, Destination string } `json:"Mounts"`
+	Mounts []inspectionMount `json:"Mounts"`
 }
 
 func inspect(ctx context.Context, engine, name string) (containerInfo, error) {
@@ -386,7 +402,7 @@ Delegate=yes
 
 [Install]
 WantedBy=multi-user.target
-`, engine, s.container, s.port, s.root, image, engine, s.container))
+`, engine, s.container, s.port, strings.TrimSuffix(s.dataRoot(), "/data"), image, engine, s.container))
 }
 
 func writeAtomic(path string, data []byte, mode os.FileMode) error {
@@ -529,7 +545,7 @@ func (s instanceSpec) setup(ctx context.Context, inputURL string, output io.Writ
 	if err != nil || strings.TrimSpace(string(user)) != "65532:65532" {
 		return errors.New("relay image does not select the required unprivileged identity")
 	}
-	dataDir := filepath.Join(s.root, "data")
+	dataDir := s.dataRoot()
 	if savedErr == nil {
 		if err := s.validateData(); err != nil {
 			return err
@@ -541,7 +557,7 @@ func (s instanceSpec) setup(ctx context.Context, inputURL string, output io.Writ
 		if err := s.upgradeManaged(ctx, root, saved, s.config(publicURL, e, image), output); err != nil {
 			return err
 		}
-		fmt.Fprintf(output, "Relay ready at %s. NEXT: continue with your existing receiver/client. For a new receiver, run its pair setup; it prints the approval command to run on this VPS.\n", publicURL)
+		fmt.Fprintf(output, "Relay ready at %s.\n", publicURL)
 		return nil
 	}
 	if info, err := os.Lstat(dataDir); errors.Is(err, os.ErrNotExist) {
@@ -713,7 +729,7 @@ func (s instanceSpec) setup(ctx context.Context, inputURL string, output io.Writ
 			return err
 		}
 	}
-	fmt.Fprintf(output, "Relay is ready at %s and enabled for reboot.\nNEXT — on your private SSH server:\n  sudo owntransit-connector-preview pair setup\nUse the relay URL above. Receiver setup prints the exact approval command to run back on this VPS. Its form is:\n  sudo owntransit-relay-preview approve --url %s RECEIVER_ID\n", publicURL, publicURL)
+	fmt.Fprintf(output, "Relay is ready at %s and enabled for reboot.\n", publicURL)
 	return nil
 }
 

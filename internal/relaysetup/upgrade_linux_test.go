@@ -135,7 +135,7 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 					}
 					c := containerInfo{ID: strings.Repeat("c", 64), Name: "/" + managedContainer, Image: currentImage}
 					c.Config.Entrypoint = []string{"/owntransit-relay"}
-					c.Mounts = []struct{ Type, Source, Destination string }{{"bind", managedRoot + "/data", "/state"}}
+					c.Mounts = []inspectionMount{{"bind", managedRoot + "/data", "/state", true}}
 					c.State.Running = running
 					return json.Marshal([]containerInfo{c})
 				}

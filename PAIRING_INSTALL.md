@@ -1,4 +1,4 @@
-# Install and operate OwnTransit 0.5.0
+# Install and operate OwnTransit 0.6.0
 
 This is the signed receiver-owned release line, installed separately from the
 legacy 0.1.0 package/qualification profile. Keep independent recovery access.
@@ -10,14 +10,14 @@ restrict which SSH account you authenticate to on the receiving machine.
 
 ## Non-purging removal
 
-The 0.5.0 Linux installer accepts the installed local role followed by
+The 0.6.0 Linux installer accepts the installed local role followed by
 `--uninstall`, for example:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.5.0/install-preview-linux.sh | sudo sh -s -- client --uninstall
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.0/install-preview-linux.sh | sudo sh -s -- client --uninstall
 ```
 
-Use `connector` or `relay` on those machines. It removes only recognized 0.5.0
+Use `connector` or `relay` on those machines. It removes only recognized 0.6.0
 software; pairing and SSH settings remain. Relay keys, disabled unit
 configuration, website routing and cached rollback images are intentionally
 retained. Explicit reinstall/setup reuses that configuration. Modified units,
@@ -26,7 +26,7 @@ The Mac installer prints its offline uninstall command; see the Mac section.
 
 ## 1. Install and start the relay
 
-The 0.1.8 relay timer fix is retained in 0.5.0. Compatible clients, receivers and
+The 0.1.8 relay timer fix is retained in 0.6.0. Compatible clients, receivers and
 pairing keys remain valid; do not re-pair. The 0.1.7 terminal-input fixes and
 0.1.6 managed-container fixes are retained.
 
@@ -38,17 +38,20 @@ or unrelated container. Old images remain available for rollback.
 On Linux amd64 or arm64:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.5.0/install-preview-linux.sh | sudo sh -s -- relay
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.0/install-preview-linux.sh | sudo sh -s -- relay
 ```
 
 Enter the full public URL at the visible prompt, such as
 `wss://relay.example/connects`. If the server hosts several websites, that
 hostname selects exactly which HTTPS site receives the route.
+Without `--instance`, setup selects the matching existing local relay by URL;
+it no longer assigns every request to `default`. An explicit instance name
+still refuses a URL belonging to a different instance.
 
 You can also pass the URL in the same installation command:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.5.0/install-preview-linux.sh | sudo sh -s -- relay wss://relay.example/connects
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.0/install-preview-linux.sh | sudo sh -s -- relay wss://relay.example/connects
 ```
 
 Setup detects Docker or Podman, installs Podman through a supported package
@@ -82,9 +85,27 @@ sudo owntransit-relay-preview setup
 
 Keep the relay running before setting up either endpoint.
 
+### Migrating an older manual relay
+
+Run that same installer/setup command and enter the existing URL. For a
+recognized manual OwnTransit service, setup displays the exact old unit,
+container, state directory and port. Confirm the displayed migration.
+
+Setup reuses the original keys and correct website route, completes the managed
+instance records, verifies the new service and retires the superseded unit and
+container. It can reconcile a recognized unused same-URL reservation without
+replacing another relay. Existing paired endpoints keep their identities; a
+pending legacy advertisement may need its public approval again after restart.
+
+After migration, use the ordinary `approve --url` command printed by receiver
+setup. No Podman/Docker command or private host-specific recipe is required.
+An interrupted migration is recovered by rerunning the same setup; unknown
+ownership or modified files are reported rather than deleted. The precise
+supported layout and recovery contract are in [relay migration](RELAY_MIGRATION.md).
+
 ### Upgrading instead of pairing again
 
-Run the same 0.5.0 installer for the local role. For the relay, use its existing
+Run the same 0.6.0 installer for the local role. For the relay, use its existing
 public URL: setup recognizes a known managed service, preserves its keys and
 website routing, restarts the new immutable image and verifies the running image
 and public protocol response. Failed cutover restores the old unit, selection
@@ -104,7 +125,7 @@ For independent relays on one VPS, add `--instance NAME` to relay installation
 and administration. For example, on the VPS:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.5.0/install-preview-linux.sh | sudo sh -s -- relay --instance office wss://office.example/connects
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.0/install-preview-linux.sh | sudo sh -s -- relay --instance office wss://office.example/connects
 sudo owntransit-relay-preview approve --instance office RECEIVER_ID
 sudo owntransit-relay-preview list
 ```
@@ -141,7 +162,7 @@ These commands work on both supported Linux architectures, including a 64-bit
 Raspberry Pi:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.5.0/install-preview-linux.sh | sudo sh -s -- connector
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.0/install-preview-linux.sh | sudo sh -s -- connector
 sudo owntransit-connector-preview pair setup
 ```
 
@@ -191,22 +212,15 @@ The VPS prints **Receiver approved**, not another code. The receiver and client
 pick up public registration data automatically. Never paste the private
 receiver code into the VPS.
 
-**Existing manual containers:** the managed `approve --url` command cannot
-discover or adopt them. Use their existing engine, container name and state
-path explicitly. For example, if those are Podman, `owntransit-relay-manual`
-and `/state/relay`:
-
-```sh
-sudo podman exec owntransit-relay-manual /owntransit-relay pair approve --state /state/relay RECEIVER_ID
-```
-
-This uses the same local registration authority and prints no routing code.
-It does not migrate website routes or manufacture managed-instance records.
+**Older manual installation?** Complete the migration above first. Approval
+then uses the same ordinary command as a fresh managed relay. The low-level
+`pair approve --state` API remains available for deliberately manual deployments;
+it is not the normal 0.6.0 quickstart.
 
 ## 4. Install and pair a Linux client
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.5.0/install-preview-linux.sh | sudo sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.0/install-preview-linux.sh | sudo sh -s -- client
 ```
 
 After the installer finishes, run as your ordinary user:
@@ -230,18 +244,18 @@ owntransit-preview pair resume
 Install without sudo:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.5.0/install-preview-macos.sh | sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.0/install-preview-macos.sh | sh -s -- client
 ```
 
 Use the exact setup command printed by installation. The per-user software lives
-under `~/Library/Application Support/OwnTransitSoftware/0.5.0`; command aliases
+under `~/Library/Application Support/OwnTransitSoftware/0.6.0`; command aliases
 are under `~/.local/bin`. The printed absolute path works without changing PATH.
 Existing legacy/manual binaries elsewhere are preserved, not overwritten.
 
 For an independently verified manual handoff:
 
-Download `owntransit-preview-0.5.0-darwin-arm64.tar.gz` from the
-[0.5.0 release](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.5.0).
+Download `owntransit-preview-0.6.0-darwin-arm64.tar.gz` from the
+[0.6.0 release](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.6.0).
 Verify its digest against the signed `DEVELOPMENT-SHA256SUMS`, then extract it.
 The archive contains the client, capsule identity, checksums and license notices.
 It does not alter your Mac or require Apple notarization.
@@ -381,7 +395,7 @@ tunnel, with multiple independent receiver tunnels supported on one SSH host.
 
 ## What installation changes
 
-Only the requested role is installed below `/opt/owntransit-preview/0.5.0`,
+Only the requested role is installed below `/opt/owntransit-preview/0.6.0`,
 with a separately named `*-preview` alias. An exact reinstall is idempotent;
 an unmanaged conflicting file is not overwritten. The connector installer
 creates a disabled service; only your explicit `pair setup` enables it.

@@ -146,7 +146,7 @@ func TestManagedSetupAndFailedRouteRollback(t *testing.T) {
 			t.Fatal(err)
 		}
 		c := containerInfo{}
-		c.Mounts = []struct{ Type, Source, Destination string }{{"bind", parent, "/state"}}
+		c.Mounts = []inspectionMount{{"bind", parent, "/state", true}}
 		dataDir := filepath.Join(managedRoot, "adoption-data")
 		if err := os.Mkdir(dataDir, 0700); err != nil {
 			t.Fatal(err)

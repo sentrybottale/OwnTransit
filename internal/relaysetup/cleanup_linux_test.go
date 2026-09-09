@@ -26,7 +26,7 @@ func TestCleanupOnlyStoppedExactManagedContainer(t *testing.T) {
 			removed := false
 			c := containerInfo{ID: id, Name: managedContainer, Image: image}
 			c.Config.Entrypoint = []string{"/owntransit-relay"}
-			c.Mounts = []struct{ Type, Source, Destination string }{{"bind", managedRoot + "/data", "/state"}}
+			c.Mounts = []inspectionMount{{"bind", managedRoot + "/data", "/state", true}}
 			switch scenario {
 			case "running":
 				c.State.Running = true

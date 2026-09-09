@@ -1,5 +1,19 @@
 # OwnTransit v1 shipping plan
 
+## Receiver-owned 0.6.0 migration closure
+
+Require the normal public relay install/setup path to finish an existing
+recognized manual deployment without private wrappers, fabricated ownership
+records or a separate operator recipe. Preserve its keys, URL and website route;
+remove the superseded service/container only through the validated migration
+transaction. Exercise fresh setup, existing managed upgrade, manual migration,
+unused reservations, rerun, interrupted recovery, rollback and cross-instance
+isolation before the usual immutable signed handoff. Full end-to-end acceptance
+uses the commands actually printed to users, not only internal API calls.
+Keep the existing nine assets and signer; do not add a new-machine or extended
+soak requirement. Runtime encryption, endpoint authority and SSH ownership are
+unchanged.
+
 ## Receiver-owned 0.5.0 one-code setup
 
 Use the existing bounded release lane, signer and nine assets. This candidate
