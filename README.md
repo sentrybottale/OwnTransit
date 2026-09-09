@@ -25,61 +25,130 @@ choose where the receiver sends traffic.
 
 ## Install 0.4.0
 
-0.4.0 is the signed receiver-owned release line, separate from the older 0.1.0
-package/qualification profile. Linux amd64/x86_64 and arm64/aarch64 use the same
-command. Existing preview filenames and aliases remain for compatibility;
-normal command names are added where available. Follow the command printed by
-the installer if a legacy name conflicts. No unrelated command is overwritten.
+**New connection? Follow these five steps.** Run one command block at a time and
+answer each program's prompts before continuing. Linux supports amd64/x86_64 and
+arm64/aarch64; the Mac client supports Apple silicon.
 
-First, on the public VPS (installation starts relay setup):
+**Already paired? [Upgrade without new codes](#upgrade-without-new-pairing-codes).**
+Do not rerun receiver `pair setup` just to upgrade—it replaces that pairing.
+For additional connections, see [named tunnels](#more-than-one-tunnel) or
+[another relay on the same VPS](#more-than-one-relay-on-the-same-vps).
+
+**1. Public VPS — install and start the relay**
 
 ```sh
 curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-linux.sh | sudo sh -s -- relay
 ```
 
-Then install the package on the private SSH server:
+This starts relay setup automatically. Enter your public URL, such as
+`wss://relay.example/connects`; that HTTPS site must already exist on the VPS.
+Use this same URL on the receiver and client below.
+
+**2. Private SSH server — install the receiver, then create the new pairing**
 
 ```sh
 curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-linux.sh | sudo sh -s -- connector
 ```
 
-On a Linux client:
+After installation, run:
+
+```sh
+sudo owntransit-connector-preview pair setup
+```
+
+Enter the relay URL. Keep the **public receiver ID** for the VPS and the
+**private one-use pairing code** for your client only. Never give the private
+code to the VPS; transfer it through your existing authenticated SSH or console.
+
+**3. Back on the VPS — register that receiver**
+
+Copy the complete registration command printed by receiver setup. It already
+contains your URL and public receiver ID. Its form is:
+
+```sh
+sudo owntransit-relay-preview register --url wss://relay.example/connects RECEIVER_ID
+```
+
+Use the printed values, not the example domain or `RECEIVER_ID` placeholder.
+Keep the resulting **VPS registration code** for the client.
+
+**4. Client computer — choose Linux or Mac**
+
+On Linux, install:
 
 ```sh
 curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-linux.sh | sudo sh -s -- client
 ```
 
-For a new pairing, follow **Pair and connect** below once both packages are
-installed. The setup commands below are interactive programs: answer their
-prompts, rather than pasting the command again into an input field.
+Then run setup as your ordinary user, **without sudo**:
 
-The relay installer starts one setup workflow and asks for the full public URL,
-for example `wss://relay.example/connects`. That selects the website when the VPS
-hosts several domains. Setup detects Docker or Podman, starts an unprivileged
-relay container, enables its reboot service and verifies the public WebSocket
-route. Existing routing is reused; a missing route in a recognized Nginx, Apache
-or Caddy site is backed up, added only to that site, validated and reloaded.
+```sh
+owntransit-preview pair setup
+```
+
+On an Apple-silicon Mac, install **without sudo**:
+
+```sh
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-macos.sh | sh -s -- client
+```
+
+Then run the installed client; this path works without editing your PATH:
+
+```sh
+"$HOME/.local/bin/owntransit-preview" pair setup
+```
+
+Client setup asks for the **relay URL**, the **VPS registration code** (`otrelay1.…`),
+and the **private receiver code** (`otpair1.…`), in that order. Paste codes into
+the hidden prompts, not into shell commands or environment variables.
+
+**5. Connect over SSH**
+
+Run the SSH command printed by client setup, with your SSH user and host label.
+It includes the correct client path and selected tunnel. A Linux example is:
+
+```sh
+ssh -o 'ProxyCommand=owntransit-preview pair proxy' USER@SSH_ALIAS
+```
+
+On Mac, use the printed command so its absolute executable path is preserved.
+Use your existing SSH key and independently verified host identity. Pairing
+provides the connection; it does not grant SSH login. More examples:
+[Pair and connect](#pair-and-connect).
+
+These install commands trust GitHub to deliver the initial script; downloaded
+archives are then signature-verified. See [installation trust](SECURITY.md#installation-trust).
+
+<details>
+<summary>Installation details, compatibility and trust</summary>
+
+0.4.0 is the signed receiver-owned release line, separate from the older 0.1.0
+package/qualification profile. Existing preview filenames and aliases remain
+for compatibility; normal command names are added where available. Follow the
+command printed by the installer if a legacy name conflicts. No unrelated
+command is overwritten.
+
+The relay URL selects the website when the VPS hosts several domains. Setup
+detects Docker or Podman, starts an unprivileged relay container, enables its
+reboot service and verifies the public WebSocket route. Existing routing is
+reused; a missing route in a recognized Nginx, Apache or Caddy site is backed up,
+added only to that site, validated and reloaded.
 
 The same interface works across providers on supported Linux/systemd hosts with
 an existing HTTPS site. Bespoke proxy layouts or a missing HTTPS site produce a
 specific setup error; they are not guessed. Failed cutover restores the previous
 relay and any route changed by setup. Start the relay before endpoint setup.
 
-On an Apple-silicon Mac, install the client **without sudo**:
-
-```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.4.0/install-preview-macos.sh | sh -s -- client
-```
-
-The Mac installer prints the exact setup command, normally
-`"$HOME/.local/bin/owntransit" pair setup`. It requires no PATH or SSH-file edits.
-Intel macOS is not supported. No Apple signing subscription is required; the
-client is not Apple-notarized.
+Mac installation requires no PATH or SSH-file edits. Intel macOS is not
+supported. No Apple signing subscription is required; the client is not
+Apple-notarized.
 
 The initial curl script trusts GitHub delivery, then pins the existing
 distribution key and verifies the signed archive before executing its installer.
 See the [complete guide](PAIRING_INSTALL.md) for the relay commands, verification,
 macOS use and recovery. **Do not use the old 0.1.0 curl command for this flow.**
+
+</details>
 
 ## Upgrade without new pairing codes
 
