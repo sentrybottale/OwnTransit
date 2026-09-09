@@ -278,13 +278,16 @@ func (f *integrated) pair(t *testing.T) {
 		e = readRecord(root, "receiver.json", &m)
 		return e == nil && len(m.Token) > 0
 	})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Match the CLI's bounded setup budget. Durable authority writes on slow
+	// race-instrumented CI hosts are not the relay pending-waiter timer under
+	// test; the injected short relay timers remain unchanged.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	err := PairClient(ctx, f.clientPath, "wss://relay.example/connects", f.attempt.Code, f.registration, f.dial)
 	// The exact persisted request resumes if the receiver's outbound mailbox was
 	// not queued at the first attempt. No secret or identity is regenerated.
 	if err != nil {
-		for i := 0; i < 10 && err != nil; i++ {
+		for i := 0; i < 10 && err != nil && ctx.Err() == nil; i++ {
 			time.Sleep(100 * time.Millisecond)
 			err = ResumeClient(ctx, f.clientPath, f.dial)
 		}
