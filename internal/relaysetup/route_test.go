@@ -133,6 +133,9 @@ func TestNginxRouteReuseRejectsCompetingOrRedirectedExactLocations(t *testing.T)
 
 func TestNginxFragmentDetectionSeparatesQuotedDelimitersFromGrammar(t *testing.T) {
 	for _, fragment := range []string{
+		"", // Empty optional include: no site, never a route to create or adopt.
+		" \t\r\n",
+		"# optional blocklist is currently empty\n",
 		`log_format json escape=json '{' '"method":"$request_method"' '}' ';';`,
 		`map $value $result { default "server {"; }`,
 		`map $value $result { default \{; other \}; third \;; }`,

@@ -51,6 +51,37 @@ func TestManagedMigrationPodmanCapabilityProjection(t *testing.T) {
 	}
 }
 
+func TestManagedMigrationCPUProjection(t *testing.T) {
+	c := containerInfo{}
+	c.Config.User = "65532:65532"
+	c.Mounts = []inspectionMount{{RW: true}}
+	c.HostConfig.ReadonlyRootfs = true
+	c.HostConfig.AutoRemove = true
+	c.HostConfig.CapDrop = []string{"ALL"}
+	c.HostConfig.SecurityOpt = []string{"no-new-privileges"}
+	c.HostConfig.Memory = 268435456
+	c.HostConfig.PidsLimit = 128
+	for _, tc := range []struct {
+		nano, period, quota int64
+		want                bool
+	}{
+		{1000000000, 0, 0, true},
+		{0, 100000, 100000, true},
+		{1000000000, 100000, 100000, true}, // Podman reports both equivalent forms.
+		{0, 0, 0, false},
+		{1000000000, 100000, 200000, false},
+		{2000000000, 100000, 100000, false},
+		{1000000000, 0, 100000, false},
+		{1000000000, 100000, 0, false},
+		{-1, 100000, 100000, false},
+	} {
+		c.HostConfig.NanoCpus, c.HostConfig.CpuPeriod, c.HostConfig.CpuQuota = tc.nano, tc.period, tc.quota
+		if confined(c) != tc.want {
+			t.Fatalf("CPU projection %d/%d/%d accepted=%v", tc.nano, tc.period, tc.quota, !tc.want)
+		}
+	}
+}
+
 func TestMigrationBindingCannotAliasDefaultOrSelectPaths(t *testing.T) {
 	for _, label := range []string{"", "default", "setup", "managed", "managed-alpha", "pair", "../alpha", "/tmp/alpha", "alpha/data", "all"} {
 		b := instanceBinding{Schema: "owntransit.relay-instance.v2", Name: "work", URL: "wss://work.example/connects", Port: 9088, LegacyDataLabel: label}

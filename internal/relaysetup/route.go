@@ -139,6 +139,11 @@ func scanConfigTokens(data []byte, emit func(token) error) error {
 // the stricter site AST token budget. Any server-block file still gets that
 // complete bounded parser, regardless of its hostname, quoting or escapes.
 func nginxHasServerBlock(data []byte) (bool, error) {
+	// Optional includes (for example an empty blocklist) can have zero bytes.
+	// They cannot select a site; keep the shared site lexer strict.
+	if len(data) == 0 {
+		return false, nil
+	}
 	depth, words := 0, 0
 	first := ""
 	found := false

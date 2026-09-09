@@ -365,7 +365,10 @@ func noDropIns(ctx context.Context, s instanceSpec) error {
 }
 func confined(c containerInfo) bool {
 	h := c.HostConfig
-	cpu := (h.NanoCpus == 1000000000 && h.CpuPeriod == 0 && h.CpuQuota == 0) || (h.NanoCpus == 0 && h.CpuPeriod == 100000 && h.CpuQuota == 100000)
+	// Podman may expose both equivalent representations of --cpus=1.
+	// Any populated representation must match; conflicting limits fail closed.
+	cfsCPU := h.CpuPeriod == 100000 && h.CpuQuota == 100000
+	cpu := (h.NanoCpus == 1000000000 && ((h.CpuPeriod == 0 && h.CpuQuota == 0) || cfsCPU)) || (h.NanoCpus == 0 && cfsCPU)
 	nnp := equalStrings(h.SecurityOpt, []string{"no-new-privileges"}) || equalStrings(h.SecurityOpt, []string{"no-new-privileges:true"})
 	restart := (h.RestartPolicy.Name == "" || h.RestartPolicy.Name == "no") && h.RestartPolicy.MaximumRetryCount == 0
 	return c.Config.User == "65532:65532" && len(c.Mounts) == 1 && c.Mounts[0].RW && h.ReadonlyRootfs && !h.Privileged && h.AutoRemove && len(h.CapAdd) == 0 && droppedAllCapabilities(c) && nnp && restart && h.Memory == 268435456 && h.PidsLimit == 128 && cpu

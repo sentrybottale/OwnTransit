@@ -174,6 +174,7 @@ func (f *migrationFixture) container(s instanceSpec, image, id string) container
 	c.HostConfig.SecurityOpt = []string{"no-new-privileges"}
 	c.HostConfig.Memory = 268435456
 	c.HostConfig.PidsLimit = 128
+	c.HostConfig.NanoCpus = 1000000000
 	c.HostConfig.CpuPeriod = 100000
 	c.HostConfig.CpuQuota = 100000
 	return c
@@ -349,6 +350,11 @@ func TestManagedMigrationLifecycle(t *testing.T) {
 					t.Fatal(err)
 				}
 				f.extraNginxDump = "# configuration file " + path + ":\n"
+				const empty = "/etc/nginx/sites-enabled/migration-empty.conf"
+				if err := os.WriteFile(empty, nil, 0644); err != nil {
+					t.Fatal(err)
+				}
+				f.extraNginxDump += "# configuration file " + empty + ":\n"
 			}
 			commitFault := strings.HasPrefix(scenario, "commit-")
 			if commitFault {
