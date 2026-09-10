@@ -246,8 +246,8 @@ func InitializeReceiver(path, origin string, info pairrelay.ServerInfo) (receive
 }
 
 // InitializeReceiverWithOffer uses the same receiver authority and pairing
-// exchange. Only a public authenticated offer is persisted alongside old state;
-// the short private code is returned once and never stored.
+// exchange. The public offer is passed to the worker; a recoverable private
+// code is retained only inside the receiver authority directory until claimed.
 func InitializeReceiverWithOffer(path, origin string, info pairrelay.ServerInfo) (receiverpairing.Attempt, error) {
 	return initializeReceiver(path, origin, info, true)
 }
@@ -288,8 +288,12 @@ func initializeReceiver(path, origin string, info pairrelay.ServerInfo, short bo
 	}
 	if short {
 		code, offer, err := receiverpairing.CreateShortOffer(attempt, now)
+		if err == nil {
+			err = r.RetainPendingCode(attempt.Code, now)
+		}
 		clear(attempt.Code)
 		if err != nil {
+			clear(code)
 			return receiverpairing.Attempt{}, err
 		}
 		if err := root.CreateExclusive("pair-offer.json", offer, 0600); err != nil {

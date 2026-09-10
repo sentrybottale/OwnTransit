@@ -623,7 +623,15 @@ func writeState(root *securefs.Root, state stateRecord) error {
 	if err != nil {
 		return err
 	}
-	return root.ReplaceFile(stateFile, encoded, 0o600)
+	if err := root.ReplaceFile(stateFile, encoded, 0o600); err != nil {
+		return err
+	}
+	if state.Attempt == nil || state.LocalLocked {
+		// Durable authority state denies retrieval even if local cleanup fails
+		// or an old sidecar is copied back. Do not undo the committed denial.
+		_ = root.UnlinkFile(pendingCodeFile)
+	}
+	return nil
 }
 
 func (state stateRecord) validate() error {

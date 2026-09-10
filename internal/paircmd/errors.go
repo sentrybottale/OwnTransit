@@ -34,7 +34,10 @@ func failureMessage(operation string, err error) string {
 	case errors.Is(err, securefs.ErrLocked):
 		return "Another local OwnTransit operation is running. Retry shortly; do not reset pairing state."
 	case errors.Is(err, leasewire.ErrExpired), errors.Is(err, leasewire.ErrClock), errors.Is(err, context.DeadlineExceeded):
-		return "Connection timed out or authorization freshness was lost. Check connectivity and the clock, then start a new SSH connection."
+		if operation == "proxy" {
+			return "Connection timed out or authorization freshness was lost. Check connectivity and the clock, then start a new SSH connection."
+		}
+		return "Operation timed out or authorization freshness was lost. Check connectivity and the clock, then retry the exact command below. Existing pairing is retained."
 	case errors.Is(err, pairrelay.ErrTransport):
 		return "Relay connection failed. Check the public URL, HTTPS route and network, then retry. Keep the existing pairing."
 	case errors.Is(err, pairrelay.ErrUnavailable), errors.Is(err, pairrelay.ErrCapacity):

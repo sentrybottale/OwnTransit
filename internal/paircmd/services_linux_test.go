@@ -8,8 +8,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/sentrybottale/owntransit/internal/pairrelay"
+	"github.com/sentrybottale/owntransit/internal/pairruntime"
+	"github.com/sentrybottale/owntransit/internal/receiverpairing"
 	"github.com/sentrybottale/owntransit/internal/securefs"
 )
 
@@ -79,6 +84,7 @@ func TestNamedReceiverServicesAreScopedAndPreserveDefault(t *testing.T) {
 	if err != nil || string(calls) != "enable owntransit-connector-pair@alpha.service\nrestart owntransit-connector-pair@alpha.service\n" {
 		t.Fatal("restart did not target only selected tunnel")
 	}
+	exerciseReceiverRecoveryCommands(t)
 	unit, _ := receiverUnit("alpha")
 	if err = os.WriteFile(filepath.Join(receiverUnits, unit), []byte("unmanaged unit"), 0644); err != nil {
 		t.Fatal(err)
@@ -92,4 +98,90 @@ func TestNamedReceiverServicesAreScopedAndPreserveDefault(t *testing.T) {
 		t.Fatal("maintenance lock not released", err)
 	}
 	lock.Close()
+}
+
+// Called only after the containing test's disposable-root/marker/path guards.
+// Exercise the real CLI dispatch and authority store; systemd is the existing
+// isolated service fixture, and discovery is a private test dependency.
+func exerciseReceiverRecoveryCommands(t *testing.T) {
+	t.Helper()
+	base := originalReceiverState
+	if err := ensureTunnelRoot(base); err != nil {
+		t.Fatal(err)
+	}
+	path, _ := tunnelState(base, "alpha")
+	info := recoveryRelayInfo(t, base)
+	attempt, err := pairruntime.InitializeReceiverWithOffer(path, "wss://relay.example/connects", info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(attempt.Code)
+	oldDiscover := discoverReceiverOffer
+	t.Cleanup(func() { discoverReceiverOffer = oldDiscover })
+	discoveries := 0
+	discoverReceiverOffer = func(context.Context, string) (pairrelay.ServerInfo, error) { discoveries++; return info, nil }
+	var out, diag bytes.Buffer
+	defer func() { clear(out.Bytes()); clear(diag.Bytes()) }()
+	run := func(args []string, input string, want int) {
+		t.Helper()
+		clear(out.Bytes())
+		out.Reset()
+		clear(diag.Bytes())
+		diag.Reset()
+		if got := Run(true, args, strings.NewReader(input), &out, &diag); got != want {
+			t.Fatalf("recovery CLI exit=%d want=%d", got, want)
+		}
+	}
+	for i := 0; i < 2; i++ {
+		run([]string{"setup", "--tunnel", "alpha"}, "", 0)
+		if bytes.Count(out.Bytes(), attempt.Code) != 1 || discoveries != 0 || strings.Contains(out.String(), "TUNNEL READY") {
+			t.Fatal("setup retry changed code, contacted discovery or invented readiness")
+		}
+	}
+	run([]string{"code", "--receiver-id", attempt.ReceiverID}, "", 0)
+	if bytes.Count(out.Bytes(), attempt.Code) != 1 || bytes.Contains(diag.Bytes(), attempt.Code) {
+		t.Fatal("ID-specific code retrieval failed or leaked diagnostics")
+	}
+	run([]string{"setup", "--tunnel", "alpha", "--legacy-codes"}, "", 1)
+	if discoveries != 0 || !strings.Contains(diag.String(), "--replace --legacy-codes") {
+		t.Fatal("profile flag silently replaced a pending receiver")
+	}
+	r, err := receiverpairing.Open(filepath.Join(path, "authority"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := r.PendingCode(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(pending.Code)
+	request, err := receiverpairing.CreateRequest(receiverpairing.CreateRequestOptions{Advertisement: pending.Advertisement, Code: pending.Code, RelayOrigin: "wss://relay.example/connects", Now: time.Now(), Validity: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Claim(request.Encrypted, time.Now(), func(receiverpairing.PeerRequest) ([]byte, error) { return []byte("public fixture authorization"), nil }); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(path, "authority", "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run([]string{"setup", "--tunnel", "alpha"}, "", 0)
+	if discoveries != 0 || bytes.Contains(out.Bytes(), attempt.Code) || !strings.Contains(out.String(), "Existing pairing retained") {
+		t.Fatal("paired setup did not preserve the existing tunnel")
+	}
+	run([]string{"setup", "--tunnel", "alpha", "--replace"}, "no\n", 0)
+	after, err := os.ReadFile(filepath.Join(path, "authority", "state.json"))
+	if err != nil || !bytes.Equal(before, after) || discoveries != 0 {
+		t.Fatal("declined replacement changed authority")
+	}
+	run([]string{"setup", "--tunnel", "alpha", "--replace"}, "yes\n", 0)
+	fresh, err := pairruntime.ReceiverCode(path, time.Now())
+	defer clear(fresh.Code)
+	if err != nil || fresh.ReceiverID == attempt.ReceiverID || bytes.Equal(fresh.Code, attempt.Code) || discoveries != 1 {
+		t.Fatal("explicit replacement did not create fresh identities")
+	}
+	if !strings.Contains(out.String(), "approve --url 'wss://relay.example/connects' "+fresh.ReceiverID) {
+		t.Fatal("replacement omitted exact new-ID approval command")
+	}
 }

@@ -28,7 +28,7 @@ test -n "$tar_bin" || fail 'GNU tar is required'
 install -d -m 0700 "$output"
 scratch=$(mktemp -d "$output/build.XXXXXXXX")
 sha() { shasum -a 256 "$1" | awk '{print $1}'; }
-version=0.6.0
+version=0.6.1
 ldflags="-buildid= -X github.com/sentrybottale/owntransit/internal/buildinfo.Version=$version -X github.com/sentrybottale/owntransit/internal/buildinfo.Release=owntransit-receiver-$version -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$commit -X github.com/sentrybottale/owntransit/internal/buildinfo.Dirty=false"
 
 for platform in linux-amd64 linux-arm64 darwin-arm64; do
@@ -62,8 +62,8 @@ for platform in linux-amd64 linux-arm64 darwin-arm64; do
 done
 install -m 0644 install-preview-linux.sh "$output/install-preview-linux.sh"
 install -m 0644 install-preview-macos.sh "$output/install-preview-macos.sh"
-printf 'OwnTransit 0.6.0 RECEIVER-OWNED RELEASE\nsource_commit=%s\nsource_date_epoch=%s\n\nPublished releases are immutable. The historical capsule filenames and signing namespace are retained for distribution compatibility. This is not the legacy 0.1.0 package/qualification profile. Explicit relay setup can update the selected website route, with rollback on failure.\nDistribution signatures authenticate these exact bytes. No extended soak or independent security certification is claimed.\n' "$commit" "$epoch" > "$output/DEVELOPMENT.txt"
+printf 'OwnTransit 0.6.1 RECEIVER-OWNED RELEASE\nsource_commit=%s\nsource_date_epoch=%s\n\nPublished releases are immutable. The historical capsule filenames and signing namespace are retained for distribution compatibility. This is not the legacy 0.1.0 package/qualification profile. Explicit relay setup can update the selected website route, with rollback on failure.\nDistribution signatures authenticate these exact bytes. No extended soak or independent security certification is claimed.\n' "$commit" "$epoch" > "$output/DEVELOPMENT.txt"
 chmod 0644 "$output/DEVELOPMENT.txt"
-(cd "$output"; for member in DEVELOPMENT.txt install-preview-linux.sh install-preview-macos.sh owntransit-preview-0.6.0-darwin-arm64.tar.gz owntransit-preview-0.6.0-linux-amd64.tar.gz owntransit-preview-0.6.0-linux-arm64.tar.gz; do printf '%s  %s\n' "$(sha "$member")" "$member"; done) > "$output/DEVELOPMENT-SHA256SUMS"
+(cd "$output"; for member in DEVELOPMENT.txt install-preview-linux.sh install-preview-macos.sh owntransit-preview-0.6.1-darwin-arm64.tar.gz owntransit-preview-0.6.1-linux-amd64.tar.gz owntransit-preview-0.6.1-linux-arm64.tar.gz; do printf '%s  %s\n' "$(sha "$member")" "$member"; done) > "$output/DEVELOPMENT-SHA256SUMS"
 chmod 0644 "$output/DEVELOPMENT-SHA256SUMS"
 printf 'Built exact development capsules in %s\nBuild intermediates retained in %s\n' "$output" "$scratch"

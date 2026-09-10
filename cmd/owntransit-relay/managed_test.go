@@ -204,7 +204,7 @@ func TestManagedRelayURLFirstDisplayedFlowAndMachineHandoff(t *testing.T) {
 		t.Fatalf("code=%d applied=%v diagnostics=%s", code, applied, diag.String())
 	}
 	transcript := out.String()
-	for _, text := range []string{"Public relay URL", "Selected local relay: office", "THIS VPS is finished", "RECEIVING SSH MACHINE", "sudo sh -s -- connector", "sudo owntransit-connector-preview pair setup", "one private code"} {
+	for _, text := range []string{"Public relay URL", "Selected local relay: office", "Relay component configured", "UNDER CONSTRUCTION", "RECEIVING SSH MACHINE", "sudo sh -s -- connector", "sudo owntransit-connector-preview pair setup", "one private code"} {
 		if !strings.Contains(transcript, text) {
 			t.Fatalf("missing %q in displayed flow: %s", text, transcript)
 		}
@@ -330,11 +330,11 @@ func TestManagedRelayFinalVerificationUsesApplyResult(t *testing.T) {
 			}
 			text := out.String()
 			if tc.final == relaysetup.VerificationPublic {
-				if !strings.Contains(text, "THIS VPS is finished. Relay URL:") || strings.Contains(text, "finished with local verification only") {
+				if !strings.Contains(text, "Relay component configured. Relay URL:") || strings.Contains(text, "configured with local verification only") {
 					t.Fatal("improved public result was not used")
 				}
 			} else if tc.final == relaysetup.VerificationLocal403 {
-				for _, wanted := range []string{"finished with local verification only", "Public reachability is unverified from THIS VPS", "HTTP 403", "networks allowed by this website", "remaining public reachability check", "RECEIVING SSH MACHINE", "one private code"} {
+				for _, wanted := range []string{"configured with local verification only", "Public reachability is unverified from THIS VPS", "HTTP 403", "networks allowed by this website", "remaining public reachability check", "RECEIVING SSH MACHINE", "one private code"} {
 					if !strings.Contains(text, wanted) {
 						t.Fatalf("local result omitted %q", wanted)
 					}

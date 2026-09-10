@@ -45,7 +45,7 @@ func printReceiverCode(output io.Writer, receiverID string, code []byte, legacy 
 	}
 	// The public ID appears only inside the complete approval command below,
 	// not as another value the operator must identify and copy separately.
-	_, err := fmt.Fprintf(output, "Private client code (one use, valid 24 hours; never give to VPS):\n%s\n\n", code)
+	_, err := fmt.Fprintf(output, "Private client code (one use; never give to VPS):\n%s\n\n", code)
 	return err
 }
 
@@ -57,7 +57,7 @@ func printReceiverNext(output io.Writer, origin, receiverID, tunnel string, lega
 	}
 	linuxClient := pairCommand("/usr/local/bin/owntransit-preview", "setup", "", tunnel)
 	macClient := `"$HOME/.local/bin/owntransit-preview"` + strings.TrimPrefix(client, "owntransit-preview")
-	fmt.Fprintf(output, "\nTHIS RECEIVING SSH MACHINE is ready for pairing.\nNEXT — on your PUBLIC RELAY VPS:\n  %s\nAfter Receiver approved, run on your CLIENT COMPUTER without sudo:\nLinux: %s --relay %s\nMac:   %s --relay %s\nPaste the one private 56-character code above when asked. No VPS code to copy.\n", relayApprovalCommand(origin, receiverID), linuxClient, shellQuote(origin), macClient, shellQuote(origin))
+	fmt.Fprintf(output, "\nUNDER CONSTRUCTION — receiver configured; client pairing and an end-to-end check are still required.\nSave the private code above for your client. You do NOT have to memorise it.\nRetrieve the SAME unused code on THIS receiving machine:\n  sudo owntransit-connector-preview pair code --receiver-id %s\nNEXT — on your PUBLIC RELAY VPS:\n  %s\nAfter Receiver approved, run on your CLIENT COMPUTER without sudo.\nLinux client:\n  %s --relay %s\nMac client:\n  %s --relay %s\nPaste the one private 56-character code when asked. No VPS code to copy.\n", shellQuote(receiverID), relayApprovalCommand(origin, receiverID), linuxClient, shellQuote(origin), macClient, shellQuote(origin))
 }
 
 func printConnect(w io.Writer, status, executable, state string, tunnel ...string) {

@@ -1,5 +1,11 @@
 # OwnTransit architecture
 
+0.6.1 adds receiver-local recovery of an exact unused pairing code and
+state-aware retry instructions. It adds no network secret-recovery API. Explicit
+`--replace` is required to regenerate an existing receiver's identities.
+Client setup verifies the actual end-to-end carrier before reporting readiness;
+relay setup/approval are only progress steps. [Recovery](SETUP_RECOVERY.md).
+
 0.6.0 adds URL-first local relay setup and explicit migration of recognized
 manual deployments into managed instances. A versioned protected binding may
 retain a strictly derived historical data root; the transaction keeps the

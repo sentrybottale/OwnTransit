@@ -225,7 +225,7 @@ func executeManagedRelay(ctx context.Context, arguments []string, input io.Reade
 				fmt.Fprintf(diagnostics, "Relay instance: %s\n", instance.value)
 			}
 			if action == "approve" {
-				fmt.Fprintln(output, "Receiver approved. THIS VPS is finished. No VPS code to copy.\nNEXT — move to your CLIENT COMPUTER (the computer you connect from).\nAfter installing the client there, run on that computer without sudo:\nLinux: /usr/local/bin/owntransit-preview pair setup\nMac:   \"$HOME/.local/bin/owntransit-preview\" pair setup\nEnter the relay URL and the one private code from your receiving SSH machine.")
+				printApprovalHandoff(output, publicURL.value, flags.Arg(0))
 			} else {
 				fmt.Fprintln(diagnostics, "Legacy VPS registration code (give to your client):")
 				fmt.Fprintln(output, code)
@@ -303,17 +303,35 @@ func readManagedLine(ctx context.Context, reader *bufio.Reader, maximum int) (st
 func printRelaySetupHandoff(output io.Writer, publicURL, kind, verification string) error {
 	switch verification {
 	case relaysetup.VerificationPublic:
-		fmt.Fprintf(output, "THIS VPS is finished. Relay URL: %s\n", publicURL)
+		fmt.Fprintf(output, "Relay component configured. Relay URL: %s\n", publicURL)
 	case relaysetup.VerificationLocal403:
-		fmt.Fprintf(output, "Relay setup on THIS VPS is finished with local verification only. Relay URL: %s\n", publicURL)
+		fmt.Fprintf(output, "Relay component configured with local verification only. Relay URL: %s\n", publicURL)
 		fmt.Fprintln(output, "Public reachability is unverified from THIS VPS: the public HTTPS route returned HTTP 403. Complete receiver and client setup from networks allowed by this website; a successful endpoint connection provides the remaining public reachability check.")
 	default:
 		return errors.New("setup returned no recognized verification result; public reachability was not established")
 	}
+	fmt.Fprintln(output, "New tunnels remain UNDER CONSTRUCTION until client pairing and an end-to-end check succeed. Relay setup alone does not prove a working tunnel.")
 	if kind == "managed" || kind == "migration" {
 		fmt.Fprintln(output, "Paired endpoints retain their existing identities and relay URL. For a new connection, continue below.")
 	}
-	fmt.Fprintln(output, "NEXT — on your RECEIVING SSH MACHINE (the private computer running your SSH server):\n  curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.0/install-preview-linux.sh | sudo sh -s -- connector\nThen, for a new pairing, run on that receiving SSH machine:\n  sudo owntransit-connector-preview pair setup")
+	fmt.Fprintln(output, "NEXT — on your RECEIVING SSH MACHINE (the private computer running your SSH server):\n  curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.1/install-preview-linux.sh | sudo sh -s -- connector\nThen run on that receiving SSH machine:\n  sudo owntransit-connector-preview pair setup\nRepeated setup retains its existing pairing. For state-specific recovery:\n  sudo owntransit-connector-preview pair next")
 	fmt.Fprintf(output, "Enter %s. Receiver setup prints one VPS approval command and one private code for your client computer. Return to THIS VPS only to run that approval command.\n", publicURL)
 	return nil
+}
+
+func printApprovalHandoff(output io.Writer, publicURL, receiverID string) {
+	fmt.Fprintln(output, "Receiver approved. UNDER CONSTRUCTION — client pairing and an end-to-end check are still required. No VPS code to copy.")
+	fmt.Fprintf(output, "MISSING THE PRIVATE CODE? Use your receiving machine's console or SSH from your trusted client, NOT an SSH session started on this VPS. Run on that RECEIVING SSH MACHINE:\n  sudo owntransit-connector-preview pair code --receiver-id %s\nThat retrieves the SAME unused code for this receiver. If it expired or came from an older release, that command explains how to replace it explicitly. Do not re-approve unless receiver setup gives you a NEW ID.\n", receiverID)
+	fmt.Fprintln(output, "If that command is unavailable, upgrade the connector on THAT receiving machine:\n  curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.1/install-preview-linux.sh | sudo sh -s -- connector")
+	fmt.Fprintln(output, "NEXT — on your CLIENT COMPUTER, without sudo:")
+	for _, client := range []struct{ label, command string }{{"Linux", "/usr/local/bin/owntransit-preview"}, {"Mac", `"$HOME/.local/bin/owntransit-preview"`}} {
+		fmt.Fprintf(output, "%s client:\n  %s pair setup", client.label, client.command)
+		if publicURL != "" {
+			fmt.Fprintf(output, " --relay '%s'", publicURL)
+		}
+		fmt.Fprintln(output)
+	}
+	fmt.Fprintln(output, "Paste the private code from the receiving machine. If interrupted, client pair next prints the exact resume/check command. Never paste private codes on this VPS.")
+	fmt.Fprintln(output, "Client not installed? Run only the installer for THAT client computer:")
+	fmt.Fprintln(output, "Linux client:\n  curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.1/install-preview-linux.sh | sudo sh -s -- client\nMac client:\n  curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.1/install-preview-macos.sh | sh -s -- client")
 }

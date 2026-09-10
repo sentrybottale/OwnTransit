@@ -18,7 +18,7 @@ receiving machine. OwnTransit does not configure SSH accounts, keys or permissio
 
 ## Quickstart
 
-Install **0.6.0** on each role. Linux supports amd64/x86_64 and arm64/aarch64.
+Install **0.6.1** on each role. Linux supports amd64/x86_64 and arm64/aarch64.
 The Mac client supports Apple silicon.
 
 Run one block at a time. When a program asks a question, answer it—do not paste
@@ -27,7 +27,7 @@ the next shell command into its prompt.
 ### 1. On the public VPS
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.0/install-preview-linux.sh | sudo sh -s -- relay
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.1/install-preview-linux.sh | sudo sh -s -- relay
 ```
 
 Enter your real public URL, such as `wss://relay.example/connects`
@@ -51,7 +51,7 @@ path as part of the normal flow below.
 Install the receiver:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.0/install-preview-linux.sh | sudo sh -s -- connector
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.1/install-preview-linux.sh | sudo sh -s -- connector
 ```
 
 For a **new pairing**, run:
@@ -69,9 +69,14 @@ It prints two things:
 Keep the private code away from the VPS, logs and support tickets. Transfer it
 through your existing authenticated SSH or console access.
 
-**Already paired?** Installation preserves your pairing. Follow the printed
-restart instruction instead of running receiver `pair setup`, which replaces
-its identities.
+**Lost the code?** No memorising or rebuilding is needed while it is unused and
+unexpired. On this receiving machine, run the exact `pair code --receiver-id …`
+command printed by setup or VPS approval. `sudo owntransit-connector-preview pair list`
+also prints a retrieval command for each local tunnel.
+
+**Already paired?** Installation and repeated setup preserve your pairing.
+Use the printed restart instruction for an upgrade. Creating new identities
+requires explicit `pair setup --replace`; a paired receiver asks for confirmation.
 
 ### 3. Back on the VPS: run the printed approval command
 
@@ -83,16 +88,17 @@ sudo owntransit-relay-preview approve --url wss://relay.example/connects RECEIVE
 ```
 
 Do not type the example domain or placeholder above. The real command prints
-**Receiver approved**. There is no VPS code to copy.
+**Receiver approved — UNDER CONSTRUCTION**. There is no VPS code to copy.
 
-**The VPS is finished. Move to your client computer.**
+The relay step is complete, not the tunnel. Its output tells you how to retrieve
+the private code on the receiving machine and continue on the client.
 
 ### 4. On your client computer
 
 **Linux client** — install:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.0/install-preview-linux.sh | sudo sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.1/install-preview-linux.sh | sudo sh -s -- client
 ```
 
 Then, as your ordinary user without sudo:
@@ -104,7 +110,7 @@ Then, as your ordinary user without sudo:
 **Apple-silicon Mac client** — install without sudo:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.0/install-preview-macos.sh | sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.1/install-preview-macos.sh | sh -s -- client
 ```
 
 Then:
@@ -119,7 +125,12 @@ automatically and the receiver's offer is authenticated before its keys are used
 
 ### Connect
 
-After pairing, run the SSH command printed by the client. Replace
+Client setup checks the actual authenticated end-to-end carrier and the
+receiver's fixed local SSH socket before printing **TUNNEL READY**. Pairing alone,
+relay approval and a local status report are not that proof. If the check fails,
+the pairing stays saved and setup prints the exact retry command.
+
+After a successful check, run the SSH command printed by the client. Replace
 `USER@SSH_ALIAS` with your SSH user and independently verified host label:
 
 ```sh
@@ -134,8 +145,12 @@ OwnTransit pairing code.
 ## Upgrades, more tunnels and recovery
 
 - **Upgrade:** rerun the same installer for the local role. On the VPS, enter
-  its existing URL. On a paired receiver, use the printed restart command;
-  do not re-pair merely to update software.
+  its existing URL. On a paired receiver, use the printed restart command.
+- **What now?** Run `pair next` on the endpoint you are using. It prints exact,
+  state-specific commands for that local tunnel without changing identities.
+- **Lost code:** the receiver's `pair code` command retrieves the same unused,
+  unexpired code. The relay never receives it. Codes created by 0.6.0 or earlier
+  were not retained; the recovery command explains the one-time explicit rebuild.
 - **More tunnels:** use `pair setup --tunnel NAME`. Each client–receiver pairing
   has its own keys and alarm state. Multiple pairings can share one relay or
   reach the same SSH machine.
@@ -148,6 +163,7 @@ OwnTransit pairing code.
 
 The [full installation guide](PAIRING_INSTALL.md) covers migration, explicit
 instance selection, upgrades, named tunnels, uninstall and SSH/SCP examples.
+See [setup recovery](SETUP_RECOVERY.md) for lost/expired codes and interrupted setup.
 
 ## Security boundary
 

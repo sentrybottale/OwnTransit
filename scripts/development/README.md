@@ -1,5 +1,11 @@
 # Signed receiver-owned capsules
 
+0.6.1 adds recoverable pending codes in the receiver's private authority store,
+state-specific next commands and a real client carrier check before readiness.
+Normal setup retains identity; `--replace` explicitly creates a new receiver ID
+and explains reapproval. Keep the same signer and nine assets. Add lost-code,
+consumed/expired-code, retry and actual end-to-end SSH regression coverage.
+
 0.6.0 makes relay setup select by the operator-entered public URL when no
 instance name is specified. Its explicit migration path replaces recognized
 manual OwnTransit relay services and reconciles incomplete reservations while
@@ -35,7 +41,7 @@ legacy 0.1.0 manifest/policy. The inventory now has six members, with nine publi
 assets after adding its signature, inventory and public key. The Mac archive
 includes `install-macos.sh` for offline, non-purging removal.
 
-A 0.2.0, 0.3.0, 0.4.0, 0.5.0 or 0.6.0 release may be published without GitHub's prerelease flag after the
+A 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.6.0 or 0.6.1 release may be published without GitHub's prerelease flag after the
 bounded checks and brief exact-build end-to-end check pass. Extended soak,
 clean-host certification and independent assessment remain explicitly unclaimed.
 No new signing keys or additional ceremony is introduced.
@@ -62,15 +68,15 @@ existing distribution public-key digest, validates the detached inventory
 signature, and checks the selected archive digest before extraction or root
 execution. The inner installer rechecks the platform and exact flat inventory.
 
-Linux installation uses `/opt/owntransit-preview/0.6.0`, separately named
+Linux installation uses `/opt/owntransit-preview/0.6.1`, separately named
 `*-preview` aliases, and one disabled connector service. It preserves every
 legacy install, service, credential and SSH setting. `pair setup` on the
 connector initializes its own identities and explicitly enables its installed
 service; normal restart/network recovery does not require re-pairing. A local
 security alarm is terminal and requires a deliberate rebuild with fresh keys.
 
-Explicitly rerunning receiver `pair setup` creates fresh identities and a fresh
-private code; it is not a service restart. A paired receiver asks before replacing
+Receiver `pair setup --replace` creates fresh identities and a fresh
+private code; ordinary setup retries retain identities. A paired receiver asks before replacing
 its client, and that consent is checked atomically against the current peer.
 The old pairing is locked and drained before atomic state replacement. Setup
 waits for the worker's advertisement acknowledgement and prints exact next steps.

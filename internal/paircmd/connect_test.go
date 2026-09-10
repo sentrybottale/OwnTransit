@@ -91,10 +91,10 @@ func TestShortReceiverPrintsOnlyOneCodeAndPublicIDOnlyInCommand(t *testing.T) {
 	}
 	printReceiverNext(&output, "wss://relay.example/connects", "public-receiver-id", "", false)
 	text := output.String()
-	if strings.Count(text, string(code)) != 1 || strings.Count(text, "public-receiver-id") != 1 || strings.Contains(text, "Receiver ID (") || !strings.Contains(text, "pair setup --relay 'wss://relay.example/connects'") {
+	if strings.Count(text, string(code)) != 1 || strings.Count(text, "public-receiver-id") != 2 || strings.Contains(text, "Receiver ID (") || !strings.Contains(text, "pair setup --relay 'wss://relay.example/connects'") || !strings.Contains(text, "pair code --receiver-id public-receiver-id") {
 		t.Fatal("short receiver output duplicated a code or omitted the prefilled relay URL")
 	}
-	if strings.Count(text, "\n") > 14 {
+	if strings.Count(text, "\n") > 18 {
 		t.Fatal("short receiver handoff became a wall of text")
 	}
 }

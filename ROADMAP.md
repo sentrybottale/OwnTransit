@@ -1,5 +1,15 @@
 # OwnTransit roadmap
 
+## 0.6.1 — recoverable setup and actual readiness
+
+- Recover the same unused code locally on the receiving machine; never on the relay.
+- Print exact retrieval/approval/resume/restart/check commands with local scope.
+- Preserve pending and paired identities on normal retries; require `--replace`
+  for explicit new identities and explain the required new VPS approval.
+- Keep new tunnels UNDER CONSTRUCTION until the actual end-to-end carrier check.
+- Exercise lost, expired, consumed and old-version codes; secret isolation;
+  repeated commands; interrupted client setup; and real SSH through the carrier.
+
 ## 0.6.0 — complete relay setup and migration
 
 - URL-first local relay selection; explicit instance names remain restrictive.

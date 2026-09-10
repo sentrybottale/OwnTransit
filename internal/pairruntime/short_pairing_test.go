@@ -242,6 +242,11 @@ func TestShortPairingMissingApprovalAndWrongOriginCreateNoClientState(t *testing
 	defer cancel()
 	if err := PairClientShort(ctx, f.clientPath, "wss://relay.example/connects", f.attempt.Code, dial); !errors.Is(err, ErrApprovalMissing) {
 		t.Fatalf("missing VPS approval was not identified: %v", err)
+	} else {
+		var action *ApprovalRequired
+		if !errors.As(err, &action) || action.Origin != "wss://relay.example/connects" || action.ReceiverID != f.attempt.ReceiverID || bytes.Contains([]byte(err.Error()), f.attempt.Code) {
+			t.Fatal("missing approval did not preserve exact public recovery scope")
+		}
 	}
 	assertNoShortClientState(t, f.clientPath)
 	approveShortFixture(t, f)
