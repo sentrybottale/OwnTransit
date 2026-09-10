@@ -88,25 +88,25 @@ func TestReceiverCodeLookupAndRecoveryKeepNamedIdentityAndPrivateCodeLocal(t *te
 	}
 	path, name, err := receiverByID(base, namedID)
 	if err != nil || name != "laptop" || path == base {
-		t.Fatal("public receiver ID selected the wrong local tunnel")
+		t.Fatal("public target ID selected the wrong local tunnel")
 	}
 	var out, diag bytes.Buffer
-	if err := showReceiverCode(&out, &diag, "/opt/connector fixture", path, path, name); err != nil {
+	if err := showReceiverCode(&out, &diag, "/opt/target fixture", path, path, name); err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Count(out.Bytes(), namedCode) != 1 || bytes.Contains(diag.Bytes(), namedCode) || !strings.Contains(out.String(), "SAME pending code") || !strings.Contains(out.String(), "--tunnel laptop") || !strings.Contains(out.String(), "--receiver-id "+namedID) {
+	if bytes.Count(out.Bytes(), namedCode) != 1 || bytes.Contains(diag.Bytes(), namedCode) || !strings.Contains(out.String(), "SAME pending code") || !strings.Contains(out.String(), "--target-id "+namedID) {
 		t.Fatal("recovery omitted exact commands or leaked code")
 	}
 	for _, invalid := range []string{"", "../laptop", "not-an-id"} {
 		if _, _, err := receiverByID(base, invalid); err == nil {
-			t.Fatal("invalid public ID selected a receiver")
+			t.Fatal("invalid public ID selected a target")
 		}
 	}
 	if err := os.Symlink(path, filepath.Join(tunnelRoot(base), "alias")); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := receiverByID(base, namedID); err == nil {
-		t.Fatal("receiver lookup followed an untrusted alias")
+		t.Fatal("target lookup followed an untrusted alias")
 	}
 }
 
@@ -126,15 +126,33 @@ func TestMissingCodePrintsExplicitReplacementNotSilentReset(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out, diag bytes.Buffer
-	if err := showReceiverCode(&out, &diag, "/opt/connector", base, base, ""); err == nil {
+	if err := showReceiverCode(&out, &diag, "/opt/target", base, base, ""); err == nil {
 		t.Fatal("invented a missing code")
 	}
-	if out.Len() != 0 || !strings.Contains(diag.String(), "--replace") || !strings.Contains(diag.String(), "NEW approval command") {
+	if out.Len() != 0 || !strings.Contains(diag.String(), "--replace") || !strings.Contains(diag.String(), "NEW Target ID") || !strings.Contains(diag.String(), "New tunnel with a new local name") || !strings.Contains(diag.String(), "Continue that new draft") || !strings.Contains(diag.String(), "separate explicit action") {
 		t.Fatal("missing code led to another dead end")
 	}
 	after, err := os.ReadFile(filepath.Join(base, "authority", "state.json"))
 	if err != nil || !bytes.Equal(before, after) {
-		t.Fatal("missing-code recovery reset the receiver")
+		t.Fatal("missing-code recovery reset the target")
+	}
+}
+
+func TestTargetStatusUsesCanonicalPublicRole(t *testing.T) {
+	base := tunnelFixture(t)
+	info := recoveryRelayInfo(t, base)
+	attempt, err := pairruntime.InitializeReceiverWithOffer(base, "wss://relay.example/connects", info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(attempt.Code)
+	var output bytes.Buffer
+	printNext(&output, true, "owntransit-target", base, base, "", "")
+	if !strings.Contains(output.String(), "Target ID: "+attempt.ReceiverID) || strings.Contains(strings.ToLower(output.String()), "receiver") || strings.Contains(strings.ToLower(output.String()), "connector") {
+		t.Fatal("local Target status used an obsolete public role")
+	}
+	if bytes.Contains(output.Bytes(), attempt.Code) {
+		t.Fatal("status revealed a private code")
 	}
 }
 
@@ -156,13 +174,13 @@ func TestBusyOrChangedReceiverNeverRevealsCodeOrSuggestsReplacement(t *testing.T
 		t.Fatal(err)
 	}
 	var out, diag bytes.Buffer
-	if err := showReceiverCode(&out, &diag, "/opt/connector", base, base, ""); err == nil || out.Len() != 0 || strings.Contains(diag.String(), "--replace") || !strings.Contains(diag.String(), "pair code --state") {
+	if err := showReceiverCode(&out, &diag, "/opt/target", base, base, ""); err == nil || out.Len() != 0 || strings.Contains(diag.String(), "--replace") || !strings.Contains(diag.String(), "code --state") {
 		t.Fatal("busy recovery exposed a code or suggested identity replacement")
 	}
 	lock.Close()
 	diag.Reset()
-	if err := showReceiverCode(&out, &diag, "/opt/connector", base, base, "", "different-public-receiver"); err == nil || out.Len() != 0 || !strings.Contains(diag.String(), "identity changed") {
-		t.Fatal("stale receiver ID disclosed a different code")
+	if err := showReceiverCode(&out, &diag, "/opt/target", base, base, "", "different-public-target"); err == nil || out.Len() != 0 || !strings.Contains(diag.String(), "identity changed") {
+		t.Fatal("stale target ID disclosed a different code")
 	}
 }
 

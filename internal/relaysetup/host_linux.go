@@ -30,7 +30,7 @@ const managedRoot = "/var/lib/owntransit-relay-setup"
 const managedContainer = "owntransit-relay-managed"
 const managedUnit = "owntransit-relay-managed.service"
 const unitPath = "/etc/systemd/system/" + managedUnit
-const imageTag = "owntransit-relay-pair:0.6.0"
+const imageTag = "owntransit-relay:0.7.0"
 
 type boundedBuffer struct {
 	bytes.Buffer
@@ -357,19 +357,28 @@ func previous(ctx context.Context) (*previousRelay, error) {
 }
 
 func (s instanceSpec) unit(image, engine string) []byte {
-	base := string(s.legacyUnit(image, engine))
+	base := strings.Replace(string(s.legacyUnit(image, engine)), " pair serve --state /state/relay", " serve --state /state/relay", 1)
 	selector := ""
 	if s.named() {
 		selector = "--instance " + s.name + " "
 	}
-	hook := fmt.Sprintf("/usr/local/bin/owntransit-relay-preview cleanup-container %s%s %s", selector, engine, image)
+	hook := fmt.Sprintf("/usr/local/bin/owntransit-relay cleanup-container %s%s %s", selector, engine, image)
 	base = strings.Replace(base, "Type=simple\n", "Type=simple\nExecStartPre="+hook+"\n", 1)
 	base = strings.Replace(base, "Restart=on-failure\n", "ExecStopPost="+hook+"\nRestart=on-failure\n", 1)
 	return []byte(base)
 }
 
 func (s instanceSpec) knownUnit(data []byte, c savedConfig) bool {
-	return s.validSaved(c) && (bytes.Equal(data, s.unit(c.Image, c.Engine)) || (!s.named() && bytes.Equal(data, s.legacyUnit(c.Image, c.Engine))))
+	if !s.validSaved(c) {
+		return false
+	}
+	current := s.unit(c.Image, c.Engine)
+	old := bytes.ReplaceAll(current, []byte("/usr/local/bin/owntransit-relay cleanup-container"), []byte("/usr/local/bin/owntransit-relay-preview cleanup-container"))
+	old = bytes.Replace(old, []byte(" serve --state /state/relay"), []byte(" pair serve --state /state/relay"), 1)
+	// Exact old owned service recognition is a one-time upgrade safety check,
+	// not an old public CLI alias or a relaxed unit/confinement profile.
+	canonicalOld := bytes.ReplaceAll(old, []byte("/usr/local/bin/owntransit-relay-preview cleanup-container"), []byte("/usr/local/bin/owntransit-relay cleanup-container"))
+	return bytes.Equal(data, current) || bytes.Equal(data, old) || bytes.Equal(data, canonicalOld) || (!s.named() && bytes.Equal(data, s.legacyUnit(c.Image, c.Engine)))
 }
 
 func (s instanceSpec) legacyUnit(image, engine string) []byte {
@@ -602,7 +611,7 @@ func (s instanceSpec) setup(ctx context.Context, inputURL string, output io.Writ
 			if err := adoptState(old.Container, dataDir); err != nil {
 				return err
 			}
-		} else if _, err := command(ctx, e, "run", "--rm", "--network=none", "--user=65532:65532", "--cap-drop=all", "--security-opt=no-new-privileges", "--read-only", "--volume="+dataDir+":/state:rw", image, "pair", "init", "--state", "/state/relay"); err != nil {
+		} else if _, err := command(ctx, e, "run", "--rm", "--network=none", "--user=65532:65532", "--cap-drop=all", "--security-opt=no-new-privileges", "--read-only", "--volume="+dataDir+":/state:rw", image, "init", "--state", "/state/relay"); err != nil {
 			return err
 		}
 	} else if err != nil {
@@ -681,7 +690,7 @@ func (s instanceSpec) setup(ctx context.Context, inputURL string, output io.Writ
 	}
 	var localBytes []byte
 	for attempt := 0; attempt < 20; attempt++ {
-		localBytes, err = command(ctx, e, "exec", s.container, "/owntransit-relay", "pair", "info", "--state", "/state/relay")
+		localBytes, err = command(ctx, e, "exec", s.container, "/owntransit-relay", "state-info", "--state", "/state/relay")
 		if err == nil {
 			break
 		}

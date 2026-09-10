@@ -1,5 +1,51 @@
 # OwnTransit architecture
 
+## Current 0.7 development profile
+
+0.7 uses the local roles **Client**, **Relay** and
+**Target**. The canonical programs are `owntransit-client`,
+`owntransit-relay` and `owntransit-target`; running one without arguments or
+with `setup` opens its local menu. Installers select `client`, `relay` or
+`target`. Earlier command names, preview aliases and the public `pair` prefix
+are not compatibility entrypoints. [Current installation flow](PAIRING_INSTALL.md).
+
+The Client carries an operator-owned OpenSSH stream. The Target runs beside
+the existing SSH server, keeps its pairing authority inaccessible to its
+unprivileged network worker, and dials only build-fixed `tcp4 127.0.0.1:22`.
+Both originate all OwnTransit connections through the Relay. Their independent
+inner TLS 1.3 mTLS and session-bound authorization complete before that dial;
+outer mTLS admission does not make the Relay trusted. The one-use private code
+moves only from Target to Client. Relay tunnel names and public Target IDs grant
+no endpoint authority, and names on different machines need not match.
+
+New creates a separate local tunnel. Continue retains the Target's identities
+and unused code, or resumes the Client's exact saved request. A completed
+Client pairing still requires the live carrier check before `TUNNEL READY`.
+The Relay menu retains public drafts and admission observations; its approval
+or inventory cannot establish end-to-end readiness.
+
+Endpoint Remove durably blocks local admission, stops the selected Target
+service where applicable, and waits for local workers to exit. It retains
+private state for explicit Restore and does not revoke the peer or create an
+alarm. Restore checks the retained terminal alarm after worker drainage before
+reactivating the tunnel. Killswitch permanently alarms that pairing; removal
+and restoration cannot clear it. Relay removal affects only the selected
+relay admission and its local display name. A compromised Relay may ignore
+that removal, so it is not an endpoint killswitch. None of these operations
+changes SSH or another tunnel's keys, state or service.
+
+Target services are `owntransit-target.service` and
+`owntransit-target@NAME.service`. Existing neutral endpoint state roots remain
+in place to preserve identities. The new local lifecycle and menu records do
+not change the authenticated pairing or carrier profiles in
+[COMPATIBILITY.md](COMPATIBILITY.md).
+
+## Historical development and v1 architecture
+
+The following release notes and administrator-led v1 details retain their
+historical terminology and formats. Their old command names are not a current
+CLI compatibility promise.
+
 0.6.1 adds receiver-local recovery of an exact unused pairing code and
 state-aware retry instructions. It adds no network secret-recovery API. Explicit
 `--replace` is required to regenerate an existing receiver's identities.
@@ -31,10 +77,10 @@ public URL selects a website, while Docker/Podman and supported webserver adapte
 handle its host integration. Runtime relay protocol, endpoint authorization and
 the fixed SSH target are independent of that installation interface.
 
-The receiver-owned 0.1.1 development profile is explicitly selected by the
-`pair` commands and specified in [RECEIVER_PAIRING.md](RECEIVER_PAIRING.md).
-Its command flow is in [PAIRING_INSTALL.md](PAIRING_INSTALL.md). The legacy
-administrator-led profile below remains unchanged for the 0.1.0 release.
+The receiver-owned profile introduced in 0.1.1 is specified in
+[RECEIVER_PAIRING.md](RECEIVER_PAIRING.md). Its earlier releases used the `pair`
+commands; current commands are described above. The legacy administrator-led
+profile below remains unchanged for the 0.1.0 release.
 
 ## Scope
 

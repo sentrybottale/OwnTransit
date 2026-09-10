@@ -37,8 +37,8 @@ func TestNamedReceiverServicesAreScopedAndPreserveDefault(t *testing.T) {
 	if err = os.MkdirAll(receiverUnits, 0755); err != nil {
 		t.Fatal(err)
 	}
-	template := []byte("[Unit]\nConditionPathIsDirectory=" + originalReceiverState + "\n[Service]\nType=notify\nExecStart=" + executable + " pair serve --state " + originalReceiverState + "\nNoNewPrivileges=yes\nCapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_KILL\nReadWritePaths=" + originalReceiverState + "\n")
-	for _, path := range []string{filepath.Join(filepath.Dir(executable), "service.template"), filepath.Join(receiverUnits, "owntransit-connector-pair.service")} {
+	template := []byte("[Unit]\nConditionPathIsDirectory=" + originalReceiverState + "\n[Service]\nType=notify\nExecStart=" + executable + " serve --state " + originalReceiverState + "\nNoNewPrivileges=yes\nCapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_KILL\nReadWritePaths=" + originalReceiverState + "\n")
+	for _, path := range []string{filepath.Join(filepath.Dir(executable), "service.template"), filepath.Join(receiverUnits, "owntransit-target.service")} {
 		if err = os.WriteFile(path, template, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -73,7 +73,7 @@ func TestNamedReceiverServicesAreScopedAndPreserveDefault(t *testing.T) {
 			t.Fatal("named service selected wrong state or lost confinement")
 		}
 	}
-	data, err := protectedUnit(filepath.Join(receiverUnits, "owntransit-connector-pair.service"))
+	data, err := protectedUnit(filepath.Join(receiverUnits, "owntransit-target.service"))
 	if err != nil || !bytes.Equal(data, template) {
 		t.Fatal("named setup changed default service")
 	}
@@ -81,7 +81,7 @@ func TestNamedReceiverServicesAreScopedAndPreserveDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls, err := os.ReadFile("/tmp/owntransit-named-service.calls")
-	if err != nil || string(calls) != "enable owntransit-connector-pair@alpha.service\nrestart owntransit-connector-pair@alpha.service\n" {
+	if err != nil || string(calls) != "enable owntransit-target@alpha.service\nrestart owntransit-target@alpha.service\n" {
 		t.Fatal("restart did not target only selected tunnel")
 	}
 	exerciseReceiverRecoveryCommands(t)
@@ -138,13 +138,13 @@ func exerciseReceiverRecoveryCommands(t *testing.T) {
 			t.Fatal("setup retry changed code, contacted discovery or invented readiness")
 		}
 	}
-	run([]string{"code", "--receiver-id", attempt.ReceiverID}, "", 0)
+	run([]string{"code", "--target-id", attempt.ReceiverID}, "", 0)
 	if bytes.Count(out.Bytes(), attempt.Code) != 1 || bytes.Contains(diag.Bytes(), attempt.Code) {
 		t.Fatal("ID-specific code retrieval failed or leaked diagnostics")
 	}
 	run([]string{"setup", "--tunnel", "alpha", "--legacy-codes"}, "", 1)
 	if discoveries != 0 || !strings.Contains(diag.String(), "--replace --legacy-codes") {
-		t.Fatal("profile flag silently replaced a pending receiver")
+		t.Fatal("profile flag silently replaced a pending target")
 	}
 	r, err := receiverpairing.Open(filepath.Join(path, "authority"))
 	if err != nil {
@@ -181,7 +181,49 @@ func exerciseReceiverRecoveryCommands(t *testing.T) {
 	if err != nil || fresh.ReceiverID == attempt.ReceiverID || bytes.Equal(fresh.Code, attempt.Code) || discoveries != 1 {
 		t.Fatal("explicit replacement did not create fresh identities")
 	}
-	if !strings.Contains(out.String(), "approve --url 'wss://relay.example/connects' "+fresh.ReceiverID) {
+	if !strings.Contains(out.String(), "New tunnel with a new local name") || !strings.Contains(out.String(), "Continue that new draft") || !strings.Contains(out.String(), "public Target ID in the new draft:\n  "+fresh.ReceiverID) {
 		t.Fatal("replacement omitted exact new-ID approval command")
 	}
+	unit, _ := receiverUnit("alpha")
+	unitPath := filepath.Join(receiverUnits, unit)
+	unitBefore, err := protectedUnit(unitPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherUnit, _ := receiverUnit("bravo")
+	otherBefore, err := protectedUnit(filepath.Join(receiverUnits, otherUnit))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(unitPath, []byte("unmanaged unit"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	run([]string{"remove", "--tunnel", "alpha"}, "", 1)
+	if removed, err := pairruntime.IsRemoved(path); err != nil || removed {
+		t.Fatal("unmanaged service removal changed pairing")
+	}
+	if err := os.WriteFile(unitPath, unitBefore, 0644); err != nil {
+		t.Fatal(err)
+	}
+	before, err = os.ReadFile(filepath.Join(path, "authority", "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run([]string{"remove", "--tunnel", "alpha"}, "", 0)
+	if removed, err := pairruntime.IsRemoved(path); err != nil || !removed {
+		t.Fatal("selected tunnel was not detached")
+	}
+	run([]string{"setup", "--tunnel", "alpha"}, "", 1)
+	run([]string{"restore", "--tunnel", "alpha"}, "", 0)
+	after, err = os.ReadFile(filepath.Join(path, "authority", "state.json"))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("removal or restore changed target authority")
+	}
+	otherAfter, err := protectedUnit(filepath.Join(receiverUnits, otherUnit))
+	if err != nil || !bytes.Equal(otherBefore, otherAfter) {
+		t.Fatal("selected removal changed another target service")
+	}
+	run([]string{"remove", "--tunnel", "alpha"}, "", 0)
+	run([]string{"killswitch", "--tunnel", "alpha"}, "", 0)
+	run([]string{"restore", "--tunnel", "alpha"}, "", 1)
 }

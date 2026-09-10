@@ -45,12 +45,12 @@ func tunnelState(base, name string) (string, error) {
 
 func receiverUnit(name string) (string, error) {
 	if name == "" || name == defaultTunnel {
-		return "owntransit-connector-pair.service", nil
+		return "owntransit-target.service", nil
 	}
 	if !validTunnelName(name) {
 		return "", pairruntime.ErrState
 	}
-	return "owntransit-connector-pair@" + name + ".service", nil
+	return "owntransit-target@" + name + ".service", nil
 }
 
 // The named root is private and opened without following symlinks. Individual
@@ -73,9 +73,19 @@ func ensureTunnelRoot(base string) error {
 }
 
 func tunnelStatus(path string, receiver bool) string {
-	p, err := pairruntime.ReadPolicy(path)
+	p, err := pairruntime.ReadRetainedPolicy(path)
 	if err != nil {
 		return "unavailable"
+	}
+	removed, err := pairruntime.IsRemoved(path)
+	if err != nil {
+		return "unavailable"
+	}
+	if removed {
+		if p.Locked {
+			return "removed (alarmed)"
+		}
+		return "removed"
 	}
 	if p.Locked {
 		return "alarmed"
@@ -108,9 +118,9 @@ func tunnelStatus(path string, receiver bool) string {
 }
 
 func listTunnels(base string, receiver bool, output io.Writer, executable ...string) error {
-	program := "owntransit-preview"
+	program := "owntransit-client"
 	if receiver {
-		program = "owntransit-connector-preview"
+		program = "owntransit-target"
 	}
 	if len(executable) > 0 {
 		program = executable[0]
@@ -140,7 +150,7 @@ func listTunnels(base string, receiver bool, output io.Writer, executable ...str
 			if e == nil {
 				s, e := r.Status()
 				if e == nil {
-					fmt.Fprintf(output, "  Receiver ID: %s\n", s.ReceiverID)
+					fmt.Fprintf(output, "  Target ID: %s\n", s.ReceiverID)
 				}
 			}
 		}

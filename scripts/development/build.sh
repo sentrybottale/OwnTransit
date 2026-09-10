@@ -28,31 +28,31 @@ test -n "$tar_bin" || fail 'GNU tar is required'
 install -d -m 0700 "$output"
 scratch=$(mktemp -d "$output/build.XXXXXXXX")
 sha() { shasum -a 256 "$1" | awk '{print $1}'; }
-version=0.6.1
-ldflags="-buildid= -X github.com/sentrybottale/owntransit/internal/buildinfo.Version=$version -X github.com/sentrybottale/owntransit/internal/buildinfo.Release=owntransit-receiver-$version -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$commit -X github.com/sentrybottale/owntransit/internal/buildinfo.Dirty=false"
+version=0.7.0
+ldflags="-buildid= -X github.com/sentrybottale/owntransit/internal/buildinfo.Version=$version -X github.com/sentrybottale/owntransit/internal/buildinfo.Release=owntransit-$version -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$commit -X github.com/sentrybottale/owntransit/internal/buildinfo.Dirty=false"
 
 for platform in linux-amd64 linux-arm64 darwin-arm64; do
   target_os=${platform%-*}
   arch=${platform#*-}
-  top=owntransit-preview-$version-$platform
+  top=owntransit-$version-$platform
   bundle=$scratch/$top
   install -d -m 0700 "$bundle"
   printf 'schema=owntransit.development-capsule.v1\nversion=%s\nos=%s\narch=%s\n' "$version" "$target_os" "$arch" > "$bundle/CAPSULE"
   install -m 0644 LICENSE "$bundle/LICENSE"
   install -m 0644 THIRD_PARTY_NOTICES.md "$bundle/NOTICE"
-  CGO_ENABLED=0 GOOS=$target_os GOARCH=$arch GOTOOLCHAIN=local "$go_bin" build -mod=readonly -trimpath -buildvcs=false -ldflags "$ldflags" -o "$bundle/owntransit" ./cmd/owntransit
+  CGO_ENABLED=0 GOOS=$target_os GOARCH=$arch GOTOOLCHAIN=local "$go_bin" build -mod=readonly -trimpath -buildvcs=false -ldflags "$ldflags" -o "$bundle/owntransit-client" ./cmd/owntransit-client
   if test "$target_os" = linux; then
     install -m 0755 scripts/development/install-linux.sh "$bundle/install-linux.sh"
-    for role in connector relay; do
+    for role in target relay; do
       CGO_ENABLED=0 GOOS=linux GOARCH=$arch GOTOOLCHAIN=local "$go_bin" build -mod=readonly -trimpath -buildvcs=false -ldflags "$ldflags" -o "$bundle/owntransit-$role" "./cmd/owntransit-$role"
     done
     CGO_ENABLED=0 GOOS=linux GOARCH=$arch GOTOOLCHAIN=local "$go_bin" build -mod=readonly -trimpath -buildvcs=false -tags=owntransit_relay_container -ldflags "$ldflags" -o "$scratch/relay-container-$arch" ./cmd/owntransit-relay
     OWNTRANSIT_GNU_TAR="$tar_bin" sh scripts/development/make-relay-oci.sh "$scratch/relay-container-$arch" "$bundle/owntransit-relay.oci.tar" "$arch" "$commit" "$epoch" LICENSE THIRD_PARTY_NOTICES.md
   else
-    install -m 0755 install-preview-macos.sh "$bundle/install-macos.sh"
+    install -m 0755 install-macos.sh "$bundle/install-macos.sh"
   fi
   chmod 0644 "$bundle/CAPSULE"
-  (cd "$bundle"; for member in CAPSULE LICENSE NOTICE install-linux.sh install-macos.sh owntransit owntransit-connector owntransit-relay owntransit-relay.oci.tar; do
+  (cd "$bundle"; for member in CAPSULE LICENSE NOTICE install-linux.sh install-macos.sh owntransit-client owntransit-relay owntransit-relay.oci.tar owntransit-target; do
     if test -f "$member"; then printf '%s  %s\n' "$(sha "$member")" "$member"; fi
   done) > "$bundle/SHA256SUMS"
   chmod 0644 "$bundle/SHA256SUMS"
@@ -60,10 +60,10 @@ for platform in linux-amd64 linux-arm64 darwin-arm64; do
   gzip -n -c "$scratch/$top.tar" > "$output/$top.tar.gz"
   chmod 0644 "$output/$top.tar.gz"
 done
-install -m 0644 install-preview-linux.sh "$output/install-preview-linux.sh"
-install -m 0644 install-preview-macos.sh "$output/install-preview-macos.sh"
-printf 'OwnTransit 0.6.1 RECEIVER-OWNED RELEASE\nsource_commit=%s\nsource_date_epoch=%s\n\nPublished releases are immutable. The historical capsule filenames and signing namespace are retained for distribution compatibility. This is not the legacy 0.1.0 package/qualification profile. Explicit relay setup can update the selected website route, with rollback on failure.\nDistribution signatures authenticate these exact bytes. No extended soak or independent security certification is claimed.\n' "$commit" "$epoch" > "$output/DEVELOPMENT.txt"
+install -m 0644 install-linux.sh "$output/install-linux.sh"
+install -m 0644 install-macos.sh "$output/install-macos.sh"
+printf 'OwnTransit 0.7.0\nsource_commit=%s\nsource_date_epoch=%s\n\nPublished releases are immutable. The existing signature namespace remains unchanged. This is not the legacy 0.1.0 package/qualification profile. Explicit relay setup can update the selected website route, with rollback on failure.\nDistribution signatures authenticate these exact bytes. No extended soak or independent security certification is claimed.\n' "$commit" "$epoch" > "$output/DEVELOPMENT.txt"
 chmod 0644 "$output/DEVELOPMENT.txt"
-(cd "$output"; for member in DEVELOPMENT.txt install-preview-linux.sh install-preview-macos.sh owntransit-preview-0.6.1-darwin-arm64.tar.gz owntransit-preview-0.6.1-linux-amd64.tar.gz owntransit-preview-0.6.1-linux-arm64.tar.gz; do printf '%s  %s\n' "$(sha "$member")" "$member"; done) > "$output/DEVELOPMENT-SHA256SUMS"
+(cd "$output"; for member in DEVELOPMENT.txt install-linux.sh install-macos.sh owntransit-0.7.0-darwin-arm64.tar.gz owntransit-0.7.0-linux-amd64.tar.gz owntransit-0.7.0-linux-arm64.tar.gz; do printf '%s  %s\n' "$(sha "$member")" "$member"; done) > "$output/DEVELOPMENT-SHA256SUMS"
 chmod 0644 "$output/DEVELOPMENT-SHA256SUMS"
 printf 'Built exact development capsules in %s\nBuild intermediates retained in %s\n' "$output" "$scratch"

@@ -1,8 +1,15 @@
 # Install OwnTransit
 
 > Legacy 0.1.0 guide. These commands do not install the receiver-owned pairing
-> profile. For the current three-role development flow, use
-> [PAIRING_INSTALL.md](PAIRING_INSTALL.md).
+> profile. For the 0.7 Client/Relay/Target flow and canonical commands,
+> use [PAIRING_INSTALL.md](PAIRING_INSTALL.md). The names below belong to the
+> historical release, not current CLI compatibility aliases.
+
+The historical bootstrap source is
+[scripts/release/install-linux-legacy.sh](scripts/release/install-linux-legacy.sh).
+The commands below retain their immutable historical download URL. The current
+checkout's root `install-linux.sh` selects the new flow and is not a substitute
+for that legacy bootstrap.
 
 ## Linux quick install
 
@@ -176,9 +183,9 @@ unsolicited caller.
 ### 1. Install an authenticated release
 
 The normal Linux commands are at the top of this page. To inspect the bootstrap
-before running it, download that same URL to `install-linux.sh`, read it, and
-then run `sudo sh ./install-linux.sh` with `client`, `connector`, `relay`, or
-`provisioner` as the role argument.
+before running it, download that same URL to `install-linux-legacy.sh`, read it,
+and then run `sudo sh ./install-linux-legacy.sh` with `client`, `connector`,
+`relay`, or `provisioner` as the role argument.
 
 <details>
 <summary>Advanced: independently authenticated/offline handoff</summary>

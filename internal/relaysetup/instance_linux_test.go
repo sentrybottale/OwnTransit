@@ -39,6 +39,14 @@ func ownedFixtureContainer(s instanceSpec, image string) containerInfo {
 	return c
 }
 
+func fixtureIdentityCommand(c containerInfo, args []string) bool {
+	want := []string{"exec", strings.TrimPrefix(c.Name, "/"), "/owntransit-relay", "state-info", "--state", "/state/relay"}
+	if equalStrings(c.Config.Cmd, []string{"pair", "serve", "--state", "/state/relay"}) {
+		want = []string{"exec", strings.TrimPrefix(c.Name, "/"), "/owntransit-relay", "pair", "info", "--state", "/state/relay"}
+	}
+	return equalStrings(args, want)
+}
+
 func TestInstanceBindingUnitsAndOwnership(t *testing.T) {
 	a, b := fixtureSpec(t, "alpha", 9088), fixtureSpec(t, "beta", 9089)
 	image := "sha256:" + strings.Repeat("a", 64)
@@ -245,6 +253,9 @@ func TestNamedRelayLifecycleIsolation(t *testing.T) {
 				return nil, err
 			}
 			c := ownedFixtureContainer(s, image)
+			if bytes.Contains(data, []byte(image+" serve --state /state/relay")) {
+				c.Config.Cmd = []string{"serve", "--state", "/state/relay"}
+			}
 			c.ID = strings.Repeat(string('c'+rune(s.port-9087)), 64)
 			c.State.Running = true
 			containers[s.container] = &c
@@ -300,6 +311,9 @@ func TestNamedRelayLifecycleIsolation(t *testing.T) {
 			}
 			return nil, errors.New("absent")
 		case "run":
+			if len(args) < 4 || !equalStrings(args[len(args)-3:], []string{"init", "--state", "/state/relay"}) {
+				return nil, errors.New("unexpected relay initialization command")
+			}
 			path := ""
 			for _, arg := range args {
 				if strings.HasPrefix(arg, "--volume=") {
@@ -324,11 +338,15 @@ func TestNamedRelayLifecycleIsolation(t *testing.T) {
 			if !ok {
 				t.Fatal("registration escaped selected instance")
 			}
-			if len(args) > 4 && args[4] == "register" {
+			if len(args) == 7 && args[3] == "approve-admission" && args[4] == "--state" && args[5] == "/state/relay" {
 				if registrationUnavailable && s.name == a.name {
 					return nil, errors.New("fixture receiver is not advertising on alpha")
 				}
 				return []byte("fixture registration for " + s.name), nil
+			}
+			c := containers[s.container]
+			if c == nil || !fixtureIdentityCommand(*c, args) {
+				return nil, errors.New("unexpected relay identity command")
 			}
 			return json.Marshal(info(s))
 		}

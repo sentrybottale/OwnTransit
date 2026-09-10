@@ -107,7 +107,7 @@ func TestTunnelListKeepsLocalScopeAndDoesNotCreateState(t *testing.T) {
 }
 
 func TestNamedServiceDerivationAndNoClobber(t *testing.T) {
-	template := []byte("[Unit]\nConditionPathIsDirectory=/var/lib/owntransit-pair\n[Service]\nExecStart=/opt/package/owntransit-connector pair serve --state /var/lib/owntransit-pair\nReadWritePaths=/var/lib/owntransit-pair\n")
+	template := []byte("[Unit]\nConditionPathIsDirectory=/var/lib/owntransit-pair\n[Service]\nExecStart=/opt/package/owntransit-target serve --state /var/lib/owntransit-pair\nReadWritePaths=/var/lib/owntransit-pair\n")
 	unit, err := namedReceiverUnit(template, "laptop-2")
 	if err != nil || bytes.Count(unit, []byte("/var/lib/owntransit-tunnels/laptop-2")) != 3 || bytes.Contains(unit, []byte(originalReceiverState)) {
 		t.Fatal("service selected a wrong state path")
@@ -136,7 +136,7 @@ func TestNamedServiceDerivationAndNoClobber(t *testing.T) {
 func TestNamedConnectCommandKeepsTunnelSelection(t *testing.T) {
 	var output bytes.Buffer
 	printConnect(&output, "Paired.", "/opt/bin/owntransit", "", "office")
-	if !strings.Contains(output.String(), "pair proxy --tunnel office") || strings.Contains(output.String(), "--state") {
+	if !strings.Contains(output.String(), "proxy --tunnel office") || strings.Contains(output.String(), "--state") {
 		t.Fatal("printed command lost tunnel selector")
 	}
 }

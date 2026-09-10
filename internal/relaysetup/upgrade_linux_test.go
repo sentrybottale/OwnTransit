@@ -162,11 +162,24 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 					}
 					c := containerInfo{ID: strings.Repeat("c", 64), Name: "/" + managedContainer, Image: currentImage}
 					c.Config.Entrypoint = []string{"/owntransit-relay"}
+					c.Config.Cmd = []string{"serve", "--state", "/state/relay"}
+					selected, _ := os.ReadFile(unitPath)
+					if bytes.Contains(selected, []byte(currentImage+" pair serve --state /state/relay")) {
+						c.Config.Cmd = []string{"pair", "serve", "--state", "/state/relay"}
+					}
 					c.Mounts = []inspectionMount{{"bind", managedRoot + "/data", "/state", true}}
 					c.State.Running = running
 					return json.Marshal([]containerInfo{c})
 				}
 				if args[0] == "exec" {
+					c := containerInfo{Name: managedContainer}
+					selected, _ := os.ReadFile(unitPath)
+					if bytes.Contains(selected, []byte(currentImage+" pair serve --state /state/relay")) {
+						c.Config.Cmd = []string{"pair", "serve", "--state", "/state/relay"}
+					}
+					if !fixtureIdentityCommand(c, args) {
+						return nil, errors.New("unexpected relay identity command")
+					}
 					return json.Marshal(local)
 				}
 				return nil, errors.New("unexpected engine command")

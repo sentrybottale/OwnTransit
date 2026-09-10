@@ -74,6 +74,23 @@ func initPolicy(root *securefs.Root) error {
 	return writeRecord(root, "policy.json", Policy{Schema: "owntransit.paired-policy.v2", Generation: 1}, true)
 }
 func ReadPolicy(path string) (Policy, error) {
+	p, err := ReadRetainedPolicy(path)
+	if err != nil {
+		return Policy{}, err
+	}
+	removed, err := IsRemoved(path)
+	if err != nil {
+		return Policy{}, err
+	}
+	if removed {
+		return Policy{}, ErrRemoved
+	}
+	return p, nil
+}
+
+// ReadRetainedPolicy is for local inspection and terminal alarms, including a
+// removed tunnel. Runtime admission and authorization must use ReadPolicy.
+func ReadRetainedPolicy(path string) (Policy, error) {
 	root, err := securefs.OpenRoot(path)
 	if err != nil {
 		return Policy{}, err
@@ -99,7 +116,7 @@ func updatePolicy(path string, change func(*Policy) error) error {
 		return err
 	}
 	defer lock.Close()
-	p, err := ReadPolicy(path)
+	p, err := ReadRetainedPolicy(path)
 	if err != nil {
 		return err
 	}
@@ -143,6 +160,9 @@ func Admission(path string) (*securefs.Lock, error) {
 	p, err := ReadPolicy(path)
 	if err != nil || p.Locked {
 		l.Close()
+		if errors.Is(err, ErrRemoved) {
+			return nil, ErrRemoved
+		}
 		if err == nil && p.Locked {
 			return nil, leasewire.ErrLocked
 		}

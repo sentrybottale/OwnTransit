@@ -3,6 +3,14 @@
 OwnTransit is security-sensitive infrastructure. Prefer small, reviewable
 changes with explicit negative tests over broad refactors.
 
+Current public roles are Client, Relay and Target, with matching
+`owntransit-client`, `owntransit-relay` and `owntransit-target` executables.
+Use the local `setup` menus. Historical source still names the Target
+`connector`; do not rename authenticated protocol fields as branding work.
+The receiver-owned profile keeps issuance authority on the Target, isolated
+from its network worker. Legacy capability/offline-issuer rules below apply
+to the separately documented v1 profile, not the current setup workflow.
+
 ## Before changing behavior
 
 Read:
@@ -30,15 +38,16 @@ layout, durable state invariant, release policy, or credential lifecycle.
 - Keep the connector destination build-fixed to literal
   `tcp4 127.0.0.1:22`. Reject runtime, environment, DNS, relay, and wire-selected
   targets.
-- Keep the connector's positive client list empty. The public capability
+- In legacy v1, keep the connector's positive client list empty. Its capability
   profile authorizes through an exact per-route offline client-capability CA,
   capability ALPN, strict certificate profile, canonical
   client/connector/route/epoch SAN, and bounded authenticated tombstones.
 - Bootstrap issuer pins, deployment verification, release identity, role, and
   runtime binding through an independently authenticated out-of-band channel.
   Never use relay-delivered trust or TOFU.
-- Keep target private keys on the target and all issuer/deployment/release
-  private keys offline and out of runtime packages.
+- Keep endpoint private keys on their endpoints and release private keys out
+  of runtime packages. Preserve the legacy v1 offline issuer/deployment-key
+  boundary and the current Target's authority/worker isolation.
 - Do not make OwnTransit create or edit OpenSSH identities, accounts,
   authorization, configuration, forwarding, or recovery state.
 - Read `PROVENANCE.md`. Every commit must include a `Signed-off-by` trailer

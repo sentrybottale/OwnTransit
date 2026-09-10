@@ -34,7 +34,7 @@ func TestShortCodePromptRejectsOtherProfilesAndRetainsExactCode(t *testing.T) {
 	}{
 		{"old-public", "otrelay1." + strings.Repeat("x", 8192), "older public VPS code"},
 		{"old-private", "otpair1." + strings.Repeat("x", 3000), "--legacy-codes"},
-		{"shell-command", "owntransit pair setup", "Paste only the complete"},
+		{"shell-command", "owntransit-client setup", "Paste only the complete"},
 		{"leading-space", " " + string(code), "Paste only the complete"},
 		{"trailing-space", string(code) + " ", "Paste only the complete"},
 		{"nonterminal-framing", "\x1b[200~" + string(code) + "\x1b[201~", "Paste only the complete"},
@@ -48,7 +48,7 @@ func TestShortCodePromptRejectsOtherProfilesAndRetainsExactCode(t *testing.T) {
 				t.Fatal("code correction did not preserve the exact valid code")
 			}
 			text := output.String()
-			if !strings.Contains(text, tc.hint) || strings.Count(text, "Private receiver code (") != 2 {
+			if !strings.Contains(text, tc.hint) || strings.Count(text, "Private target code (") != 2 {
 				t.Fatal("missing profile-specific correction guidance")
 			}
 			if strings.Contains(text, tc.bad) || bytes.Contains(output.Bytes(), code) {
@@ -90,10 +90,10 @@ func TestClientSetupSelectsOneCodeUnlessLegacyExplicit(t *testing.T) {
 			t.Fatal("client prompt did not identify the local machine's role")
 		}
 		if legacy {
-			if !strings.Contains(text, "legacy two-code setup") || !strings.Contains(text, "VPS registration code (") || strings.Contains(text, "Private receiver code (") {
+			if !strings.Contains(text, "legacy two-code setup") || !strings.Contains(text, "VPS registration code (") || strings.Contains(text, "Private target code (") {
 				t.Fatal("explicit legacy setup selected the wrong prompt")
 			}
-		} else if !strings.Contains(text, "one private code") || !strings.Contains(text, "Private receiver code (otpair2., 56 characters, hidden):") || strings.Contains(text, "VPS registration code (") {
+		} else if !strings.Contains(text, "one private code") || !strings.Contains(text, "Private target code (otpair2., 56 characters, hidden):") || strings.Contains(text, "VPS registration code (") {
 			t.Fatal("default setup requested legacy codes")
 		}
 	}
@@ -105,7 +105,7 @@ func TestSetupBannersNameTheMachineWithoutChangingCodeProfiles(t *testing.T) {
 		printSetupBanner(&output, receiver, false)
 		want := "THIS MACHINE: CLIENT COMPUTER"
 		if receiver {
-			want = "THIS MACHINE: RECEIVING SSH MACHINE"
+			want = "THIS MACHINE: TARGET COMPUTER"
 		}
 		if !strings.Contains(output.String(), want) || !strings.Contains(output.String(), "one private code (otpair2., 56 characters)") || strings.Contains(output.String(), "otrelay1.") {
 			t.Fatalf("role or one-code banner changed: %s", output.String())
@@ -121,7 +121,7 @@ func TestClientRootRejectionNamesTheCorrectMachines(t *testing.T) {
 	if code := Run(false, []string{"setup"}, strings.NewReader(""), &output, &diagnostics); code != 1 || output.Len() != 0 {
 		t.Fatal("root client setup did not reject before setup")
 	}
-	for _, text := range []string{"CLIENT COMPUTER", "without sudo", "move to your RECEIVING SSH MACHINE", "on that receiving machine"} {
+	for _, text := range []string{"CLIENT COMPUTER", "without sudo", "owntransit-client setup"} {
 		if !strings.Contains(diagnostics.String(), text) {
 			t.Fatalf("wrong-role rejection omitted %q: %s", text, diagnostics.String())
 		}
@@ -172,7 +172,7 @@ func TestReceiverDiscoveryRequiresOfferSupportBeforeReturningInfo(t *testing.T) 
 		fixture := &discoveryFixture{failure: tc.failure}
 		_, err := discoverServerInfo(context.Background(), fixture, tc.require)
 		if strings.Join(fixture.calls, ",") != tc.calls || (tc.require && !errors.Is(err, tc.failure)) || (!tc.require && err != nil) {
-			t.Fatal("receiver discovery skipped or fell back from the required profile check")
+			t.Fatal("target discovery skipped or fell back from the required profile check")
 		}
 	}
 }

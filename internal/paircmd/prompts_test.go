@@ -13,7 +13,7 @@ import (
 )
 
 func TestURLPromptExplainsCommandPasteAndReprompts(t *testing.T) {
-	in := strings.NewReader("owntransit-preview pair setup\n\nwss://relay.example/connects\n")
+	in := strings.NewReader("owntransit-client setup\n\nwss://relay.example/connects\n")
 	var out bytes.Buffer
 	value, err := promptValidated(context.Background(), in, bufio.NewReader(in), &out, "Public relay URL: ", "Enter a URL, not a shell command.", 2048, false, func(v []byte) error { _, e := pairrelay.NewPublicClient(string(v), nil); return e })
 	if err != nil || string(value) != "wss://relay.example/connects" || strings.Count(out.String(), "Public relay URL:") != 3 {

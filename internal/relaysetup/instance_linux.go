@@ -179,7 +179,7 @@ func (s instanceSpec) ownsContainer(c containerInfo, image string) bool {
 	if !s.named() {
 		return ownRelay(c)
 	} // Retain recognition of the authenticated legacy default profile.
-	if len(c.Config.Entrypoint) != 1 || c.Config.Entrypoint[0] != "/owntransit-relay" || !equalStrings(c.Config.Cmd, []string{"pair", "serve", "--state", "/state/relay"}) {
+	if len(c.Config.Entrypoint) != 1 || c.Config.Entrypoint[0] != "/owntransit-relay" || (!equalStrings(c.Config.Cmd, []string{"pair", "serve", "--state", "/state/relay"}) && !equalStrings(c.Config.Cmd, []string{"serve", "--state", "/state/relay"})) {
 		return false
 	}
 	if len(c.Mounts) != 1 || c.Mounts[0].Type != "bind" || c.Mounts[0].Source != s.dataRoot() || c.Mounts[0].Destination != "/state" {
@@ -580,7 +580,7 @@ func (s instanceSpec) register(ctx context.Context, id string) (string, error) {
 	if _, err := s.managedIdentity(ctx, c.Engine, c.Image); err != nil {
 		return "", err
 	}
-	result, err := command(ctx, c.Engine, "exec", s.container, "/owntransit-relay", "pair", "register", "--state", "/state/relay", id)
+	result, err := command(ctx, c.Engine, "exec", s.container, "/owntransit-relay", "approve-admission", "--state", "/state/relay", id)
 	if err != nil {
 		return "", errors.New("receiver is not advertising yet; start its setup and try again")
 	}

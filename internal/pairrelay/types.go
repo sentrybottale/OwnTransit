@@ -175,6 +175,8 @@ type RelayConfig struct {
 	VerifyAdvertisement AdvertisementVerifier
 	Limits              Limits
 	Now                 func() time.Time
+	Admissions          []AdmissionRecord
+	SaveAdmissions      func([]AdmissionRecord) error
 }
 
 // DialFunc supplies an already upgraded byte-stream WebSocket using the exact

@@ -163,11 +163,13 @@ func (relay *Relay) publishOffer(encoded, token []byte) error {
 	}
 	key := routeKey{receiver: descriptor.ReceiverID, route: descriptor.RouteID}
 	var restored registrationRecord
+	var restoredClaims TokenClaims
 	if len(token) != 0 {
 		claims, err := VerifyToken(relay.config.TokenKey, token, now)
 		if err != nil || claims.ReceiverID != key.receiver || claims.RouteID != key.route || claims.AdmissionRootSHA256 != admissionHash {
 			return ErrUnavailable
 		}
+		restoredClaims = claims
 		restored = registrationRecord{
 			token: append([]byte(nil), token...), advertisementSHA256: sha256.Sum256(offer.Advertisement),
 			expires: time.Unix(claims.ExpiresUnix, 0),
@@ -177,6 +179,14 @@ func (relay *Relay) publishOffer(encoded, token []byte) error {
 	defer relay.mu.Unlock()
 	if relay.closed {
 		return ErrAlreadyClosed
+	}
+	if len(token) != 0 {
+		if err := relay.checkAdmissionLocked(restoredClaims); err != nil {
+			return err
+		}
+	}
+	if record, ok := relay.admissions[key]; ok && record.Status == "removed" {
+		return ErrUnauthorized
 	}
 	relay.expireAdvertisementsLocked(now)
 	previous, exists := relay.advertisements[key]

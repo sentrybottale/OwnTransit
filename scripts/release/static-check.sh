@@ -20,68 +20,68 @@ require_text() {
   grep -Fq -- "$literal" "$file" || fail "$file is missing invariant: $literal"
 }
 
-sh -n install-linux.sh || fail 'simple Linux installer has invalid shell syntax'
-test -x install-linux.sh || fail 'simple Linux installer is not executable'
-require_text install-linux.sh 'release_base=https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.0'
-require_text install-linux.sh 'stage=$(mktemp -d /var/lib/owntransit-install-v0.1.0.XXXXXXXX)'
-require_text install-linux.sh 'TRUST-STATEMENT.txt 629 e5049fc6f3c6be061992d74f83b84506950a7abb1d3f0117f7b452ed47b31a4b'
-require_text install-linux.sh 'owntransit-0.1.0-native.tar.gz 35719170 d5f9ec458fc00c6a47a0eb7c46e2a0a5bade7e2ab95c5ad6e34c5fc256c1b2bc'
-require_text install-linux.sh 'client_user=${SUDO_USER-}'
-require_text install-linux.sh 'sudo_uid=${SUDO_UID-}'
-require_text install-linux.sh 'test "$resolved_sudo_uid" = "$sudo_uid"'
-require_text install-linux.sh 'test "$resolved_sudo_user" = "$client_user"'
-require_text install-linux.sh 'Connector package installed. Existing service state was preserved. If this is a fresh connector, enroll it before enabling the service.'
-require_text install-linux.sh 'ulimit -f 131072'
-require_text install-linux.sh 'env -i PATH="$PATH" LC_ALL=C'
-require_text install-linux.sh 'pending connector package recovery exists; do not delete its supervisor record; finish authenticated package recovery, then retry'
-require_text install-linux.sh 'pending relay package recovery exists; do not delete its supervisor record; finish authenticated package recovery, then retry'
-require_text install-linux.sh 'sudo ./install-linux.sh relay'
-require_text install-linux.sh 'sudo ./install-linux.sh provisioner'
-require_text install-linux.sh '/usr/bin/apt-get -qq update'
-require_text install-linux.sh '--no-install-recommends install podman'
-require_text install-linux.sh 'existing Podman uses an unsupported path:'
-require_text install-linux.sh 'caller_path=${PATH-}'
-require_text install-linux.sh 'caller_podman=$(PATH=$caller_path command -v podman'
-require_text install-linux.sh 'NEEDRESTART_MODE=l'
-require_text install-linux.sh '--no-remove --no-install-recommends install podman'
-require_text install-linux.sh 'install the OpenSSH client tools manually'
-if grep -Eq 'apt-get[^;]*(dist-upgrade|full-upgrade|[[:space:]]upgrade)|^[[:space:]]*(nginx|ufw|iptables|ip6tables|nft|firewall-cmd)[[:space:]]' install-linux.sh; then
+sh -n scripts/release/install-linux-legacy.sh || fail 'simple Linux installer has invalid shell syntax'
+test -x scripts/release/install-linux-legacy.sh || fail 'simple Linux installer is not executable'
+require_text scripts/release/install-linux-legacy.sh 'release_base=https://github.com/sentrybottale/OwnTransit/releases/download/v0.1.0'
+require_text scripts/release/install-linux-legacy.sh 'stage=$(mktemp -d /var/lib/owntransit-install-v0.1.0.XXXXXXXX)'
+require_text scripts/release/install-linux-legacy.sh 'TRUST-STATEMENT.txt 629 e5049fc6f3c6be061992d74f83b84506950a7abb1d3f0117f7b452ed47b31a4b'
+require_text scripts/release/install-linux-legacy.sh 'owntransit-0.1.0-native.tar.gz 35719170 d5f9ec458fc00c6a47a0eb7c46e2a0a5bade7e2ab95c5ad6e34c5fc256c1b2bc'
+require_text scripts/release/install-linux-legacy.sh 'client_user=${SUDO_USER-}'
+require_text scripts/release/install-linux-legacy.sh 'sudo_uid=${SUDO_UID-}'
+require_text scripts/release/install-linux-legacy.sh 'test "$resolved_sudo_uid" = "$sudo_uid"'
+require_text scripts/release/install-linux-legacy.sh 'test "$resolved_sudo_user" = "$client_user"'
+require_text scripts/release/install-linux-legacy.sh 'Connector package installed. Existing service state was preserved. If this is a fresh connector, enroll it before enabling the service.'
+require_text scripts/release/install-linux-legacy.sh 'ulimit -f 131072'
+require_text scripts/release/install-linux-legacy.sh 'env -i PATH="$PATH" LC_ALL=C'
+require_text scripts/release/install-linux-legacy.sh 'pending connector package recovery exists; do not delete its supervisor record; finish authenticated package recovery, then retry'
+require_text scripts/release/install-linux-legacy.sh 'pending relay package recovery exists; do not delete its supervisor record; finish authenticated package recovery, then retry'
+require_text scripts/release/install-linux-legacy.sh 'sudo ./install-linux.sh relay'
+require_text scripts/release/install-linux-legacy.sh 'sudo ./install-linux.sh provisioner'
+require_text scripts/release/install-linux-legacy.sh '/usr/bin/apt-get -qq update'
+require_text scripts/release/install-linux-legacy.sh '--no-install-recommends install podman'
+require_text scripts/release/install-linux-legacy.sh 'existing Podman uses an unsupported path:'
+require_text scripts/release/install-linux-legacy.sh 'caller_path=${PATH-}'
+require_text scripts/release/install-linux-legacy.sh 'caller_podman=$(PATH=$caller_path command -v podman'
+require_text scripts/release/install-linux-legacy.sh 'NEEDRESTART_MODE=l'
+require_text scripts/release/install-linux-legacy.sh '--no-remove --no-install-recommends install podman'
+require_text scripts/release/install-linux-legacy.sh 'install the OpenSSH client tools manually'
+if grep -Eq 'apt-get[^;]*(dist-upgrade|full-upgrade|[[:space:]]upgrade)|^[[:space:]]*(nginx|ufw|iptables|ip6tables|nft|firewall-cmd)[[:space:]]' scripts/release/install-linux-legacy.sh; then
   fail 'simple Linux installer must not upgrade the host or change web-server/firewall configuration'
 fi
-test "$(sed -n '2p' install-linux.sh)" = 'main() {' ||
+test "$(sed -n '2p' scripts/release/install-linux-legacy.sh)" = 'main() {' ||
   fail 'simple Linux installer must defer all executable work into main'
-test "$(tail -n 1 install-linux.sh)" = 'main "$@"' ||
+test "$(tail -n 1 scripts/release/install-linux-legacy.sh)" = 'main "$@"' ||
   fail 'simple Linux installer must invoke main only after the complete stream is parsed'
-test "$(grep -c '^fetch_pinned ' install-linux.sh | tr -d '[:space:]')" = 17 ||
+test "$(grep -c '^fetch_pinned ' scripts/release/install-linux-legacy.sh | tr -d '[:space:]')" = 17 ||
   fail 'simple Linux installer does not pin the exact seventeen-file handoff'
-simple_pin_set_sha256=$(grep '^fetch_pinned ' install-linux.sh | sha256sum | awk '{print $1}')
+simple_pin_set_sha256=$(grep '^fetch_pinned ' scripts/release/install-linux-legacy.sh | sha256sum | awk '{print $1}')
 test "$simple_pin_set_sha256" = dba413c348bb998bbdd5c25e43d667d111f5ac6a5f9eb85f60e86c65d1062dee ||
   fail 'simple Linux installer pinned handoff changed unexpectedly'
-simple_archive_check_line=$(grep -nF 'test "$(sha256sum "$native_archive"' install-linux.sh | cut -d: -f1)
-simple_extract_line=$(grep -nF 'tar --extract --gzip --no-same-owner' install-linux.sh | cut -d: -f1)
+simple_archive_check_line=$(grep -nF 'test "$(sha256sum "$native_archive"' scripts/release/install-linux-legacy.sh | cut -d: -f1)
+simple_extract_line=$(grep -nF 'tar --extract --gzip --no-same-owner' scripts/release/install-linux-legacy.sh | cut -d: -f1)
 test -n "$simple_archive_check_line" && test -n "$simple_extract_line" &&
   test "$simple_archive_check_line" -lt "$simple_extract_line" ||
   fail 'simple Linux installer must authenticate the native archive before extraction'
-simple_apt_line=$(grep -nF '/usr/bin/apt-get -qq update' install-linux.sh | cut -d: -f1)
-simple_bundle_ready_line=$(grep -nF 'authenticated native bundle has no installer' install-linux.sh | cut -d: -f1)
+simple_apt_line=$(grep -nF '/usr/bin/apt-get -qq update' scripts/release/install-linux-legacy.sh | cut -d: -f1)
+simple_bundle_ready_line=$(grep -nF 'authenticated native bundle has no installer' scripts/release/install-linux-legacy.sh | cut -d: -f1)
 test "$simple_bundle_ready_line" -lt "$simple_apt_line" ||
   fail 'simple Linux installer must verify and stage its release before installing dependencies'
-if grep -Eq 'systemctl[[:space:]]+(enable|start|restart)|enable[[:space:]]+--now' install-linux.sh; then
+if grep -Eq 'systemctl[[:space:]]+(enable|start|restart)|enable[[:space:]]+--now' scripts/release/install-linux-legacy.sh; then
   fail 'simple Linux installer must not enable or start a service'
 fi
-if grep -Eq 'curl[^|]*\|[[:space:]]*(sh|bash)' install-linux.sh; then
+if grep -Eq 'curl[^|]*\|[[:space:]]*(sh|bash)' scripts/release/install-linux-legacy.sh; then
   fail 'simple Linux installation must not document or implement curl piped to a shell'
 fi
-if ./install-linux.sh unsupported-role >/dev/null 2>&1 ||
-  ./install-linux.sh relay unexpected >/dev/null 2>&1 ||
-  ./install-linux.sh provisioner unexpected >/dev/null 2>&1 ||
-  ./install-linux.sh connector unexpected >/dev/null 2>&1 ||
-  ./install-linux.sh client root >/dev/null 2>&1; then
+if ./scripts/release/install-linux-legacy.sh unsupported-role >/dev/null 2>&1 ||
+  ./scripts/release/install-linux-legacy.sh relay unexpected >/dev/null 2>&1 ||
+  ./scripts/release/install-linux-legacy.sh provisioner unexpected >/dev/null 2>&1 ||
+  ./scripts/release/install-linux-legacy.sh connector unexpected >/dev/null 2>&1 ||
+  ./scripts/release/install-linux-legacy.sh client root >/dev/null 2>&1; then
   fail 'simple Linux installer accepted an unsupported role or unsafe arguments'
 fi
-./install-linux.sh --help >/dev/null 2>&1 ||
+./scripts/release/install-linux-legacy.sh --help >/dev/null 2>&1 ||
   fail 'simple Linux installer help is unavailable offline'
-sed '$d' install-linux.sh | sh -s -- connector >/dev/null 2>&1 ||
+sed '$d' scripts/release/install-linux-legacy.sh | sh -s -- connector >/dev/null 2>&1 ||
   fail 'complete streamed function definition without the final main call was not inert'
 sh scripts/tests/install-linux-bootstrap.sh
 

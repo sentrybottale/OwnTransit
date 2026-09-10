@@ -3,12 +3,16 @@ set -eu
 if test "${1:-}" = --owntransit-development-test; then
   exit 0
 fi
+if test "$*" = 'show owntransit-target.service --property=DropInPaths --value'; then exit 0; fi
+if test "$*" = 'disable --now owntransit-target.service'; then exit 0; fi
 if test "$*" = 'show owntransit-connector-pair.service --property=DropInPaths --value'; then exit 0; fi
 if test "$*" = 'disable --now owntransit-connector-pair.service'; then exit 0; fi
+if test "$*" = 'is-enabled --quiet owntransit-connector-pair.service'; then exit 1; fi
+if test "$*" = 'is-active --quiet owntransit-connector-pair.service'; then exit 1; fi
 case "$*" in
-  'show owntransit-connector-pair@alpha.service --property=DropInPaths --value'|'show owntransit-connector-pair@bravo.service --property=DropInPaths --value') exit 0 ;;
-  'disable --now owntransit-connector-pair@alpha.service'|'disable --now owntransit-connector-pair@bravo.service') exit 0 ;;
-  'enable owntransit-connector-pair@alpha.service'|'restart owntransit-connector-pair@alpha.service')
+  'show owntransit-target@alpha.service --property=DropInPaths --value'|'show owntransit-target@bravo.service --property=DropInPaths --value') exit 0 ;;
+  'disable --now owntransit-target@alpha.service'|'disable --now owntransit-target@bravo.service') exit 0 ;;
+  'enable owntransit-target@alpha.service'|'restart owntransit-target@alpha.service')
     printf '%s\n' "$*" >> /tmp/owntransit-named-service.calls
     exit 0 ;;
 esac

@@ -5,6 +5,8 @@ import (
 	"net/netip"
 	"sync"
 	"time"
+
+	"github.com/sentrybottale/owntransit/internal/transport"
 )
 
 const maxAdmissionPeers = 256
@@ -81,6 +83,8 @@ type admissionConnection struct {
 	net.Conn
 	release func()
 }
+
+func (c *admissionConnection) Abort() error { return transport.Abort(c.Conn) }
 
 func releaseAdmission(c net.Conn) {
 	if a, ok := c.(*admissionConnection); ok {

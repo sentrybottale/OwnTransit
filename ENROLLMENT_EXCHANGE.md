@@ -1,8 +1,16 @@
 # Hostile enrollment exchange
 
-This document specifies the unchanged legacy administrator-led profile. The
-separately selected 0.1.1 receiver-owned `pair` commands use
-[RECEIVER_PAIRING.md](RECEIVER_PAIRING.md), not this human comparison procedure.
+This document specifies the unchanged legacy administrator-led profile and
+retains that profile's historical command names. In the 0.7 flow,
+`owntransit-client setup` and `owntransit-target setup` select the receiver-owned
+profile in [RECEIVER_PAIRING.md](RECEIVER_PAIRING.md), not this human comparison
+procedure. Current instructions are in [PAIRING_INSTALL.md](PAIRING_INSTALL.md);
+the earlier CLI names are not compatibility aliases.
+
+Here, an enrollment **target** means the recipient of a legacy invitation,
+which may be a client, connector or relay. It does not specifically mean the
+current **Target** product role. No current menu changes the transcript,
+independent human authentication or issuance requirements specified below.
 
 Status: implemented v1 protocol for the OwnTransit 0.1.0 release-candidate line.
 Canonical signed

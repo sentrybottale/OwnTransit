@@ -1,5 +1,41 @@
 # OwnTransit security policy
 
+## Current 0.7 development boundary
+
+0.7 source uses the local Client, Relay and Target roles and the canonical
+`owntransit-client`, `owntransit-relay` and `owntransit-target` commands.
+Their `setup` menus expose only local role operations. Earlier public names,
+preview aliases and the `pair` command prefix are not retained as CLI shims.
+Historical sections below describe their named release; they do not promise
+current CLI compatibility or establish that 0.7 is published or qualified.
+
+The private Target code remains available only to its local authority owner
+and the independently chosen Client. The Relay stores public planning and
+admission metadata only. Neither a menu name, public Target ID, relay approval
+nor a relay observation supplies endpoint trust or proves a working tunnel.
+Only the Client's actual authenticated carrier and fixed SSH-socket check may
+report `TUNNEL READY`. Both TLS 1.3 mTLS boundaries, exact endpoint authorization,
+the fixed `tcp4 127.0.0.1:22` destination and OpenSSH ownership are unchanged.
+
+Endpoint removal uses a separate private `owntransit.local-removal.v1` record.
+Its durable denial applies to new admissions and running policy watchers before
+shutdown is acknowledged. Removal retains keys and policy generations; it does
+not invoke the terminal alarm or peer revocation. Interrupted removal remains
+denied until retried. Explicit restore waits for worker shutdown, then checks
+the retained alarm and Target authority under the local policy mutation boundary
+before committing restoration. A committed alarm cannot be cleared by restore.
+Target service operations validate the exact owned unit, reject overrides and
+coordinate with package maintenance. Shared software and other tunnels remain
+outside the selected removal.
+
+An honest Relay persists removal of the selected admission and closes its
+tracked carriers. This is an availability operation, not endpoint revocation:
+the threat model allows a compromised Relay to ignore it. Use an endpoint's
+Killswitch for its terminal authorization denial. An endpoint alarm still cannot
+guarantee immediate peer cutoff across a malicious Relay or stop SSH-started
+jobs; the existing authorization-lease bound and host-recovery responsibilities
+remain in force. No menu or installer edits SSH keys, accounts or configuration.
+
 ## 0.6.1 local code recovery and readiness
 
 New one-code setup retains a mode-0600 cache only under the receiver's private

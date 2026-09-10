@@ -1,5 +1,22 @@
 # OwnTransit wire compatibility
 
+## Current 0.7 commands and local state
+
+The 0.7 flow uses Client, Relay and Target roles, with canonical
+`owntransit-client`, `owntransit-relay` and `owntransit-target` programs. Their
+no-argument or `setup` entry opens the local menu. Earlier command names,
+preview aliases and the public `pair` prefix are not compatibility shims.
+This CLI change does not rename authenticated bytes or select a different
+pairing/carrier profile.
+
+Existing neutral endpoint state roots preserve identities. Local endpoint
+removal records, Relay menu names and public admission inventory are not wire
+negotiation or endpoint authorization inputs. Endpoint Restore preserves all
+terminal alarms; Relay admission removal supplies no endpoint revocation
+authority. Older tools are not a supported way to operate these new local
+lifecycle records. The historical profile descriptions below remain distinct
+from current command compatibility.
+
 ## Relay management in 0.6.0
 
 The local `owntransit.relay-instance.v2` binding adds a validated derived legacy
@@ -42,9 +59,11 @@ choose or negotiate a weaker profile on an endpoint's behalf.
 
 ## Receiver-owned profile (0.1.1 development)
 
-Selection is explicit through the `pair` commands, never inferred from a relay
-response. The public WebSocket subprotocol is `owntransit.carrier.v2`, its outer
-TLS ALPN is `owntransit-relay-admission/2`, and the inner TLS ALPN is
+Earlier releases selected this profile through the `pair` commands. The current
+Client/Target entrypoints explicitly select it; selection is never inferred
+from a relay response. The public WebSocket subprotocol is
+`owntransit.carrier.v2`, its outer TLS ALPN is `owntransit-relay-admission/2`,
+and the inner TLS ALPN is
 `owntransit-paired-lease/1`. The signed setup profile is
 `owntransit-receiver-pairing/1`. OTLW frames carry SSH DATA and authorization
 controls only inside that authenticated inner session. The existing FGRD READY

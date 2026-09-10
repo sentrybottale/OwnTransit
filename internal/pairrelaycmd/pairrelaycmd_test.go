@@ -108,6 +108,11 @@ func TestInitServeRegisterAndRestart(t *testing.T) {
 		cancel()
 		t.Fatalf("automatic token differs: err=%v", err)
 	}
+	entriesBefore, err := List(context.Background(), statePath)
+	if err != nil || len(entriesBefore) != 1 || entriesBefore[0].ReceiverID != receiverID.String() || entriesBefore[0].RouteID != registration.RouteID.String() || entriesBefore[0].Status != "approved" {
+		cancel()
+		t.Fatal("local approval inventory is incorrect", err)
+	}
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)
@@ -122,6 +127,42 @@ func TestInitServeRegisterAndRestart(t *testing.T) {
 	if err != nil || !bytes.Equal(fetched, attempt.Advertisement) {
 		cancel()
 		t.Fatalf("restarted relay rejected old stateless token: err=%v", err)
+	}
+	entriesAfter, err := List(context.Background(), statePath)
+	if err != nil || len(entriesAfter) != 1 || entriesAfter[0] != entriesBefore[0] {
+		cancel()
+		t.Fatal("restart lost approval inventory", err)
+	}
+	wrongRoute, err := protocol.NewRouteID()
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	if Remove(context.Background(), statePath, receiverID, wrongRoute) == nil {
+		cancel()
+		t.Fatal("wrong route removed another admission")
+	}
+	if err := Remove(context.Background(), statePath, receiverID, registration.RouteID); err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	cancel, done = serveOnce()
+	entriesAfter, err = List(context.Background(), statePath)
+	if err != nil || len(entriesAfter) != 1 || entriesAfter[0].Status != "removed" {
+		cancel()
+		t.Fatal("restart lost removal inventory", err)
+	}
+	if err := public.PublishAdvertisement(context.Background(), attempt.Advertisement); err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	if _, err := public.FetchAdvertisement(context.Background(), registration.Token); err == nil {
+		cancel()
+		t.Fatal("restart admitted removed stateless token")
 	}
 	cancel()
 	if err := <-done; err != nil {

@@ -7,6 +7,26 @@ authenticated artifacts of the documented release lane. The legacy 0.1.0 lane
 additionally requires its signed qualification record. Git tags do not publish
 artifacts automatically.
 
+## [0.7.0]
+
+Client / Relay / Target menus. Availability is established by the signed
+release assets, not by this source heading; no independent certification is claimed.
+
+- Rename the current public roles and commands to Client/`owntransit-client`,
+  Relay/`owntransit-relay` and Target/`owntransit-target`. Open compact local menus
+  with no arguments or `setup`; remove public preview aliases and `pair` prefix
+  shims without changing authenticated protocol identifiers.
+- Add New, Continue, List, Remove and Killswitch endpoint choices, plus explicit
+  Restore for locally removed tunnels. Retain pairing keys and pending requests;
+  removal is recoverable and cannot clear a terminal alarm.
+- Add local Relay drafts, bounded public admission inventory and removal of one
+  selected admission. Keep service start/update explicit for configured Relays.
+  Relay removal is not endpoint revocation and cannot constrain a malicious Relay.
+- Keep the private code on Target/Client, use public Target IDs only for the
+  Relay handoff, and preserve the actual end-to-end check before `TUNNEL READY`.
+- Add terminal, interruption, isolated-service and concurrent-alarm regression
+  coverage. Preserve operator-owned SSH and unrelated tunnels throughout.
+
 ## [0.6.1]
 
 - Add owner-only recovery of the same unused receiver code, bound to the exact

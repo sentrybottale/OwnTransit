@@ -1,5 +1,39 @@
 # OwnTransit v1 shipping plan
 
+## Current 0.7 development acceptance
+
+Ship 0.7 only after the existing bounded source and authenticated
+artifact checks pass for the exact candidate. Retain the supported Linux
+architectures, Apple-silicon Client, existing distribution signing authority and
+SSH-only boundary. This section adds no independent certification, new-machine
+requirement or extended soak gate.
+
+The current role names and installer arguments are Client/`client`,
+Relay/`relay` and Target/`target`. The canonical binaries are
+`owntransit-client`, `owntransit-relay` and `owntransit-target`. No arguments or
+`setup` opens a local menu; advanced commands have no `pair` prefix. Do not
+publish earlier aliases as compatibility shims. Keep authenticated wire/profile
+identifiers unchanged and preserve existing endpoint identities in their
+retained state roots.
+
+Acceptance must exercise the actual Relay → Target → Relay → Client menu
+handoffs, independent local names, retained unused codes and exact pending
+Client requests. The Relay may handle public IDs and bounded admission/planning
+metadata only. Only the Client's real inner-authenticated carrier and fixed
+SSH-dial acknowledgement permit `TUNNEL READY`; Relay approval, local status and
+service readiness are insufficient.
+
+Exercise selected endpoint Remove/Restore, interrupted shutdown and restoration,
+concurrent terminal alarms, and exact Target service ownership. Removal retains
+private state and blocks local workers; restore cannot clear an alarm. Relay
+admission removal is separate and cannot enforce endpoint denial against a
+compromised Relay. Verify isolation from other tunnels and all operator-owned
+SSH state, both build profiles, bounded terminal input and a brief end-to-end
+SSH check. Do not claim publication or qualification from source changes alone.
+
+The remaining sections preserve historical release contracts, including old
+command/artifact names. They are not the current CLI compatibility contract.
+
 ## Receiver-owned 0.6.1 recovery closure
 
 Use the same supported platforms, nine signed assets and existing signer.

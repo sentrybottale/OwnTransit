@@ -21,6 +21,7 @@ import (
 	"github.com/sentrybottale/owntransit/internal/enrollmentexchange"
 	"github.com/sentrybottale/owntransit/internal/enrollmenttarget"
 	"github.com/sentrybottale/owntransit/internal/relay"
+	"github.com/sentrybottale/owntransit/internal/relaysetup"
 	"github.com/sentrybottale/owntransit/internal/transport"
 )
 
@@ -42,7 +43,64 @@ type relayRuntimeSource struct {
 }
 
 func main() {
-	if len(os.Args) > 1 && (os.Args[1] == "setup" || os.Args[1] == "register" || os.Args[1] == "approve" || os.Args[1] == "list" || os.Args[1] == "cleanup-container" || os.Args[1] == "uninstall-managed" || os.Args[1] == "uninstall-all-managed") {
+	if len(os.Args) == 2 && (os.Args[1] == "help" || os.Args[1] == "--help" || os.Args[1] == "-h") {
+		fmt.Fprintln(os.Stdout, "owntransit-relay [setup]\n  Opens the local relay and tunnel menu; run with sudo on the VPS.\nSelect a relay with setup --instance NAME or --url PUBLIC_WSS_URL.\nAdvanced: configure, list, approve, uninstall-managed.\nPrivate pairing codes belong on the Target and Client, never this Relay.")
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "pair" {
+		fmt.Fprintln(os.Stderr, "Use sudo owntransit-relay setup. The public pair prefix was removed in 0.7.")
+		os.Exit(2)
+	}
+	if len(os.Args) > 1 && os.Args[1] == "migrate-package-hooks" {
+		flags := flag.NewFlagSet("migrate-package-hooks", flag.ContinueOnError)
+		var fd managedStringFlag
+		flags.Var(&fd, "package-lock-fd", "internal installer-owned descriptor")
+		if flags.Parse(os.Args[2:]) != nil || flags.NArg() != 0 || !fd.set || fd.value != "9" {
+			os.Exit(2)
+		}
+		lock, err := relaysetup.LockPackage(9)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Relay package coordination failed.")
+			os.Exit(1)
+		}
+		err = relaysetup.MigratePackageHooks(context.Background())
+		lock.Close()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Relay hook migration failed: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) == 1 || os.Args[1] == "setup" {
+		args := []string{}
+		if len(os.Args) > 2 {
+			args = os.Args[2:]
+		}
+		os.Exit(runRelayMenu(args, os.Stdin, os.Stdout, os.Stderr))
+	}
+	if os.Args[1] == "configure" {
+		args := append([]string{"setup"}, os.Args[2:]...)
+		os.Exit(runManagedRelay(args, os.Stdin, os.Stdout, os.Stderr))
+	}
+	if len(os.Args) > 1 {
+		mapped := ""
+		switch os.Args[1] {
+		case "serve", "init":
+			mapped = os.Args[1]
+		case "state-info":
+			mapped = "info"
+		case "admissions":
+			mapped = "list"
+		case "remove-admission":
+			mapped = "remove"
+		case "approve-admission":
+			mapped = "register"
+		}
+		if mapped != "" {
+			os.Exit(runPairCommand(append([]string{mapped}, os.Args[2:]...), os.Stdout, os.Stderr))
+		}
+	}
+	if len(os.Args) > 1 && (os.Args[1] == "register" || os.Args[1] == "approve" || os.Args[1] == "list" || os.Args[1] == "cleanup-container" || os.Args[1] == "uninstall-managed" || os.Args[1] == "uninstall-all-managed") {
 		os.Exit(runManagedRelay(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 	}
 	code := executeRelay(os.Args[1:], os.Stdout, os.Stderr, productionRelayCommands())

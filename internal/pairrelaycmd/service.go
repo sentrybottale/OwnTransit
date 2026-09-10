@@ -63,6 +63,10 @@ func Serve(ctx context.Context, statePath string, diagnostics io.Writer) error {
 		return err
 	}
 	defer clear(material.tokenKey)
+	admissions, err := loadAdmissions(stateRoot)
+	if err != nil {
+		return err
+	}
 	verification := func(encoded []byte, now time.Time) (pairrelay.Descriptor, error) {
 		info, err := receiverpairing.VerifyAdvertisement(encoded, now)
 		if err != nil {
@@ -80,6 +84,7 @@ func Serve(ctx context.Context, statePath string, diagnostics io.Writer) error {
 	}
 	relay, err := pairrelay.NewRelay(pairrelay.RelayConfig{
 		TokenKey: material.tokenKey, RelayTLS: material.tls, VerifyAdvertisement: verification,
+		Admissions: admissions, SaveAdmissions: func(records []pairrelay.AdmissionRecord) error { return saveAdmissions(stateRoot, records) },
 	})
 	if err != nil {
 		return err
@@ -200,6 +205,9 @@ func handleControl(connection *net.UnixConn, relay *pairrelay.Relay) {
 		return
 	}
 	var request controlRequest
+	if handleAdmissionControl(connection, relay, encoded) {
+		return
+	}
 	if err := strictjson.Decode(encoded, &request); err != nil || request.Schema != "owntransit.pairrelay.control-register.v1" {
 		_, _ = connection.Write([]byte("ERROR\n"))
 		return
