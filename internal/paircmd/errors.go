@@ -17,18 +17,23 @@ import (
 // Only fixed local categories reach diagnostics. Never print err.Error(): it
 // may contain a path, URL, token, certificate or hostile relay response.
 func failureMessage(operation string, err error) string {
-	if operation == "alarm" || operation == "lock" {
-		return "Alarm shutdown was not confirmed; the pairing may already be locked. Check pair status. Do not clear its state."
+	if operation == "alarm" || operation == "lock" || operation == "killswitch" {
+		return "Alarm shutdown was not confirmed; the pairing may already be locked. Check status. Do not clear its state."
+	}
+	if operation == "remove" {
+		return "Removal did not finish; the local tunnel may already be detached. Retry remove for the same tunnel to confirm service and worker shutdown. Private state is retained."
 	}
 	switch {
+	case errors.Is(err, pairruntime.ErrRemoved):
+		return "This tunnel was removed locally. Use explicit restore to reuse retained identities; terminal alarms cannot be restored."
 	case errors.Is(err, context.Canceled):
-		return "Cancelled. Completed local steps remain in effect; check pair status before retrying."
+		return "Cancelled. Completed local steps remain in effect; check status before retrying."
 	case errors.Is(err, pairruntime.ErrApprovalMissing):
-		return "Receiver approval is missing. Run the complete VPS approval command printed by receiver setup, then retry this client setup with the same private code."
+		return "Target approval is missing. On the Relay, choose Continue tunnel for its existing draft, then retry Client setup with the same private code."
 	case errors.Is(err, pairruntime.ErrReceiverOffer):
-		return "The private code could not authenticate this receiver and relay URL. Check the URL and current unexpired receiver code; never disable verification."
+		return "The private code could not authenticate this target and relay URL. Check the URL and current unexpired target code; never disable verification."
 	case errors.Is(err, pairruntime.ErrOfferUnavailable):
-		return "One-code setup is unavailable. Check the receiver service, relay URL and running relay version. Upgrade the relay for otpair2. codes; older two-code receivers require explicit pair setup --legacy-codes."
+		return "One-code setup is unavailable. Check the Target service, Relay URL and running Relay version. Upgrade the Relay for otpair2. codes; older two-code Targets require explicit setup --legacy-codes."
 	case errors.Is(err, leasewire.ErrLocked), errors.Is(err, leasewire.ErrPeerLock):
 		return "Pairing alarmed. This tunnel cannot be unlocked; recovery requires deliberate fresh pairing."
 	case errors.Is(err, securefs.ErrLocked):
@@ -41,21 +46,21 @@ func failureMessage(operation string, err error) string {
 	case errors.Is(err, pairrelay.ErrTransport):
 		return "Relay connection failed. Check the public URL, HTTPS route and network, then retry. Keep the existing pairing."
 	case errors.Is(err, pairrelay.ErrUnavailable), errors.Is(err, pairrelay.ErrCapacity):
-		return "No receiver path is available. Check the relay and receiver services, then retry. Keep the existing pairing."
+		return "No target path is available. Check the relay and target services, then retry. Keep the existing pairing."
 	case errors.Is(err, pairrelay.ErrUnauthorized), errors.Is(err, pairruntime.ErrPeerAuthorization), errors.Is(err, leasewire.ErrProtocol):
 		return "Peer authentication did not complete. Check both services, versions and pairing; never disable verification."
 	case errors.Is(err, leasewire.ErrPolicy):
-		return "Local authorization could not be verified. Check pair status and local state permissions; no trust was reset."
+		return "Local authorization could not be verified. Check status and local state permissions; no trust was reset."
 	case errors.Is(err, os.ErrNotExist):
-		return "Pairing state is missing. Check the selected --state path; for a new installation, run pair setup."
+		return "Pairing state is missing. Check the selected --state path; for a new installation, run setup."
 	case errors.Is(err, io.EOF) && operation != "proxy":
 		return "Input ended. Run setup again when the requested values are ready."
 	default:
 		if operation == "setup" || operation == "init" || operation == "resume" {
-			return "Pairing did not complete. Follow the prompt guidance; use pair resume for a saved client request. Explicit receiver replacement may already have retired its old pairing."
+			return "Pairing did not complete. Follow the prompt guidance; use resume for a saved client request. Explicit target replacement may already have retired its old pairing."
 		}
 		if operation == "proxy" {
-			return "Tunnel closed or could not start. Check pair status and both services, then retry SSH. Keep the existing pairing."
+			return "Tunnel closed or could not start. Check status and both services, then retry SSH. Keep the existing pairing."
 		}
 		return "Local operation failed. Check the service status and state permissions; no automatic recovery or trust reset was attempted."
 	}

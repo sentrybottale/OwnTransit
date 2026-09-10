@@ -17,6 +17,7 @@ import (
 )
 
 var checkClient = pairruntime.Check
+var resumeClient = pairruntime.ResumeClient
 var discoverReceiverOffer = discoverOffer
 
 // This selects only a protected, locally installed receiver. The relay's public
@@ -61,7 +62,7 @@ func printNext(out io.Writer, receiver bool, executable, path, selectedState, tu
 		return prefix + pairCommand(executable, operation, selectedState, tunnel)
 	}
 	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
-		fmt.Fprintf(out, "UNDER CONSTRUCTION — no local pairing saved.\nNEXT on THIS %s:\n  %s", map[bool]string{true: "RECEIVING SSH MACHINE", false: "CLIENT COMPUTER"}[receiver], command("setup"))
+		fmt.Fprintf(out, "UNDER CONSTRUCTION — no local pairing saved.\nNEXT on THIS %s:\n  %s", map[bool]string{true: "TARGET COMPUTER", false: "CLIENT COMPUTER"}[receiver], command("setup"))
 		if origin != "" {
 			fmt.Fprintf(out, " --relay %s", shellQuote(origin))
 		}
@@ -71,44 +72,53 @@ func printNext(out io.Writer, receiver bool, executable, path, selectedState, tu
 		}
 		return
 	}
-	p, err := pairruntime.ReadPolicy(path)
+	p, err := pairruntime.ReadRetainedPolicy(path)
 	if err != nil {
 		fmt.Fprintf(out, "Local state could not be verified; it was not reset. Check the selected path and permissions:\n  ls -ld %s\nThen retry:\n  %s\n", shellQuote(path), command("next"))
-		printFreshTunnel(out, receiver, executable, origin)
 		return
 	}
-	if p.Locked || tunnelStatus(path, receiver) == "alarmed" {
+	status := tunnelStatus(path, receiver)
+	if p.Locked || status == "alarmed" || status == "removed (alarmed)" {
 		fmt.Fprintln(out, "SECURITY ALARM — this old pairing cannot be restored or unlocked.")
-		if receiver {
-			fmt.Fprintf(out, "Deliberate rebuild on THIS receiving machine (disconnects the old pairing; asks for confirmation when paired):\n  %s --replace\nThen approve its NEW receiver ID on the VPS and pair a fresh client tunnel.\n", command("setup"))
+		if status == "removed (alarmed)" {
+			printFreshTunnel(out, receiver, executable, origin)
+		} else if receiver {
+			fmt.Fprintf(out, "Deliberate rebuild on THIS Target (disconnects the old pairing; asks for confirmation when paired):\n  %s --replace\nThen run sudo owntransit-relay setup for its NEW Target ID.\n", command("setup"))
+			printFreshRelayDraftHelp(out)
 		} else {
-			fmt.Fprintln(out, "Keep this alarmed state. Obtain a fresh code from the receiving machine; never reuse the alarmed pair.")
+			fmt.Fprintln(out, "Keep this alarmed state. Obtain a fresh code from the Target; never reuse the alarmed pair.")
 			printFreshTunnel(out, false, executable, origin)
 		}
+		return
+	}
+	if removed, err := pairruntime.IsRemoved(path); err != nil {
+		fmt.Fprintln(out, "Local removal state is unavailable; inspect its permissions before retrying.")
+		return
+	} else if removed {
+		fmt.Fprintf(out, "Tunnel removed locally; private state is retained. Complete an interrupted removal with:\n  %s\nThen restore deliberately with:\n  %s\n", command("remove"), command("restore"))
 		return
 	}
 	if receiver {
 		r, err := receiverpairing.Open(filepath.Join(path, "authority"))
 		if err != nil {
-			fmt.Fprintf(out, "Receiver authority is unreadable; do not delete it. Inspect:\n  %s\n", command("status"))
+			fmt.Fprintf(out, "Target authority is unreadable; do not delete it. Inspect:\n  %s\n", command("status"))
 			return
 		}
 		s, err := r.Status()
 		if err != nil {
-			fmt.Fprintln(out, "Receiver authority is unreadable; do not reset it automatically.")
+			fmt.Fprintln(out, "Target authority is unreadable; do not reset it automatically.")
 			return
 		}
-		fmt.Fprintf(out, "Relay URL: %s\nReceiver ID: %s\n", s.RelayOrigin, s.ReceiverID)
+		fmt.Fprintf(out, "Relay URL: %s\nTarget ID: %s\n", s.RelayOrigin, s.ReceiverID)
 		if s.PairedClientID == "" {
-			fmt.Fprintf(out, "UNDER CONSTRUCTION — waiting for the client.\nShow the SAME unexpired private code on THIS receiving machine:\n  %s\nApprove on the PUBLIC VPS (safe to repeat):\n  %s\n", command("code"), relayApprovalCommand(s.RelayOrigin, s.ReceiverID))
+			fmt.Fprintf(out, "UNDER CONSTRUCTION — waiting for the Client.\nContinue this Target to retrieve the SAME unexpired code and Relay handoff:\n  %s\n", command("continue"))
 		} else {
-			fmt.Fprintln(out, "Client pairing is saved. This local status does not prove end-to-end reachability.\nOn your CLIENT COMPUTER, find its exact check/resume command.\nLinux client:\n  /usr/local/bin/owntransit-preview pair list\nMac client:\n  \"$HOME/.local/bin/owntransit-preview\" pair list")
+			fmt.Fprintln(out, "Pairing saved. Continue the matching tunnel on the Client to verify end-to-end transport.")
 		}
 		if selectedState == "" || tunnel != "" {
-			unit, _ := receiverUnit(tunnel)
-			fmt.Fprintf(out, "If this receiver service stopped, retry WITHOUT changing identities:\n  %s\nIf startup fails, inspect on THIS machine:\n  sudo journalctl -u %s -n 20 --no-pager\n", command("restart"), unit)
+			fmt.Fprintf(out, "Continue this Target tunnel:\n  %s\n", command("continue"))
 		} else {
-			fmt.Fprintf(out, "Start this custom-state receiver:\n  %s\n", command("serve"))
+			fmt.Fprintf(out, "Start this custom-state target:\n  %s\n", command("serve"))
 		}
 		return
 	}
@@ -119,17 +129,14 @@ func printNext(out io.Writer, receiver bool, executable, path, selectedState, tu
 	}
 	fmt.Fprintf(out, "Relay URL: %s\n", saved)
 	if pending {
-		fmt.Fprintf(out, "UNDER CONSTRUCTION — the exact client request is saved. No new code is needed.\nNEXT on THIS CLIENT COMPUTER:\n  %s\nKeep the same receiver ID and pairing; do not regenerate keys for a network failure.\n", command("resume"))
-		fmt.Fprintln(out, "Only if you deliberately replaced the RECEIVER and its ID changed, keep this old request and start a separate client pairing:")
-		printFreshTunnel(out, false, executable, saved)
+		fmt.Fprintf(out, "UNDER CONSTRUCTION — the exact client request is saved. No new code is needed.\nNEXT on THIS CLIENT COMPUTER:\n  %s\nKeep the same target ID and pairing; do not regenerate keys for a network failure.\n", command("resume"))
 	} else {
 		fmt.Fprintf(out, "Pairing saved; end-to-end reachability is not proved by local state.\nNEXT on THIS CLIENT COMPUTER:\n  %s\n", command("check"))
-		printConnect(out, "After the check succeeds:", executable, selectedState, tunnel)
 	}
 }
 
 func printMissingCodeHelp(out io.Writer) {
-	fmt.Fprintln(out, "Missing the private code? On the RECEIVING SSH MACHINE, run the exact retrieval command printed by VPS approval. If you no longer have that command, run there:\n  sudo owntransit-connector-preview pair list\nRun the Private code command listed for your tunnel. The relay cannot reveal private pairing codes.")
+	fmt.Fprintln(out, "Get the private code on the Target: run sudo owntransit-target setup and Continue the matching tunnel. Never send the private code to the Relay.")
 }
 
 func printFreshTunnel(out io.Writer, receiver bool, executable, origin string) {
@@ -147,11 +154,14 @@ func printFreshTunnel(out io.Writer, receiver bool, executable, origin string) {
 		if receiver {
 			prefix = "sudo "
 		}
-		fmt.Fprintf(out, "For a deliberate fresh pairing instead (old state retained), use this unused local name:\n  %s%s", prefix, pairCommand(executable, "setup", "", name))
+		fmt.Fprintf(out, "For a deliberate fresh pairing instead (old state retained), use this unused local name:\n  %s%s", prefix, pairCommand(executable, "new", "", name))
 		if origin != "" {
 			fmt.Fprintf(out, " --relay %s", shellQuote(origin))
 		}
 		fmt.Fprintln(out, "\nThis is not a repair or an unlock of the old pairing.")
+		if receiver {
+			printFreshRelayDraftHelp(out)
+		}
 		return
 	}
 	fmt.Fprintln(out, "No unused recovery name is available; inspect local tunnels before choosing a new name.")
@@ -165,7 +175,7 @@ func showReceiverCode(out, diagnostics io.Writer, executable, path, selectedStat
 	}
 	defer clear(attempt.Code)
 	if len(expectedID) > 0 && expectedID[0] != "" && attempt.ReceiverID != expectedID[0] {
-		fmt.Fprintln(diagnostics, "Receiver identity changed during lookup; no private code was displayed. Run sudo owntransit-connector-preview pair list on this receiving machine and use its current retrieval command.")
+		fmt.Fprintln(diagnostics, "Target identity changed during lookup; no private code was displayed. Run sudo owntransit-target list on this Target and use its current retrieval command.")
 		return pairruntime.ErrState
 	}
 	info, err := receiverpairing.VerifyAdvertisement(attempt.Advertisement, time.Now())
@@ -176,19 +186,20 @@ func showReceiverCode(out, diagnostics io.Writer, executable, path, selectedStat
 	if err := printReceiverCode(out, attempt.ReceiverID, attempt.Code, false); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "This is the SAME pending code; valid until %s. Receiver ID and approval are unchanged.\n", attempt.Expires.UTC().Format(time.RFC3339))
+	fmt.Fprintf(out, "This is the SAME pending code; valid until %s. Target ID and approval are unchanged.\n", attempt.Expires.UTC().Format(time.RFC3339))
 	printReceiverNext(out, info.RelayOrigin, attempt.ReceiverID, tunnel, false)
 	return nil
 }
 
 func printCodeFailure(diagnostics io.Writer, executable, path, selectedState, tunnel string, err error) {
 	if !errors.Is(err, receiverpairing.ErrPendingCodeUnavailable) {
-		fmt.Fprintf(diagnostics, "The local code could not be read safely (the receiver may be busy or local state needs attention). No identities were changed. Retry on THIS receiving machine:\n  sudo %s\nInspect the local state and next commands:\n  sudo %s\n", pairCommand(executable, "code", selectedState, tunnel), pairCommand(executable, "next", selectedState, tunnel))
+		fmt.Fprintf(diagnostics, "The local code could not be read safely (the target may be busy or local state needs attention). No identities were changed. Retry on THIS Target:\n  sudo %s\nInspect the local state and next commands:\n  sudo %s\n", pairCommand(executable, "code", selectedState, tunnel), pairCommand(executable, "next", selectedState, tunnel))
 		return
 	}
-	fmt.Fprintf(diagnostics, "No recoverable unused code is available for this receiver. It may have expired, been consumed, or been created by an older release. No identities were changed.\nInspect its current state:\n  sudo %s\n", pairCommand(executable, "next", selectedState, tunnel))
+	fmt.Fprintf(diagnostics, "No recoverable unused code is available for this target. It may have expired, been consumed, or been created by an older release. No identities were changed.\nInspect its current state:\n  sudo %s\n", pairCommand(executable, "next", selectedState, tunnel))
 	if tunnelStatus(path, true) == "awaiting-client" {
-		fmt.Fprintf(diagnostics, "For a NEW code, explicitly replace this unfinished pairing on THIS receiving machine:\n  sudo %s --replace\nThis creates a NEW receiver ID; run its NEW approval command on the VPS before client setup.\n", pairCommand(executable, "setup", selectedState, tunnel))
+		fmt.Fprintf(diagnostics, "For a NEW code, explicitly replace this unfinished pairing on THIS Target:\n  sudo %s --replace\nThis creates a NEW Target ID. After replacement, run sudo owntransit-relay setup.\n", pairCommand(executable, "setup", selectedState, tunnel))
+		printFreshRelayDraftHelp(diagnostics)
 	}
 }
 

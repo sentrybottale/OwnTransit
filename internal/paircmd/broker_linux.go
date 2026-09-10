@@ -47,7 +47,7 @@ func workerCommand(ctx context.Context, args ...string) (*exec.Cmd, error) {
 			break
 		}
 	}
-	cmd := exec.CommandContext(ctx, path, append([]string{"pair"}, args...)...)
+	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Dir = "/"
 	cmd.Env = []string{"PATH=/usr/bin:/bin"}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: 65534, Gid: 65534, Groups: []uint32{}}, Pdeathsig: syscall.SIGKILL}
@@ -142,14 +142,14 @@ func serveBroker(ctx context.Context, path string, diagnostics io.Writer) error 
 	defer output.Close()
 	cmd.Stderr = diagnostics
 	if err := cmd.Start(); err != nil {
-		fmt.Fprintln(diagnostics, "Receiver worker could not start. The service must retain CAP_SETUID to drop worker privileges; reinstall the current preview connector package.")
+		fmt.Fprintln(diagnostics, "Target worker could not start. The service must retain CAP_SETUID to drop worker privileges; reinstall the current Target package.")
 		return err
 	}
 	backend := pairruntime.ReceiverBackend{Path: path, OnReady: func() error {
 		if err := notifyReceiverReady(); err != nil {
 			return err
 		}
-		fmt.Fprintln(diagnostics, "Receiver network worker ready; waiting for relay registration or paired client.")
+		fmt.Fprintln(diagnostics, "Target network worker ready; waiting for relay registration or paired client.")
 		return nil
 	}}
 	finished := make(chan error, 1)
@@ -176,7 +176,7 @@ func serveBroker(ctx context.Context, path string, diagnostics io.Writer) error 
 	case <-ctx.Done():
 	case err := <-finished:
 		if err != nil {
-			fmt.Fprintln(diagnostics, "Receiver worker or protected-state channel stopped; retrying does not replace identities.")
+			fmt.Fprintln(diagnostics, "Target worker or protected-state channel stopped; retrying does not replace identities.")
 		}
 		cancel()
 	}
@@ -189,7 +189,7 @@ func notifyReceiverReady() error {
 	address := os.Getenv("NOTIFY_SOCKET")
 	if address == "" {
 		return nil
-	} // Explicit foreground pair serve.
+	} // Explicit foreground serve.
 	if len(address) > 107 || (address[0] != '/' && address[0] != '@') {
 		return pairruntime.ErrState
 	}
@@ -201,7 +201,7 @@ func notifyReceiverReady() error {
 	if err := connection.SetWriteDeadline(time.Now().Add(time.Second)); err != nil {
 		return err
 	}
-	_, err = connection.Write([]byte("READY=1\nSTATUS=Receiver network worker ready"))
+	_, err = connection.Write([]byte("READY=1\nSTATUS=Target network worker ready"))
 	return err
 }
 
@@ -213,7 +213,7 @@ func runWorker(args []string, input io.Reader, output, diagnostics io.Writer) in
 		return 1
 	}
 	if err := pairruntime.ServeReceiver(context.Background(), &pairruntime.AgentClient{Input: input, Output: output}, nil); err != nil {
-		fmt.Fprintln(diagnostics, "Receiver network worker stopped; no pairing code or private state is included in diagnostics.")
+		fmt.Fprintln(diagnostics, "Target network worker stopped; no pairing code or private state is included in diagnostics.")
 		return 1
 	}
 	return 0

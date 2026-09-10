@@ -1,5 +1,28 @@
 # OwnTransit roadmap
 
+## 0.7 — local role menus and explicit lifecycle
+
+- Use Client, Relay and Target throughout the current installation flow, with
+  `owntransit-client`, `owntransit-relay` and `owntransit-target` as the canonical
+  programs. No-argument invocation and `setup` open the local menu; earlier
+  names, preview aliases and the `pair` prefix are not CLI compatibility shims.
+- Create fresh named tunnels and continue retained pairing attempts without
+  replacing identities. Keep the private Target code off the Relay and show
+  only the next machine's step. Local names need not match across roles.
+- Separate recoverable endpoint Remove/Restore from permanent Killswitch.
+  Preserve private state, terminal alarms, other tunnels and all SSH settings;
+  acknowledge removal only after durable denial and local worker shutdown.
+- Keep Relay drafts, admission inventory and scoped removal local and bounded.
+  An existing configured Relay menu does not start or update its service until
+  that action is selected. Relay approval and removal confer no endpoint trust.
+- Require actual Client carrier verification for `TUNNEL READY`, plus bounded
+  menu/input, interruption, isolation, service ownership and alarm-race checks.
+  Complete the existing source and authenticated-artifact release checks before
+  publication; no 0.7 release or independent qualification is claimed here.
+
+Earlier milestones below retain their historical commands and release scope;
+they do not extend pre-1.0 CLI compatibility promises to the current flow.
+
 ## 0.6.1 — recoverable setup and actual readiness
 
 - Recover the same unused code locally on the receiving machine; never on the relay.

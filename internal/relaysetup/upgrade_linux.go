@@ -52,7 +52,11 @@ func (s instanceSpec) managedIdentity(ctx context.Context, engine, image string)
 	if err != nil || !c.State.Running || c.Image != image || !s.ownsContainer(c, image) {
 		return pairrelay.ServerInfo{}, errors.New("the selected relay image is not running")
 	}
-	b, err := command(ctx, engine, "exec", s.container, "/owntransit-relay", "pair", "info", "--state", "/state/relay")
+	args := []string{"exec", s.container, "/owntransit-relay", "state-info", "--state", "/state/relay"}
+	if equalStrings(c.Config.Cmd, []string{"pair", "serve", "--state", "/state/relay"}) {
+		args = []string{"exec", s.container, "/owntransit-relay", "pair", "info", "--state", "/state/relay"}
+	}
+	b, err := command(ctx, engine, args...)
 	if err != nil {
 		return pairrelay.ServerInfo{}, err
 	}

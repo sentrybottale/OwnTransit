@@ -265,7 +265,11 @@ func (f *migrationFixture) command(_ context.Context, program string, args ...st
 					image = f.newImage
 					id = "f"
 				}
-				f.containers[container] = f.container(s, image, id)
+				started := f.container(s, image, id)
+				if bytes.Contains(unit, []byte(image+" serve --state /state/relay")) {
+					started.Config.Cmd = []string{"serve", "--state", "/state/relay"}
+				}
+				f.containers[container] = started
 				if name == f.target.unitName {
 					f.interrupt("started")
 				}
@@ -316,8 +320,12 @@ func (f *migrationFixture) command(_ context.Context, program string, args ...st
 		return nil, errors.New("absent")
 	}
 	if args[0] == "exec" {
-		if len(args) > 4 && args[4] == "register" {
+		if len(args) == 7 && args[3] == "approve-admission" && args[4] == "--state" && args[5] == "/state/relay" {
 			return []byte("public-fixture-registration"), nil
+		}
+		c, ok := f.containers[args[1]]
+		if !ok || !fixtureIdentityCommand(c, args) {
+			return nil, errors.New("unexpected relay identity command")
 		}
 		return json.Marshal(f.local)
 	}
@@ -658,7 +666,7 @@ func TestManagedMigrationUnknownRouteDoesNotCreateIdentity(t *testing.T) {
 				t.Fatal("failed route preflight created a managed unit")
 			}
 			for _, call := range f.calls[callStart:] {
-				if strings.Contains(call, " pair init ") || strings.Contains(call, "systemctl enable") || strings.Contains(call, "systemctl disable") || strings.Contains(call, "systemctl start") || strings.Contains(call, "systemctl stop") {
+				if strings.Contains(call, " init --state /state/relay") || strings.Contains(call, "systemctl enable") || strings.Contains(call, "systemctl disable") || strings.Contains(call, "systemctl start") || strings.Contains(call, "systemctl stop") {
 					t.Fatal("failed route preflight mutated relay state")
 				}
 			}
@@ -705,7 +713,7 @@ func TestManagedFreshOccupiedPortDoesNotCreateIdentity(t *testing.T) {
 		t.Fatal("occupied port created relay unit")
 	}
 	for _, call := range f.calls {
-		if strings.Contains(call, " pair init ") {
+		if strings.Contains(call, " init --state /state/relay") {
 			t.Fatal("occupied port reached identity initialization")
 		}
 	}

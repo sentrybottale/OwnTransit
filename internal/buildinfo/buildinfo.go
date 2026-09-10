@@ -42,11 +42,12 @@ type Info struct {
 	GOOS            string `json:"goos"`
 	GOARCH          string `json:"goarch"`
 	ConnectorTarget string `json:"connector_target,omitempty"`
+	FixedTarget     string `json:"fixed_target,omitempty"`
 }
 
 // Current returns provenance for one compiled executable role.
 func Current(role, connectorTarget string) Info {
-	return Info{
+	info := Info{
 		Schema:          Schema,
 		Product:         Product,
 		Version:         Version,
@@ -59,6 +60,11 @@ func Current(role, connectorTarget string) Info {
 		GOARCH:          runtime.GOARCH,
 		ConnectorTarget: connectorTarget,
 	}
+	if role == "target" {
+		info.FixedTarget = connectorTarget
+		info.ConnectorTarget = ""
+	}
+	return info
 }
 
 // Write emits exactly one JSON document followed by a newline.

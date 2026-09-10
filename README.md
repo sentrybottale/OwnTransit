@@ -2,211 +2,124 @@
 
 **Your SSH. Your keys. Untrusted transit.**
 
-Connect two private computers over SSH when neither can accept a public
-connection. Both connect outward to your public relay. OwnTransit adds separate
-end-to-end encryption: even a compromised relay must not read the stream or
-impersonate either endpoint. Keep your existing SSH keys and login rules.
+Connect two private computers over SSH when neither accepts a public connection.
+Both connect outward to your Relay. Independent end-to-end encryption keeps
+even a compromised Relay from reading the stream or impersonating an endpoint.
 
-| Machine | Install here | Purpose |
+| Role | Install on | Purpose |
 |---|---|---|
-| Public VPS | Relay | Carries encrypted traffic |
-| Private SSH machine | Connector / receiver | Delivers the authenticated stream to local SSH |
-| Your laptop or workstation | Client | The computer you connect **from** |
+| Client | Your laptop or workstation | The computer you connect from |
+| Relay | A public Linux VPS | Carries encrypted traffic |
+| Target | The private Linux SSH machine | Delivers authenticated traffic to local SSH |
 
-The client is **not** installed on the VPS. SSH itself must already work on the
-receiving machine. OwnTransit does not configure SSH accounts, keys or permissions.
+OwnTransit **0.7.0** supports Linux amd64/arm64 and an Apple-silicon Mac Client.
+SSH must already work on the Target. OwnTransit never configures SSH accounts,
+keys, permissions or forwarding.
 
-## Quickstart
-
-Install **0.6.1** on each role. Linux supports amd64/x86_64 and arm64/aarch64.
-The Mac client supports Apple silicon.
-
-Run one block at a time. When a program asks a question, answer it—do not paste
-the next shell command into its prompt.
-
-### 1. On the public VPS
+## 1. Start on the Relay VPS
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.1/install-preview-linux.sh | sudo sh -s -- relay
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.7.0/install-linux.sh | sudo sh -s -- relay
 ```
 
-Enter your real public URL, such as `wss://relay.example/connects`
-(**example only**). A new relay needs an existing HTTPS site on the VPS.
-
-The URL selects the matching local relay. You do not need to know its instance
-name. For a recognized older manual installation, setup shows what it will
-replace and asks for confirmation. It preserves the relay keys, URL and existing
-website route, then removes the superseded service/container after verification.
-Other relay instances and websites are not selected for cleanup.
-
-Wait for setup's **NEXT** instruction. Keep this terminal for step 3.
-
-If your access policy returns HTTP 403 to the VPS itself, setup may report
-**local verification only**. It does not weaken that policy or claim public
-reachability. Receiver/client setup from an allowed network checks the public
-path as part of the normal flow below.
-
-### 2. On the private machine running your SSH server
-
-Install the receiver:
+The installer opens Relay setup when an interactive terminal is available.
+To open or return to its menu:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.1/install-preview-linux.sh | sudo sh -s -- connector
+sudo owntransit-relay setup
 ```
 
-For a **new pairing**, run:
+For a new Relay, enter its public URL, such as `wss://relay.example/connects`
+(**example only**). The VPS needs an existing HTTPS site. Choose **New tunnel**
+and give it a name. The entry is **UNDER CONSTRUCTION**; follow its Target step.
+
+## 2. On the Target running SSH
+
+Install the Target, then open its menu:
 
 ```sh
-sudo owntransit-connector-preview pair setup
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.7.0/install-linux.sh | sudo sh -s -- target
+sudo owntransit-target setup
 ```
 
-Enter the same relay URL. Setup starts the receiver and enables it for reboot.
-It prints two things:
+Choose **New tunnel**, an unused local name and the Relay URL.
+The Target starts and enables its service for reboot. It prints a public
+Target ID for the Relay and one private `otpair2.` code for the Client.
 
-- A complete approval **command** for the VPS.
-- One private, 56-character `otpair2.` **code** for your client.
+Transfer the private code directly to the intended Client through your existing
+authenticated SSH or console access. **Never give it to the Relay.**
 
-Keep the private code away from the VPS, logs and support tickets. Transfer it
-through your existing authenticated SSH or console access.
+## 3. Return to the Relay menu
 
-**Lost the code?** No memorising or rebuilding is needed while it is unused and
-unexpired. On this receiving machine, run the exact `pair code --receiver-id …`
-command printed by setup or VPS approval. `sudo owntransit-connector-preview pair list`
-also prints a retrieval command for each local tunnel.
+Run `sudo owntransit-relay setup`, choose **Continue a tunnel**, select the
+draft and enter the **public Target ID**. Approval is a saved step; the tunnel
+remains **UNDER CONSTRUCTION**. Follow the displayed Client step.
 
-**Already paired?** Installation and repeated setup preserve your pairing.
-Use the printed restart instruction for an upgrade. Creating new identities
-requires explicit `pair setup --replace`; a paired receiver asks for confirmation.
+## 4. On the Client computer
 
-### 3. Back on the VPS: run the printed approval command
-
-Copy the **whole command from receiver setup**, including its URL and public ID.
-Its shape is:
+**Linux:** install, then open setup as your ordinary user without sudo:
 
 ```sh
-sudo owntransit-relay-preview approve --url wss://relay.example/connects RECEIVER_ID
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.7.0/install-linux.sh | sudo sh -s -- client
+owntransit-client setup
 ```
 
-Do not type the example domain or placeholder above. The real command prints
-**Receiver approved — UNDER CONSTRUCTION**. There is no VPS code to copy.
-
-The relay step is complete, not the tunnel. Its output tells you how to retrieve
-the private code on the receiving machine and continue on the client.
-
-### 4. On your client computer
-
-**Linux client** — install:
+**Apple-silicon Mac:** install and open setup without sudo:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.1/install-preview-linux.sh | sudo sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.7.0/install-macos.sh | sh -s -- client
+"$HOME/.local/bin/owntransit-client" setup
 ```
 
-Then, as your ordinary user without sudo:
+Choose **New tunnel**, an unused local name, the Relay URL and the private
+code from the Target. Run one command at a time; answer prompts before running
+the next command. Secret input is hidden.
 
-```sh
-/usr/local/bin/owntransit-preview pair setup
-```
+Only the Client's actual authenticated end-to-end check can report
+**TUNNEL READY**. Then run its printed SSH command with your own SSH user and
+independently verified host identity. The printed command includes the executable
+path and tunnel selection. OpenSSH still decides whether your login is allowed.
 
-**Apple-silicon Mac client** — install without sudo:
+## Manage or recover a tunnel
 
-```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.1/install-preview-macos.sh | sh -s -- client
-```
+Open the local role's `setup` menu again.
 
-Then:
+| Choice | What it does |
+|---|---|
+| New tunnel | Creates a separate tunnel with an unused name |
+| Continue tunnel | Resumes the saved step; on the Client, checks transport |
+| List tunnels | Shows local state, not proof of end-to-end readiness |
+| Remove tunnel | Removes the local endpoint connection or Relay admission |
+| Killswitch | Client/Target only: permanently disables that pairing |
+| Restore removed tunnel | Client/Target only: restores retained, unalarmed state |
 
-```sh
-"$HOME/.local/bin/owntransit-preview" pair setup
-```
+Endpoint removal keeps private state and can be restored explicitly. A
+killswitch cannot be undone. Relay removal never triggers an endpoint
+killswitch. **Uninstalling the whole program is a separate installer action**;
+see the [installation guide](PAIRING_INSTALL.md).
 
-Enter the relay URL and paste the private `otpair2.` code from step 2.
-That is the **only code** the client needs. Public routing data is fetched
-automatically and the receiver's offer is authenticated before its keys are used.
+Lost the code? On the Target, choose **Continue tunnel** to retrieve the same
+unused, unexpired code. Interrupted Client setup uses **Continue tunnel** too.
+Keep existing identities during outages and software upgrades.
+[Recovery details](SETUP_RECOVERY.md).
 
-### Connect
+## Security and release scope
 
-Client setup checks the actual authenticated end-to-end carrier and the
-receiver's fixed local SSH socket before printing **TUNNEL READY**. Pairing alone,
-relay approval and a local status report are not that proof. If the check fails,
-the pairing stays saved and setup prints the exact retry command.
+The Relay, its host, keys and reverse proxy are assumed compromised. Each
+endpoint uses outer TLS 1.3 mTLS; an independent inner TLS 1.3 mTLS stream
+authenticates the endpoints. The Target dials only build-fixed
+`tcp4 127.0.0.1:22`, after authorization. OpenSSH adds its own encryption and
+authentication. OwnTransit is an SSH byte carrier, not a VPN or general proxy.
 
-After a successful check, run the SSH command printed by the client. Replace
-`USER@SSH_ALIAS` with your SSH user and independently verified host label:
+Installers retain existing pairing state and migrate only recognized managed
+software/services. No CLI compatibility is promised before 1.0; use the current
+commands after upgrading. Published versions remain immutable. Do not replace
+pairings just to update software or mix historical enrollment instructions.
 
-```sh
-ssh -o 'ProxyCommand=owntransit-preview pair proxy' USER@SSH_ALIAS
-```
+Initial installer delivery trusts GitHub HTTPS; archives are signature-verified.
+Independent security certification, pristine-host qualification and extended
+soak testing are not claimed. Keep independent SSH or console recovery access.
 
-On Mac, use the printed command: it includes the exact executable path.
-Your normal SSH options, including `-i`, `-L`, SCP and SFTP, remain yours.
-`Permission denied (publickey)` means SSH needs an authorized key—not another
-OwnTransit pairing code.
-
-## Upgrades, more tunnels and recovery
-
-- **Upgrade:** rerun the same installer for the local role. On the VPS, enter
-  its existing URL. On a paired receiver, use the printed restart command.
-- **What now?** Run `pair next` on the endpoint you are using. It prints exact,
-  state-specific commands for that local tunnel without changing identities.
-- **Lost code:** the receiver's `pair code` command retrieves the same unused,
-  unexpired code. The relay never receives it. Codes created by 0.6.0 or earlier
-  were not retained; the recovery command explains the one-time explicit rebuild.
-- **More tunnels:** use `pair setup --tunnel NAME`. Each client–receiver pairing
-  has its own keys and alarm state. Multiple pairings can share one relay or
-  reach the same SSH machine.
-- **Interrupted client pairing:** use `pair resume` with the same tunnel/state.
-  Keep the saved request; do not regenerate keys to solve a network failure.
-- **Inspect:** use `sudo owntransit-relay-preview list` on the VPS or the
-  `pair list` subcommand of your endpoint executable.
-- **Security alarm:** `pair alarm --tunnel NAME` permanently disables that pairing.
-  Recovery requires deliberate fresh pairing; ordinary outages never trigger it.
-
-The [full installation guide](PAIRING_INSTALL.md) covers migration, explicit
-instance selection, upgrades, named tunnels, uninstall and SSH/SCP examples.
-See [setup recovery](SETUP_RECOVERY.md) for lost/expired codes and interrupted setup.
-
-## Security boundary
-
-Each endpoint has an outer TLS 1.3 mutually authenticated connection to the
-relay. Inside those two connections, the endpoints establish an independent
-end-to-end TLS 1.3 mutually authenticated stream. OpenSSH runs inside it with its
-own encryption and host/user authentication.
-
-The relay, its host, keys and reverse proxy are assumed compromised. They can
-observe addresses, timing and traffic sizes or deny service. They must not read
-the inner stream, authorize an endpoint or choose the receiver's destination.
-
-The receiver dials only build-fixed `tcp4 127.0.0.1:22`, after peer authentication
-and fresh session-bound authorization. Reconnects and authorization renewal use
-retained identities without user prompts. Interrupted SSH streams are not replayed.
-
-An explicit local alarm survives restart and cannot be cleared to revive the old
-pairing. A malicious relay can suppress its notification; peer cutoff is bounded
-by the remaining authorization lease (at most 60 seconds), plus scheduling and
-shutdown latency. It cannot retract delivered bytes or guarantee that SSH-started
-jobs stop.
-
-OwnTransit is an SSH byte carrier—not a VPN, controller, DNS layer, dashboard,
-identity provider or general-purpose proxy. It never edits SSH keys, accounts,
-`authorized_keys`, client/server configuration or forwarding rules.
-
-The initial curl installer trusts GitHub's HTTPS delivery; downloaded archives
-are then signature-verified. See [installation trust](SECURITY.md#installation-trust).
-No Apple signing subscription is required; the Mac client is not notarized.
-
-Release checks cover source/security, supported-platform tests, installer and
-migration fixtures, authenticated artifacts and a brief end-to-end check.
-**Independent security certification, pristine-host qualification and extended
-soak testing are not claimed.** Keep independent SSH or console recovery access.
-
-## Further reading
-
-[Architecture](ARCHITECTURE.md) · [Security and private disclosure](SECURITY.md) ·
-[Pairing protocol](RECEIVER_PAIRING.md) · [Compatibility](COMPATIBILITY.md) ·
-[Roadmap](ROADMAP.md) · [Contributing](CONTRIBUTING.md) · [Provenance](PROVENANCE.md)
-
-The immutable [0.1.0 release](https://github.com/sentrybottale/OwnTransit/releases/tag/v0.1.0)
-uses an older administrator-led setup. Its [legacy guide](INSTALL.md) is for that
-release only; do not mix its credentials or instructions with this flow.
-
-OwnTransit is licensed under the [Apache License 2.0](LICENSE).
+[Architecture](ARCHITECTURE.md) · [Security](SECURITY.md) ·
+[Protocol compatibility](COMPATIBILITY.md) · [Roadmap](ROADMAP.md) ·
+[Contributing](CONTRIBUTING.md) · [Apache 2.0 license](LICENSE)

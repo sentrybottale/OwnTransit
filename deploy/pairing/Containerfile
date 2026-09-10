@@ -6,4 +6,4 @@ COPY LICENSE /licenses/Apache-2.0.txt
 COPY THIRD_PARTY_NOTICES.md /licenses/THIRD_PARTY_NOTICES.md
 USER 65532:65532
 ENTRYPOINT ["/owntransit-relay"]
-CMD ["pair", "serve", "--state", "/state/relay"]
+CMD ["serve", "--state", "/state/relay"]

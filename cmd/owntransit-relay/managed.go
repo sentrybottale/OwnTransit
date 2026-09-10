@@ -57,7 +57,7 @@ func runManagedRelay(arguments []string, input io.Reader, output, diagnostics io
 
 func executeManagedRelay(ctx context.Context, arguments []string, input io.Reader, output, diagnostics io.Writer, operations managedOperations) int {
 	usage := func() int {
-		fmt.Fprintln(diagnostics, "usage: owntransit-relay setup [--instance NAME] [--url PUBLIC_URL] | approve [--instance NAME | --url PUBLIC_URL] RECEIVER_ID | register [legacy codes] | list | uninstall-managed [--instance NAME]")
+		fmt.Fprintln(diagnostics, "usage: owntransit-relay setup [--instance NAME] [--url PUBLIC_URL] | approve [--instance NAME | --url PUBLIC_URL] TARGET_ID | register [legacy codes] | list | uninstall-managed [--instance NAME]")
 		return 2
 	}
 	if len(arguments) == 0 {
@@ -116,7 +116,7 @@ func executeManagedRelay(ctx context.Context, arguments []string, input io.Reade
 	if registration {
 		id, err := protocol.ParseID(flags.Arg(0))
 		if err != nil || id == (protocol.ID{}) {
-			fmt.Fprintln(diagnostics, "Give the public receiver ID printed on the receiving SSH machine, not a pairing code.")
+			fmt.Fprintln(diagnostics, "Enter the public Target ID. Keep its private pairing code off the Relay.")
 			return 2
 		}
 	}
@@ -127,12 +127,12 @@ func executeManagedRelay(ctx context.Context, arguments []string, input io.Reade
 			if publicURL.set {
 				return usage()
 			}
-			fmt.Fprintln(output, "THIS MACHINE: public relay VPS. Enter the URL whose local relay you want to set up or upgrade.")
+			fmt.Fprintln(output, "Relay VPS — enter the public URL to configure.")
 			for attempt := 0; attempt < 3; attempt++ {
 				fmt.Fprint(output, "Public relay URL (for example wss://relay.example/connects): ")
 				line, err := readManagedLine(ctx, reader, 2048)
 				if err != nil {
-					fmt.Fprintln(diagnostics, "Setup has not started. On this VPS, rerun relay setup, enter the public relay URL, then press Enter.")
+					fmt.Fprintln(diagnostics, "Setup has not started. Retry on this Relay VPS: sudo owntransit-relay setup")
 					return 2
 				}
 				if canonical, err := relaysetup.PublicURL(line); err == nil {
@@ -152,7 +152,7 @@ func executeManagedRelay(ctx context.Context, arguments []string, input io.Reade
 	if registration && publicURL.set {
 		canonical, err := relaysetup.PublicURL(publicURL.value)
 		if err != nil {
-			fmt.Fprintln(diagnostics, "Registration needs the public relay URL printed by your receiving SSH machine.")
+			fmt.Fprintln(diagnostics, "Approval needs the Relay URL shown on the Target.")
 			return 2
 		}
 		publicURL.value = canonical
@@ -187,20 +187,20 @@ func executeManagedRelay(ctx context.Context, arguments []string, input io.Reade
 				fmt.Fprintf(output, "Loopback port: %d\n", plan.Port)
 			}
 			if plan.Verification == relaysetup.VerificationLocal403 {
-				fmt.Fprintln(output, "Verification: local relay identity and selected website route only. The public HTTPS route returned HTTP 403 from THIS VPS; public reachability is unverified here.")
+				fmt.Fprintln(output, "Local verification only: HTTP 403 from this VPS leaves public reachability unverified.")
 			}
 			confirmed := false
 			if plan.Kind == "migration" {
 				fmt.Fprintf(output, "Adopt the existing relay into local instance %s.\nSource service: %s\nSource container: %s\nRetained relay state: %s\n", plan.Instance, plan.LegacyUnit, plan.LegacyContainer, plan.LegacyState)
-				fmt.Fprintln(output, "Setup will stop this source service and replace its container while preserving its relay URL, keys and port. Paired endpoints retain their identities. After verification, setup removes the old service and its restart configuration. If cutover fails, setup attempts to restore the old relay and reports any recovery needed.")
+				fmt.Fprintln(output, "Setup stops this service, replaces its container, and removes the old service after verification. Relay keys, URL and port are retained. Failed cutover attempts to restore the previous Relay.")
 				if plan.Verification == relaysetup.VerificationLocal403 {
-					fmt.Fprint(output, "Adopt this exact relay using local verification, with public reachability unverified from THIS VPS? Type yes, then press Enter: ")
+					fmt.Fprint(output, "Adopt this Relay with local verification only (public reachability unverified)? Type yes: ")
 				} else {
-					fmt.Fprint(output, "Adopt this exact relay on THIS VPS? Type yes, then press Enter: ")
+					fmt.Fprint(output, "Adopt this Relay on this VPS? Type yes: ")
 				}
 				answer, readErr := readManagedLine(ctx, reader, 16)
 				if readErr != nil || strings.TrimSpace(answer) != "yes" {
-					fmt.Fprintln(diagnostics, "Relay adoption cancelled; no relay was changed. On THIS VPS, rerun the same setup command to review and adopt this relay.")
+					fmt.Fprintln(diagnostics, "Relay adoption cancelled. Retry with the same setup command to review it again.")
 					return 1
 				}
 				confirmed = true
@@ -227,20 +227,20 @@ func executeManagedRelay(ctx context.Context, arguments []string, input io.Reade
 			if action == "approve" {
 				printApprovalHandoff(output, publicURL.value, flags.Arg(0))
 			} else {
-				fmt.Fprintln(diagnostics, "Legacy VPS registration code (give to your client):")
+				fmt.Fprintln(diagnostics, "Legacy Relay registration code for the Client:")
 				fmt.Fprintln(output, code)
-				fmt.Fprintln(diagnostics, "\nNEXT — on your legacy client:\n  owntransit-preview pair setup --legacy-codes\nEnter this relay's URL, the VPS code above, and the private otpair1. code from your receiving SSH machine. Never give that private code to the relay.")
+				fmt.Fprintln(diagnostics, "On the Client:\n  owntransit-client setup --legacy-codes\nEnter the Relay URL, this registration code, and the Target's private otpair1. code. Keep the private code off the Relay.")
 			}
 		}
 	case "uninstall-managed":
 		err = operations.uninstall(ctx, instance.value)
 		if err == nil {
-			fmt.Fprintf(output, "Relay instance %s stopped and disabled. Keys, URL/port reservation, unit, website route and shared software retained. Other instances are unchanged.\n", instance.value)
+			fmt.Fprintf(output, "Relay instance %s stopped and disabled. Its keys, admission history, URL/port reservation, unit, website route and shared software are retained.\n", instance.value)
 		}
 	case "uninstall-all-managed":
 		err = operations.uninstallAll(ctx)
 		if err == nil {
-			fmt.Fprintln(output, "All recognized managed relay instances stopped and disabled. Keys, instance reservations, unit configuration, website routes and rollback images retained.")
+			fmt.Fprintln(output, "All managed Relay instances stopped and disabled. Keys, admission history, reservations, units, website routes and rollback images are retained.")
 		}
 	case "cleanup-container":
 		err = operations.cleanup(ctx, instance.value, flags.Arg(0), flags.Arg(1))
@@ -251,18 +251,18 @@ func executeManagedRelay(ctx context.Context, arguments []string, input io.Reade
 		fmt.Fprintf(diagnostics, "Relay %s: %v\n", action, err)
 		switch action {
 		case "setup":
-			fmt.Fprintln(diagnostics, "NEXT — on THIS VPS: inspect local relays with sudo owntransit-relay-preview list, resolve the reported conflict, then rerun setup with this same URL.")
-			fmt.Fprintf(diagnostics, "  sudo owntransit-relay-preview setup")
+			fmt.Fprintln(diagnostics, "On this Relay VPS, inspect instances with sudo owntransit-relay list, resolve the conflict, then retry:")
+			fmt.Fprintf(diagnostics, "  sudo owntransit-relay setup")
 			if instance.set {
 				fmt.Fprintf(diagnostics, " --instance %s", instance.value)
 			}
 			fmt.Fprintf(diagnostics, " --url %s\n", publicURL.value)
 		case "register", "approve":
-			fmt.Fprintln(diagnostics, "NEXT — on THIS VPS: run sudo owntransit-relay-preview list and finish setup of the relay selected by your receiving SSH machine's approval command, then rerun that exact approval command.")
+			fmt.Fprintln(diagnostics, "On this Relay VPS, finish Relay setup, then choose Continue for this tunnel and retry the same public Target ID:")
 			if publicURL.set {
-				fmt.Fprintf(diagnostics, "  sudo owntransit-relay-preview setup --url %s\n", publicURL.value)
+				fmt.Fprintf(diagnostics, "  sudo owntransit-relay setup --url %s\n", publicURL.value)
 			} else {
-				fmt.Fprintf(diagnostics, "  sudo owntransit-relay-preview setup --instance %s\n", instance.value)
+				fmt.Fprintf(diagnostics, "  sudo owntransit-relay setup --instance %s\n", instance.value)
 			}
 		}
 		return 1
@@ -303,35 +303,28 @@ func readManagedLine(ctx context.Context, reader *bufio.Reader, maximum int) (st
 func printRelaySetupHandoff(output io.Writer, publicURL, kind, verification string) error {
 	switch verification {
 	case relaysetup.VerificationPublic:
-		fmt.Fprintf(output, "Relay component configured. Relay URL: %s\n", publicURL)
+		fmt.Fprintf(output, "Relay configured. URL: %s\n", publicURL)
 	case relaysetup.VerificationLocal403:
-		fmt.Fprintf(output, "Relay component configured with local verification only. Relay URL: %s\n", publicURL)
-		fmt.Fprintln(output, "Public reachability is unverified from THIS VPS: the public HTTPS route returned HTTP 403. Complete receiver and client setup from networks allowed by this website; a successful endpoint connection provides the remaining public reachability check.")
+		fmt.Fprintf(output, "Relay configured with local verification only. URL: %s\n", publicURL)
+		fmt.Fprintln(output, "HTTP 403 from this VPS: public reachability remains unverified. Continue from a network allowed by this website.")
 	default:
 		return errors.New("setup returned no recognized verification result; public reachability was not established")
 	}
-	fmt.Fprintln(output, "New tunnels remain UNDER CONSTRUCTION until client pairing and an end-to-end check succeed. Relay setup alone does not prove a working tunnel.")
+	fmt.Fprintln(output, "New tunnels stay UNDER CONSTRUCTION until the Client's end-to-end check succeeds.")
 	if kind == "managed" || kind == "migration" {
-		fmt.Fprintln(output, "Paired endpoints retain their existing identities and relay URL. For a new connection, continue below.")
+		fmt.Fprintln(output, "Existing pairing identities and Relay URL are retained.")
 	}
-	fmt.Fprintln(output, "NEXT — on your RECEIVING SSH MACHINE (the private computer running your SSH server):\n  curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.1/install-preview-linux.sh | sudo sh -s -- connector\nThen run on that receiving SSH machine:\n  sudo owntransit-connector-preview pair setup\nRepeated setup retains its existing pairing. For state-specific recovery:\n  sudo owntransit-connector-preview pair next")
-	fmt.Fprintf(output, "Enter %s. Receiver setup prints one VPS approval command and one private code for your client computer. Return to THIS VPS only to run that approval command.\n", publicURL)
+	fmt.Fprintln(output, "Next on the Target computer running SSH:\n  sudo owntransit-target setup\nChoose New tunnel, or Continue for saved setup. Use the Relay URL above. The Target provides its public ID for Relay approval and one private code for the Client.")
+	fmt.Fprintf(output, "Then return to this Relay:\n  sudo owntransit-relay setup --url %s\nChoose New tunnel if no plan exists, then Continue to approve the Target ID.\n", publicURL)
 	return nil
 }
 
 func printApprovalHandoff(output io.Writer, publicURL, receiverID string) {
-	fmt.Fprintln(output, "Receiver approved. UNDER CONSTRUCTION — client pairing and an end-to-end check are still required. No VPS code to copy.")
-	fmt.Fprintf(output, "MISSING THE PRIVATE CODE? Use your receiving machine's console or SSH from your trusted client, NOT an SSH session started on this VPS. Run on that RECEIVING SSH MACHINE:\n  sudo owntransit-connector-preview pair code --receiver-id %s\nThat retrieves the SAME unused code for this receiver. If it expired or came from an older release, that command explains how to replace it explicitly. Do not re-approve unless receiver setup gives you a NEW ID.\n", receiverID)
-	fmt.Fprintln(output, "If that command is unavailable, upgrade the connector on THAT receiving machine:\n  curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.1/install-preview-linux.sh | sudo sh -s -- connector")
-	fmt.Fprintln(output, "NEXT — on your CLIENT COMPUTER, without sudo:")
-	for _, client := range []struct{ label, command string }{{"Linux", "/usr/local/bin/owntransit-preview"}, {"Mac", `"$HOME/.local/bin/owntransit-preview"`}} {
-		fmt.Fprintf(output, "%s client:\n  %s pair setup", client.label, client.command)
-		if publicURL != "" {
-			fmt.Fprintf(output, " --relay '%s'", publicURL)
-		}
-		fmt.Fprintln(output)
+	fmt.Fprintln(output, "Target approved — UNDER CONSTRUCTION. The Client still needs to check the tunnel.")
+	fmt.Fprintln(output, "Next on the Client, without sudo:\n  owntransit-client setup\nChoose New tunnel, or Continue if already started.")
+	if publicURL != "" {
+		fmt.Fprintf(output, "Relay URL: %s\n", publicURL)
 	}
-	fmt.Fprintln(output, "Paste the private code from the receiving machine. If interrupted, client pair next prints the exact resume/check command. Never paste private codes on this VPS.")
-	fmt.Fprintln(output, "Client not installed? Run only the installer for THAT client computer:")
-	fmt.Fprintln(output, "Linux client:\n  curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.1/install-preview-linux.sh | sudo sh -s -- client\nMac client:\n  curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v0.6.1/install-preview-macos.sh | sh -s -- client")
+	fmt.Fprintln(output, "Use the Target's private code on the Client. Keep it off the Relay.")
+	fmt.Fprintf(output, "Lost the code? On the Target:\n  sudo owntransit-target code --target-id %s\n", receiverID)
 }

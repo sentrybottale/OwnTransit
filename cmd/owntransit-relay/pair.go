@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -21,6 +22,43 @@ type pairOperations struct {
 }
 
 func runPairCommand(arguments []string, output, diagnostics io.Writer) int {
+	if len(arguments) > 0 && (arguments[0] == "list" || arguments[0] == "remove") {
+		flags := flag.NewFlagSet("relay local control", flag.ContinueOnError)
+		flags.SetOutput(diagnostics)
+		var state, receiver, route managedStringFlag
+		flags.Var(&state, "state", "local private relay state")
+		if arguments[0] == "remove" {
+			flags.Var(&receiver, "receiver", "exact public Target ID")
+			flags.Var(&route, "route", "exact public route ID")
+		}
+		if flags.Parse(arguments[1:]) != nil || flags.NArg() != 0 || state.value == "" {
+			return 2
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if arguments[0] == "list" {
+			items, err := pairrelaycmd.List(ctx, state.value)
+			if err != nil {
+				fmt.Fprintln(diagnostics, "Relay admission inventory unavailable.")
+				return 1
+			}
+			if json.NewEncoder(output).Encode(items) != nil {
+				return 1
+			}
+			return 0
+		}
+		id, e := protocol.ParseID(receiver.value)
+		r, re := protocol.ParseRouteID(route.value)
+		if e != nil || re != nil || id == (protocol.ID{}) || r == (protocol.RouteID{}) {
+			return 2
+		}
+		if pairrelaycmd.Remove(ctx, state.value, id, r) != nil {
+			fmt.Fprintln(diagnostics, "Relay admission removal was not confirmed.")
+			return 1
+		}
+		fmt.Fprintln(output, "Admission removed from this relay.")
+		return 0
+	}
 	if len(arguments) > 0 && arguments[0] == "info" {
 		flags := flag.NewFlagSet("pair info", flag.ContinueOnError)
 		flags.SetOutput(diagnostics)

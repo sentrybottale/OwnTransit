@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"io"
 	"net"
@@ -50,9 +51,9 @@ type waitingLeg struct {
 	claimed    bool
 }
 
-// Relay is intentionally memory-only. The caller supplies its persistent token
-// MAC key and relay TLS identity; advertisements and waiting connections vanish
-// on Close or process restart.
+// Relay keeps bounded working state. The caller supplies the persistent token
+// key, TLS identity, and durable public admission policy. Advertisements and
+// waiting connections vanish on Close or process restart.
 type Relay struct {
 	config      RelayConfig
 	limits      Limits
@@ -62,23 +63,33 @@ type Relay struct {
 	connections chan struct{}
 	admission   admissionGuard
 
-	mu              sync.Mutex
-	closed          bool
-	advertisements  map[routeKey]advertisementRecord
-	registrations   map[routeKey]registrationRecord
-	pairing         map[routeKey][]*waitingLeg
-	runtime         map[routeKey][]*waitingLeg
-	pairingPending  int
-	runtimePending  int
-	active          int
-	pairingPerRoute map[routeKey]int
-	runtimePerRoute map[routeKey]int
-	activePerRoute  map[routeKey]int
+	mu               sync.Mutex
+	closed           bool
+	advertisements   map[routeKey]advertisementRecord
+	registrations    map[routeKey]registrationRecord
+	pairing          map[routeKey][]*waitingLeg
+	runtime          map[routeKey][]*waitingLeg
+	pairingPending   int
+	runtimePending   int
+	active           int
+	pairingPerRoute  map[routeKey]int
+	runtimePerRoute  map[routeKey]int
+	activePerRoute   map[routeKey]int
+	admissions       map[routeKey]AdmissionRecord
+	routeConnections map[routeKey]map[net.Conn]struct{}
 }
 
 func NewRelay(config RelayConfig) (*Relay, error) {
 	if len(config.TokenKey) != tokenKeySize || config.VerifyAdvertisement == nil {
 		return nil, ErrProtocol
+	}
+	if err := ValidateAdmissionRecords(config.Admissions); err != nil {
+		return nil, err
+	}
+	admissions := make(map[routeKey]AdmissionRecord, len(config.Admissions))
+	for _, record := range config.Admissions {
+		key, _ := admissionKey(record)
+		admissions[key] = record
 	}
 	now := config.Now
 	if now == nil {
@@ -104,6 +115,7 @@ func NewRelay(config RelayConfig) (*Relay, error) {
 		pairing:        make(map[routeKey][]*waitingLeg), runtime: make(map[routeKey][]*waitingLeg),
 		pairingPerRoute: make(map[routeKey]int), runtimePerRoute: make(map[routeKey]int),
 		activePerRoute: make(map[routeKey]int),
+		admissions:     admissions, routeConnections: make(map[routeKey]map[net.Conn]struct{}),
 	}, nil
 }
 
@@ -162,6 +174,11 @@ func (relay *Relay) Close() error {
 		return ErrAlreadyClosed
 	}
 	relay.closed = true
+	for _, connections := range relay.routeConnections {
+		for connection := range connections {
+			_ = transport.Abort(connection)
+		}
+	}
 	for _, queues := range []map[routeKey][]*waitingLeg{relay.pairing, relay.runtime} {
 		for _, queue := range queues {
 			for _, leg := range queue {
@@ -349,8 +366,8 @@ func (relay *Relay) handleConnection(connection net.Conn) error {
 
 // RegisterReceiver is the root/local initial-token operation. It resolves one
 // already-verified in-memory advertisement by public receiver ID, creates a
-// stateless token, and records only a bounded delivery copy. ServeHTTP exposes
-// no corresponding mint operation.
+// stateless token, and saves public admission policy plus a bounded in-memory
+// delivery copy. ServeHTTP exposes no corresponding mint operation.
 func (relay *Relay) RegisterReceiver(
 	receiverID protocol.ID,
 	routeLimits RouteLimits,
@@ -394,11 +411,14 @@ func (relay *Relay) RegisterReceiver(
 	// new local registration decision, never a public offer operation.
 	if current, ok := relay.registrations[selectedKey]; ok && current.advertisementSHA256 == sha256.Sum256(selected.encoded) {
 		claims, err := VerifyToken(relay.config.TokenKey, current.token, now)
-		if err == nil && claims.ReceiverID == selectedKey.receiver && claims.RouteID == selectedKey.route &&
+		if err == nil && relay.checkAdmissionLocked(claims) == nil && claims.ReceiverID == selectedKey.receiver && claims.RouteID == selectedKey.route &&
 			claims.AdmissionRootSHA256 == selected.admissionHash && claims.Limits == routeLimits &&
 			time.Duration(claims.ExpiresUnix-claims.IssuedUnix)*time.Second == validity {
 			info, err := serverInfoFromMaterial(relay.config.RelayTLS)
 			if err != nil {
+				return Registration{}, err
+			}
+			if err := relay.recordClaimsLocked(claims, "approved"); err != nil {
 				return Registration{}, err
 			}
 			return Registration{
@@ -406,17 +426,38 @@ func (relay *Relay) RegisterReceiver(
 			}, nil
 		}
 	}
+	policy, retained := relay.admissions[selectedKey]
+	if retained && policy.AdmissionRootSHA256 != hex.EncodeToString(selected.admissionHash[:]) {
+		return Registration{}, ErrUnauthorized
+	}
+	issued := now
+	if retained && issued.Unix() <= policy.RejectIssuedThrough {
+		issued = time.Unix(policy.RejectIssuedThrough+1, 0).UTC()
+		if issued.After(now.Add(5 * time.Minute)) {
+			return Registration{}, ErrUnavailable
+		}
+	}
 	claims := TokenClaims{
 		ReceiverID: receiverID, RouteID: selectedKey.route, AdmissionRootSHA256: selected.admissionHash,
-		Limits: routeLimits, Generation: 1, IssuedUnix: now.Unix(), ExpiresUnix: now.Add(validity).Unix(),
+		Limits: routeLimits, Generation: 1, IssuedUnix: issued.Unix(), ExpiresUnix: issued.Add(validity).Unix(),
 	}
-	token, err := IssueToken(relay.config.TokenKey, claims, now)
+	token, err := IssueToken(relay.config.TokenKey, claims, issued)
 	if err != nil {
+		return Registration{}, err
+	}
+	if !retained {
+		policy = AdmissionRecord{ReceiverID: receiverID.String(), RouteID: selectedKey.route.String(), AdmissionRootSHA256: hex.EncodeToString(selected.admissionHash[:])}
+	}
+	if policy.Status != "observed" {
+		policy.Status = "approved"
+	}
+	policy.LastIssuedUnix = max(policy.LastIssuedUnix, claims.IssuedUnix)
+	if err := relay.saveAdmissionLocked(selectedKey, policy); err != nil {
 		return Registration{}, err
 	}
 	relay.registrations[selectedKey] = registrationRecord{
 		token: append([]byte(nil), token...), advertisementSHA256: sha256.Sum256(selected.encoded),
-		expires: now.Add(validity),
+		expires: issued.Add(validity),
 	}
 	info, err := serverInfoFromMaterial(relay.config.RelayTLS)
 	if err != nil {
@@ -452,7 +493,7 @@ func (relay *Relay) fetchRegistration(advertisement []byte) ([]byte, error) {
 		return nil, ErrUnavailable
 	}
 	claims, err := VerifyToken(relay.config.TokenKey, record.token, now)
-	if err != nil || !bytes.Equal(admissionHash[:], claims.AdmissionRootSHA256[:]) {
+	if err != nil || relay.checkAdmissionLocked(claims) != nil || !bytes.Equal(admissionHash[:], claims.AdmissionRootSHA256[:]) {
 		return nil, ErrUnavailable
 	}
 	return append([]byte(nil), record.token...), nil
@@ -503,6 +544,9 @@ func (relay *Relay) fetchAdvertisement(token []byte) ([]byte, error) {
 	key := routeKey{receiver: claims.ReceiverID, route: claims.RouteID}
 	relay.mu.Lock()
 	defer relay.mu.Unlock()
+	if err := relay.checkAdmissionLocked(claims); err != nil {
+		return nil, err
+	}
 	relay.expireAdvertisementsLocked(relay.now())
 	record, ok := relay.advertisements[key]
 	if !ok || !bytes.Equal(record.admissionHash[:], claims.AdmissionRootSHA256[:]) {
@@ -529,6 +573,11 @@ func (relay *Relay) handleAuthenticated(connection net.Conn, preface runtimePref
 	if err != nil {
 		return err
 	}
+	release, err := relay.trackRouteConnection(claims, connection)
+	if err != nil {
+		return err
+	}
+	defer release()
 	_, roots, digest, err := parseAdmissionCA(preface.admissionCA, relay.now())
 	if err != nil || !bytes.Equal(digest[:], claims.AdmissionRootSHA256[:]) ||
 		(preface.role == RoleReceiver && preface.peerID != claims.ReceiverID) {
@@ -549,9 +598,35 @@ func (relay *Relay) handleAuthenticated(connection net.Conn, preface runtimePref
 		ReceiverID: claims.ReceiverID, RouteID: claims.RouteID, AdmissionRootSHA256: claims.AdmissionRootSHA256,
 		Role: preface.role, PeerID: preface.peerID,
 	}
+	relay.mu.Lock()
+	err = relay.recordClaimsLocked(claims, "observed")
+	relay.mu.Unlock()
+	if err != nil {
+		return err
+	}
 	if renewal {
 		validity := time.Duration(claims.ExpiresUnix-claims.IssuedUnix) * time.Second
-		renewed, err := RenewToken(relay.config.TokenKey, preface.token, peer, relay.now(), validity)
+		relay.mu.Lock()
+		if err := relay.checkAdmissionLocked(claims); err != nil {
+			relay.mu.Unlock()
+			return err
+		}
+		// A same-second local reapproval may issue one second ahead. Renewal
+		// cannot move its issuance back behind the retained removal cutoff.
+		issued := relay.now().UTC().Truncate(time.Second)
+		if issued.Unix() < claims.IssuedUnix {
+			issued = time.Unix(claims.IssuedUnix, 0).UTC()
+		}
+		renewed, err := RenewToken(relay.config.TokenKey, preface.token, peer, issued, validity)
+		if err == nil {
+			renewedClaims, checkErr := VerifyToken(relay.config.TokenKey, renewed, issued)
+			if checkErr != nil {
+				err = checkErr
+			} else {
+				err = relay.recordClaimsLocked(renewedClaims, "observed")
+			}
+		}
+		relay.mu.Unlock()
 		if err != nil {
 			return err
 		}
@@ -564,6 +639,11 @@ func (relay *Relay) handleAuthenticated(connection net.Conn, preface runtimePref
 }
 
 func (relay *Relay) waitPairingReceiver(connection net.Conn, claims TokenClaims) error {
+	release, err := relay.trackRouteConnection(claims, connection)
+	if err != nil {
+		return err
+	}
+	defer release()
 	key := routeKey{receiver: claims.ReceiverID, route: claims.RouteID}
 	leg := &waitingLeg{connection: connection, claims: claims, expires: relay.pairingExpiry(claims), done: make(chan error, 1)}
 	if err := relay.enqueueLeg(key, leg, true); err != nil {
@@ -573,6 +653,11 @@ func (relay *Relay) waitPairingReceiver(connection net.Conn, claims TokenClaims)
 }
 
 func (relay *Relay) exchangePairing(client net.Conn, claims TokenClaims, request []byte) error {
+	release, err := relay.trackRouteConnection(claims, client)
+	if err != nil {
+		return err
+	}
+	defer release()
 	key := routeKey{receiver: claims.ReceiverID, route: claims.RouteID}
 	receiver, err := relay.takeLeg(key, true, claims)
 	if err != nil {
@@ -668,8 +753,8 @@ func (relay *Relay) sessionExpiry(first, second TokenClaims) time.Time {
 func (relay *Relay) enqueueLeg(key routeKey, leg *waitingLeg, pairing bool) error {
 	relay.mu.Lock()
 	defer relay.mu.Unlock()
-	if relay.closed {
-		return ErrAlreadyClosed
+	if err := relay.checkAdmissionLocked(leg.claims); err != nil {
+		return err
 	}
 	queue, global, perRoute, routeLimit := relay.runtime, &relay.runtimePending, relay.runtimePerRoute, leg.claims.Limits.PendingCarriers
 	globalLimit := relay.limits.PendingCarriers
@@ -744,6 +829,9 @@ func (relay *Relay) removeLeg(key routeKey, leg *waitingLeg, pairing bool) bool 
 func (relay *Relay) takeLeg(key routeKey, pairing bool, claims TokenClaims) (*waitingLeg, error) {
 	relay.mu.Lock()
 	defer relay.mu.Unlock()
+	if err := relay.checkAdmissionLocked(claims); err != nil {
+		return nil, err
+	}
 	queue, global, perRoute := relay.runtime, &relay.runtimePending, relay.runtimePerRoute
 	if pairing {
 		queue, global, perRoute = relay.pairing, &relay.pairingPending, relay.pairingPerRoute
@@ -800,6 +888,12 @@ func (relay *Relay) finishLeg(leg *waitingLeg, err error) {
 func (relay *Relay) acquireActive(key routeKey, first, second TokenClaims) error {
 	relay.mu.Lock()
 	defer relay.mu.Unlock()
+	if err := relay.checkAdmissionLocked(first); err != nil {
+		return err
+	}
+	if err := relay.checkAdmissionLocked(second); err != nil {
+		return err
+	}
 	limit := minInt(relay.limits.PerRouteActive, minInt(first.Limits.ActiveCarriers, second.Limits.ActiveCarriers))
 	if relay.active >= relay.limits.ActiveCarriers || relay.activePerRoute[key] >= limit {
 		return ErrCapacity

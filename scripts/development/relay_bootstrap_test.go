@@ -21,13 +21,13 @@ func TestRelayBootstrapRejectsAmbiguousOrCrossRoleScope(t *testing.T) {
 		{"relay", "--instance=alpha", "--instance", "bravo"},
 		{"relay", "--instance", "alpha", "--instance=alpha"},
 		{"client", "--instance", "alpha"},
-		{"connector", "--instance", "alpha"},
+		{"target", "--instance", "alpha"},
 		{"relay", "--uninstall", "--uninstall"},
 		{"relay", "--uninstall", "wss://relay.example/connects"},
 		{"relay", "wss://relay.example/connects", "wss://other.example/connects"},
 		{"relay", "--unknown"},
 	} {
-		out, err := exec.Command("sh", append([]string{"../../install-preview-linux.sh"}, args...)...).CombinedOutput()
+		out, err := exec.Command("sh", append([]string{"../../install-linux.sh"}, args...)...).CombinedOutput()
 		if err == nil || bytes.Contains(out, []byte("run through sudo")) || bytes.Contains(out, []byte("Linux is required")) || bytes.Contains(out, []byte("Downloading")) {
 			t.Fatalf("selector was not rejected before host operations: %v err=%v output=%s", args, err, out)
 		}
@@ -38,7 +38,7 @@ func TestRelayBootstrapRejectsAmbiguousOrCrossRoleScope(t *testing.T) {
 // catches the curl entrypoint accidentally converting an omitted selector into
 // --instance default even when the Go command itself preserves URL selection.
 func TestRelayBootstrapSetupHandoffPreservesSelectorPresence(t *testing.T) {
-	source, err := os.ReadFile("../../install-preview-linux.sh")
+	source, err := os.ReadFile("../../install-linux.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestRelayBootstrapSetupHandoffPreservesSelectorPresence(t *testing.T) {
 	if err := os.WriteFile(fixture, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\"\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	fragment := strings.ReplaceAll(string(source[start:end]), "/usr/local/bin/owntransit-relay-preview", "'"+strings.ReplaceAll(fixture, "'", "'\\''")+"'")
+	fragment := strings.ReplaceAll(string(source[start:end]), "/usr/local/bin/owntransit-relay", "'"+strings.ReplaceAll(fixture, "'", "'\\''")+"'")
 	for _, tc := range []struct{ set, name, want string }{
 		{"no", "default", "setup\n--url\nwss://office.example/connects\n"},
 		{"yes", "default", "setup\n--instance\ndefault\n--url\nwss://office.example/connects\n"},
@@ -82,7 +82,7 @@ func TestRelayBootstrapAcceptsExplicitInstanceBeforeOrAfterURL(t *testing.T) {
 		{"relay", "--uninstall", "--instance", "alpha"},
 		{"relay", "--uninstall"},
 	} {
-		out, err := exec.Command("sh", append([]string{"../../install-preview-linux.sh"}, args...)...).CombinedOutput()
+		out, err := exec.Command("sh", append([]string{"../../install-linux.sh"}, args...)...).CombinedOutput()
 		if err == nil || !bytes.Contains(out, []byte("run through sudo")) {
 			t.Fatalf("valid arguments failed before the root gate: %v err=%v output=%s", args, err, out)
 		}

@@ -47,3 +47,13 @@ func TestWriteEmitsOneJSONDocument(t *testing.T) {
 		t.Fatalf("version output must contain exactly one trailing newline: %q", output.Bytes())
 	}
 }
+
+func TestTargetVersionUsesPublicRoleAndFixedTarget(t *testing.T) {
+	var output bytes.Buffer
+	if err := Write(&output, "target", "tcp4 "+config.ConnectorSSHTarget); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(output.Bytes(), []byte("connector")) || !bytes.Contains(output.Bytes(), []byte(`"fixed_target":"tcp4 `+config.ConnectorSSHTarget+`"`)) {
+		t.Fatalf("noncanonical target version output: %s", output.Bytes())
+	}
+}

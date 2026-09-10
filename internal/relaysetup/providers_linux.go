@@ -152,24 +152,31 @@ func adoptState(c containerInfo, dataDir string) error {
 			os.RemoveAll(target)
 		}
 	}()
-	for _, name := range []string{"token-hmac.key", "relay-ca-cert.pem", "relay-ca-key.pem", "relay-cert.pem", "relay-key.pem", "service.lock"} {
+	for _, name := range []string{"token-hmac.key", "relay-ca-cert.pem", "relay-ca-key.pem", "relay-cert.pem", "relay-key.pem", "service.lock", "admissions.v1.json"} {
 		mode := os.FileMode(0600)
+		limit := int64(65536)
+		if name == "admissions.v1.json" {
+			limit = 256 << 10
+		}
 		if name == "relay-ca-cert.pem" || name == "relay-cert.pem" {
 			mode = 0644
 		}
 		member, err := unix.Openat(fd, name, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+		if name == "admissions.v1.json" && errors.Is(err, unix.ENOENT) {
+			continue
+		}
 		if err != nil {
 			return errors.New("unsafe previous relay state member")
 		}
 		var st unix.Stat_t
-		if unix.Fstat(member, &st) != nil || st.Mode&unix.S_IFMT != unix.S_IFREG || st.Nlink != 1 || st.Uid != directoryStat.Uid || st.Mode&0777 != uint32(mode) || st.Size < 0 || st.Size > 65536 {
+		if unix.Fstat(member, &st) != nil || st.Mode&unix.S_IFMT != unix.S_IFREG || st.Nlink != 1 || st.Uid != directoryStat.Uid || st.Mode&0777 != uint32(mode) || st.Size < 0 || st.Size > limit {
 			unix.Close(member)
 			return errors.New("invalid previous relay state member")
 		}
 		fileReader := os.NewFile(uintptr(member), name)
-		data, err := io.ReadAll(io.LimitReader(fileReader, 65537))
+		data, err := io.ReadAll(io.LimitReader(fileReader, limit+1))
 		fileReader.Close()
-		if err != nil || len(data) > 65536 {
+		if err != nil || int64(len(data)) > limit {
 			return errors.New("previous relay state exceeds its bound")
 		}
 		if name == "service.lock" {

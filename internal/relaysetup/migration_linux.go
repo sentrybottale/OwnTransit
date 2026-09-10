@@ -580,10 +580,10 @@ func identityDigests(s instanceSpec) (map[string]string, error) {
 	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
-	if len(names) > 7 {
+	if len(names) > 8 {
 		return nil, errors.New("relay state inventory exceeds its bound")
 	}
-	allowed := map[string]bool{"service.lock": true, "control.sock": true}
+	allowed := map[string]bool{"service.lock": true, "control.sock": true, "admissions.v1.json": true}
 	for _, name := range relayIdentityFiles {
 		allowed[name] = true
 	}
@@ -591,7 +591,7 @@ func identityDigests(s instanceSpec) (map[string]string, error) {
 		if !allowed[name] {
 			return nil, errors.New("unrecognized relay state member")
 		}
-		if name == "service.lock" || name == "control.sock" {
+		if name == "service.lock" || name == "control.sock" || name == "admissions.v1.json" {
 			var st unix.Stat_t
 			if err := unix.Fstatat(relayFD, name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 				return nil, err
@@ -600,7 +600,7 @@ func identityDigests(s instanceSpec) (map[string]string, error) {
 			if name == "control.sock" {
 				kind = unix.S_IFSOCK
 			}
-			if st.Uid != 65532 || st.Gid != 65532 || st.Nlink != 1 || st.Mode != kind|0600 || (name == "service.lock" && st.Size != 0) {
+			if st.Uid != 65532 || st.Gid != 65532 || st.Nlink != 1 || st.Mode != kind|0600 || (name == "service.lock" && st.Size != 0) || (name == "admissions.v1.json" && (st.Size <= 0 || st.Size > 256<<10)) {
 				return nil, errors.New("unsafe relay service state")
 			}
 		}

@@ -7,7 +7,7 @@ fail() {
 }
 
 project_root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
-source_installer=$project_root/install-linux.sh
+source_installer=$project_root/scripts/release/install-linux-legacy.sh
 test -f "$source_installer" || fail "root Linux installer is missing"
 
 test_root=$(mktemp -d "${TMPDIR:-/tmp}/owntransit-linux-bootstrap-test.XXXXXX") ||

@@ -23,6 +23,96 @@ const receiverUnits = "/etc/systemd/system"
 const originalReceiverState = "/var/lib/owntransit-pair"
 const receiverMaintenanceRoot = "/var/lib/owntransit-connector-manager"
 
+// Serializes all CLI service operations for one tunnel, including the complete
+// rebuild/start and remove/stop windows, without serializing independent ones.
+func receiverCommandGuard(path string) (*securefs.Lock, error) {
+	root, err := securefs.OpenRoot(path + ".setup")
+	if errors.Is(err, os.ErrNotExist) {
+		root, err = securefs.CreateRoot(path + ".setup")
+		if errors.Is(err, os.ErrExist) {
+			root, err = securefs.OpenRoot(path + ".setup")
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	return root.TryLock("command.lock")
+}
+
+type installedReceiver struct {
+	unit string
+	path string
+	data []byte
+}
+
+// Inspection never creates a unit or reloads systemd. Removal must not adopt
+// missing, edited or overridden service definitions.
+func inspectInstalledReceiver(name string) (installedReceiver, error) {
+	var selected installedReceiver
+	if runtime.GOOS != "linux" || os.Geteuid() != 0 {
+		return selected, pairruntime.ErrState
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return selected, err
+	}
+	executable, err = filepath.EvalSymlinks(executable)
+	if err != nil {
+		return selected, err
+	}
+	want, err := protectedUnit(filepath.Join(filepath.Dir(executable), "service.template"))
+	if err != nil {
+		return selected, err
+	}
+	if !bytes.Contains(want, []byte("\nExecStart="+executable+" serve --state "+originalReceiverState+"\n")) {
+		return selected, pairruntime.ErrState
+	}
+	if name != "" && name != defaultTunnel {
+		want, err = namedReceiverUnit(want, name)
+		if err != nil {
+			return selected, err
+		}
+	}
+	unit, err := receiverUnit(name)
+	if err != nil {
+		return selected, err
+	}
+	selected = installedReceiver{unit: unit, path: filepath.Join(receiverUnits, unit), data: want}
+	current, err := protectedUnit(selected.path)
+	if err != nil || !bytes.Equal(current, want) {
+		return installedReceiver{}, pairruntime.ErrState
+	}
+	return selected, nil
+}
+
+func (selected installedReceiver) validate(parent context.Context) error {
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
+	defer cancel()
+	current, err := protectedUnit(selected.path)
+	if err != nil || !bytes.Equal(current, selected.data) {
+		return pairruntime.ErrState
+	}
+	cmd := exec.CommandContext(ctx, "/usr/bin/systemctl", "show", selected.unit, "--property=DropInPaths", "--value")
+	cmd.Env = []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL=C"}
+	drops, err := cmd.Output()
+	if err != nil || len(strings.TrimSpace(string(drops))) != 0 {
+		return pairruntime.ErrState
+	}
+	return nil
+}
+
+func (selected installedReceiver) stop(parent context.Context) error {
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
+	defer cancel()
+	if err := selected.validate(ctx); err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, "/usr/bin/systemctl", "disable", "--now", selected.unit)
+	cmd.Env = []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL=C"}
+	return cmd.Run()
+}
+
 // Pairing separate tunnels shares this guard; package mutation takes the
 // exclusive side before inspecting or replacing any installed service files.
 func receiverMaintenanceGuard() (*securefs.Lock, error) {
@@ -89,7 +179,7 @@ func namedReceiverUnit(template []byte, name string) ([]byte, error) {
 // Install a new unit atomically without replacing an existing name. An exact
 // rerun is allowed; a different unit is never overwritten by a pairing command.
 func publishReceiverUnit(path string, data []byte) error {
-	f, err := os.CreateTemp(filepath.Dir(path), ".owntransit-receiver-unit-")
+	f, err := os.CreateTemp(filepath.Dir(path), ".owntransit-target-unit-")
 	if err != nil {
 		return err
 	}
@@ -137,7 +227,7 @@ func prepareInstalledReceiver(parent context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	if !bytes.Contains(template, []byte("\nExecStart="+executable+" pair serve --state "+originalReceiverState+"\n")) {
+	if !bytes.Contains(template, []byte("\nExecStart="+executable+" serve --state "+originalReceiverState+"\n")) {
 		return pairruntime.ErrState
 	}
 	unit, err := receiverUnit(name)
@@ -156,7 +246,7 @@ func prepareInstalledReceiver(parent context.Context, name string) error {
 	if errors.Is(err, os.ErrNotExist) && name != "" && name != defaultTunnel {
 		// The installed default unit proves the parent and package binding before
 		// any instance is created, even when the default tunnel is unused.
-		original, e := protectedUnit(filepath.Join(receiverUnits, "owntransit-connector-pair.service"))
+		original, e := protectedUnit(filepath.Join(receiverUnits, "owntransit-target.service"))
 		if e != nil || !bytes.Equal(original, template) {
 			return pairruntime.ErrState
 		}

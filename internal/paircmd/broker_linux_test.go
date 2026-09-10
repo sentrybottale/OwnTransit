@@ -13,7 +13,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	if len(os.Args) == 3 && os.Args[1] == "pair" && os.Args[2] == "wait-helper" {
+	if len(os.Args) == 2 && os.Args[1] == "wait-helper" {
 		if os.Geteuid() != 65534 {
 			os.Exit(30)
 		}
@@ -21,7 +21,7 @@ func TestMain(m *testing.M) {
 		time.Sleep(time.Minute)
 		os.Exit(31)
 	}
-	if len(os.Args) == 4 && os.Args[1] == "pair" && os.Args[2] == "permission-helper" {
+	if len(os.Args) == 3 && os.Args[1] == "permission-helper" {
 		if os.Getuid() != 65534 || os.Geteuid() != 65534 || os.Getgid() != 65534 {
 			os.Exit(21)
 		}
@@ -29,7 +29,7 @@ func TestMain(m *testing.M) {
 		if e != nil || len(groups) != 0 {
 			os.Exit(22)
 		}
-		if _, e := os.ReadFile(os.Args[3]); e == nil {
+		if _, e := os.ReadFile(os.Args[2]); e == nil {
 			os.Exit(23)
 		}
 		if unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != nil {

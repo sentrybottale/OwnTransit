@@ -154,7 +154,7 @@ func TestManagedRelayDispatchKeepsScopeAndLegacyDefault(t *testing.T) {
 			if code := executeManagedRelay(context.Background(), tc.args, strings.NewReader(""), &out, &diag, ops); code != 0 || called != tc.want || locked != tc.lock {
 				t.Fatalf("code=%d call=%q lock=%d diagnostics=%s", code, called, locked, diag.String())
 			}
-			if tc.args[0] == "approve" && (!strings.Contains(out.String(), "Receiver approved") || strings.Contains(out.String()+diag.String(), "fixture-relay-code")) {
+			if tc.args[0] == "approve" && (!strings.Contains(out.String(), "Target approved") || strings.Contains(out.String()+diag.String(), "fixture-relay-code")) {
 				t.Fatal("approval must confirm success without printing a relay code")
 			}
 		})
@@ -204,7 +204,7 @@ func TestManagedRelayURLFirstDisplayedFlowAndMachineHandoff(t *testing.T) {
 		t.Fatalf("code=%d applied=%v diagnostics=%s", code, applied, diag.String())
 	}
 	transcript := out.String()
-	for _, text := range []string{"Public relay URL", "Selected local relay: office", "Relay component configured", "UNDER CONSTRUCTION", "RECEIVING SSH MACHINE", "sudo sh -s -- connector", "sudo owntransit-connector-preview pair setup", "one private code"} {
+	for _, text := range []string{"Public relay URL", "Selected local relay: office", "Relay configured", "UNDER CONSTRUCTION", "Target computer running SSH", "sudo owntransit-target setup", "Choose New tunnel", "one private code", "sudo owntransit-relay setup --url wss://office.example/connects"} {
 		if !strings.Contains(transcript, text) {
 			t.Fatalf("missing %q in displayed flow: %s", text, transcript)
 		}
@@ -261,7 +261,7 @@ func TestManagedRelayExplicitConflictDoesNotSwitchAndProvidesRetry(t *testing.T)
 		},
 	}
 	code := executeManagedRelay(context.Background(), []string{"setup", "--instance", "default", "--url", "wss://office.example/connects"}, strings.NewReader(""), &out, &diag, ops)
-	if code != 1 || !strings.Contains(diag.String(), "THIS VPS") || !strings.Contains(diag.String(), "list") || !strings.Contains(diag.String(), "setup --instance default --url wss://office.example/connects") {
+	if code != 1 || !strings.Contains(diag.String(), "Relay VPS") || !strings.Contains(diag.String(), "list") || !strings.Contains(diag.String(), "setup --instance default --url wss://office.example/connects") {
 		t.Fatalf("conflict lost exact retry: code=%d output=%s", code, diag.String())
 	}
 }
@@ -285,7 +285,7 @@ func TestManagedRelayReservedApprovalExplainsHowToFinishSetup(t *testing.T) {
 	if code != 1 || out.Len() != 0 {
 		t.Fatalf("incomplete relay reported approval success: code=%d output=%s", code, out.String())
 	}
-	for _, text := range []string{"THIS VPS", "setup is incomplete", "setup --url wss://office.example/connects", "rerun that exact approval command"} {
+	for _, text := range []string{"Relay VPS", "setup is incomplete", "setup --url wss://office.example/connects", "choose Continue", "same public Target ID"} {
 		if !strings.Contains(diag.String(), text) {
 			t.Fatalf("incomplete setup lacks operational hint %q: %s", text, diag.String())
 		}
@@ -318,7 +318,7 @@ func TestManagedRelayFinalVerificationUsesApplyResult(t *testing.T) {
 					if plan.Verification != tc.planned || confirmed != (kind == "migration") {
 						t.Fatal("reviewed verification or migration consent changed")
 					}
-					if kind == "migration" && !strings.Contains(out.String(), "Adopt this exact relay using local verification, with public reachability unverified from THIS VPS?") {
+					if kind == "migration" && !strings.Contains(out.String(), "Adopt this Relay with local verification only (public reachability unverified)?") {
 						t.Fatal("local-only adoption was not disclosed before consent")
 					}
 					return relaysetup.SetupResult{Verification: tc.final}, nil
@@ -330,11 +330,11 @@ func TestManagedRelayFinalVerificationUsesApplyResult(t *testing.T) {
 			}
 			text := out.String()
 			if tc.final == relaysetup.VerificationPublic {
-				if !strings.Contains(text, "Relay component configured. Relay URL:") || strings.Contains(text, "configured with local verification only") {
+				if !strings.Contains(text, "Relay configured. URL:") || strings.Contains(text, "configured with local verification only") {
 					t.Fatal("improved public result was not used")
 				}
 			} else if tc.final == relaysetup.VerificationLocal403 {
-				for _, wanted := range []string{"configured with local verification only", "Public reachability is unverified from THIS VPS", "HTTP 403", "networks allowed by this website", "remaining public reachability check", "RECEIVING SSH MACHINE", "one private code"} {
+				for _, wanted := range []string{"configured with local verification only", "public reachability remains unverified", "HTTP 403", "network allowed by this website", "Client's end-to-end check", "Target computer running SSH", "one private code"} {
 					if !strings.Contains(text, wanted) {
 						t.Fatalf("local result omitted %q", wanted)
 					}

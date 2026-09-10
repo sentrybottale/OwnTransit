@@ -76,7 +76,7 @@ func TestManagedSetupAndFailedRouteRollback(t *testing.T) {
 				c := containerInfo{ID: newID, Image: newImage, Name: managedContainer}
 				c.Config.User = "65532:65532"
 				c.Config.Entrypoint = []string{"/owntransit-relay"}
-				c.Config.Cmd = []string{"pair", "serve", "--state", "/state/relay"}
+				c.Config.Cmd = []string{"serve", "--state", "/state/relay"}
 				c.State.Running = managedRunning
 				c.HostConfig.PortBindings = map[string][]struct{ HostIP, HostPort string }{"9087/tcp": {{"127.0.0.1", "9087"}}}
 				c.HostConfig.ReadonlyRootfs, c.HostConfig.AutoRemove = true, true
@@ -154,9 +154,12 @@ func TestManagedSetupAndFailedRouteRollback(t *testing.T) {
 					if !managedRunning {
 						return nil, errors.New("managed relay absent")
 					}
+					if !fixtureIdentityCommand(managedInfo(), args) {
+						return nil, errors.New("unexpected relay identity command")
+					}
 					return json.Marshal(local)
 				case "run":
-					if !strings.HasSuffix(call, "pair init --state /state/relay") {
+					if !strings.HasSuffix(call, newImage+" init --state /state/relay") {
 						return nil, errors.New("unexpected container run")
 					}
 					data := managedRoot + "/data"

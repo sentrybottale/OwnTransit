@@ -32,7 +32,7 @@ const (
 	relayKeyFile   = "relay-key.pem"
 )
 
-var stateFiles = []string{tokenKeyFile, relayCAFile, relayCAKeyFile, relayCertFile, relayKeyFile, serviceLockFile}
+var stateFiles = []string{tokenKeyFile, relayCAFile, relayCAKeyFile, relayCertFile, relayKeyFile, serviceLockFile, admissionStateFile}
 
 type initSummary struct {
 	Schema          string `json:"schema"`
@@ -98,6 +98,10 @@ func initState(statePath string, now time.Time, requireRoot bool) ([]byte, error
 		return nil, err
 	}
 	defer root.Close()
+	admissions, err := encodeAdmissionState(nil)
+	if err != nil {
+		return nil, err
+	}
 	writes := []struct {
 		name string
 		data []byte
@@ -106,6 +110,7 @@ func initState(statePath string, now time.Time, requireRoot bool) ([]byte, error
 		{tokenKeyFile, tokenKey, 0o600}, {relayCAFile, ca.CertPEM, 0o644},
 		{relayCAKeyFile, ca.KeyPEM, 0o600}, {relayCertFile, leaf.CertPEM, 0o644},
 		{relayKeyFile, leaf.KeyPEM, 0o600}, {serviceLockFile, nil, 0o600},
+		{admissionStateFile, admissions, 0o600},
 	}
 	for _, write := range writes {
 		if err := root.CreateExclusive(write.name, write.data, write.mode); err != nil {
@@ -149,6 +154,9 @@ func loadState(statePath string, now time.Time) (stateMaterial, error) {
 	}
 	defer root.Close()
 	if err := validateStateInventory(statePath); err != nil {
+		return stateMaterial{}, err
+	}
+	if _, err := loadAdmissions(root); err != nil {
 		return stateMaterial{}, err
 	}
 	read := func(name string, maximum int64) ([]byte, error) { return root.ReadFile(name, maximum) }
@@ -227,6 +235,9 @@ func validateStateInventory(statePath string) error {
 		}
 		return errors.New("pairrelaycmd: durable state inventory is not exact")
 	}
+	// Existing identities predate the optional public inventory. Their
+	// stateless tokens remain valid; removal records are never synthesized.
+	delete(expected, admissionStateFile)
 	if len(expected) != 0 {
 		return errors.New("pairrelaycmd: durable state inventory is incomplete")
 	}
