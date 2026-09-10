@@ -341,6 +341,16 @@ func (root *Root) EnsureFile(name string, data []byte, mode fs.FileMode) error {
 // caller-supplied limit and the package ceiling are both enforced even if the
 // file changes while it is read.
 func (root *Root) ReadFile(name string, limit int64) ([]byte, error) {
+	return root.readFile(name, limit, 0)
+}
+
+// ReadPrivateFile additionally requires exact mode 0600 on the opened inode.
+// It never creates or repairs a file while inspecting private material.
+func (root *Root) ReadPrivateFile(name string, limit int64) ([]byte, error) {
+	return root.readFile(name, limit, 0600)
+}
+
+func (root *Root) readFile(name string, limit int64, mode uint32) ([]byte, error) {
 	if err := validateComponent(name); err != nil {
 		return nil, err
 	}
@@ -357,6 +367,9 @@ func (root *Root) ReadFile(name string, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	defer unix.Close(fd)
+	if mode != 0 && uint32(stat.Mode)&07777 != mode {
+		return nil, errors.New("securefs: private file must have mode 0600")
+	}
 	if stat.Size < 0 || stat.Size > limit {
 		return nil, fmt.Errorf("securefs: file %q exceeds the read limit", name)
 	}

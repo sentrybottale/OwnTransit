@@ -16,7 +16,7 @@ import (
 // every referenced OCI digest/size is checked before a load archive is emitted.
 // This also supports Docker installations using the classic image store.
 func DockerArchive(input io.Reader, output io.Writer, tag string) error {
-	if tag != "owntransit-relay-pair:0.6.0" {
+	if tag != "owntransit-relay-pair:0.6.1" {
 		return errors.New("unexpected relay image tag")
 	}
 	files := map[string][]byte{}

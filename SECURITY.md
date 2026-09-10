@@ -1,5 +1,22 @@
 # OwnTransit security policy
 
+## 0.6.1 local code recovery and readiness
+
+New one-code setup retains a mode-0600 cache only under the receiver's private
+authority directory. Explicit owner-only retrieval verifies the exact live
+attempt, code digest, advertisement, origin, expiry, policy and public offer.
+No worker RPC or relay operation can reveal the code. Claim/retirement denial
+remains authoritative even if a stale cache survives deletion or is restored.
+Older uncached codes require explicit replacement, never a guessed recovery.
+See [local cache and rollback semantics](PAIRING_ONE_CODE.md#restart-and-compatibility).
+
+Ordinary setup retries retain identities. `--replace` explicitly selects new
+receiver identities and reapproval; paired replacements still require consent.
+Public receiver IDs are bounded local lookup hints, not new trust authority.
+Client readiness uses the existing full carrier handshake and fixed SSH-dial
+acknowledgement. No cached state, relay approval, or suppressed probe failure
+can report end-to-end readiness. SSH authentication remains operator-owned.
+
 ## 0.6.0 relay migration
 
 Unqualified setup selects only the operator-entered URL's protected local
@@ -205,7 +222,7 @@ explicitly unsigned development outputs and do not replace stable assets.
 The separately signed preview capsules use the isolated development namespace
 documented in [scripts/development/README.md](scripts/development/README.md).
 
-Receiver `pair setup` is an explicit local trust replacement, not a restart.
+Receiver `pair setup --replace` is an explicit local trust replacement, not a restart.
 It prepares fresh receiver/route/issuer/operational identities, permanently locks
 the old pairing and waits for its active workers to exit before atomically
 exchanging directory generations. Old state stays private and locked; no failed

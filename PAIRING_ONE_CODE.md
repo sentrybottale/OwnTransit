@@ -1,4 +1,4 @@
-# One-code pairing (0.5.0)
+# One-code pairing (0.5.0 protocol; 0.6.1 local recovery)
 
 The user copies one private code from the receiving SSH machine to the client.
 The VPS only approves a public receiver ID through its existing local privileged
@@ -60,11 +60,29 @@ endpoint authority or choose the receiver's SSH destination.
 
 ## Restart and compatibility
 
-Pending receivers retain only a root-private **public** `pair-offer.json`
-sidecar. The private code is displayed once, not saved in this sidecar or given
-to the unprivileged worker. Candidate setup creates it before retiring the old
-pairing. Existing strict authority, receiver and client record schemas remain
-unchanged; an existing paired tunnel ignores spent or expired offers.
+Pending receivers retain a root-private **public** `pair-offer.json` sidecar.
+The private code is never placed in that public sidecar or given to the worker.
+Versions 0.5.0–0.6.0 displayed the private code once without retaining it.
+Since 0.6.1, new one-code setup additionally retains the exact canonical private
+code in `authority/private-pairing-code.v1`, mode 0600 under the private authority
+root. It is not part of any snapshot, worker RPC, advertisement or relay request.
+
+Explicit local `pair code` retrieval requires the authority owner and checks the
+current policy, pending attempt, exact stored code digest, receiver/attempt IDs,
+advertisement, origin and expiry. The public offer must match too. It cannot
+recover a code from an older uncached attempt, extend validity, return a spent
+code, clear an alarm or generate new identity. Public receiver-ID lookup is only
+a bounded local selector; it gives no remote reading or enrollment authority.
+Claim/cancellation/retirement commit their existing denial state before attempting
+to unlink the cache. Even a retained or restored cache cannot revive authority;
+secure erasure from storage or backups is not claimed. Expiry denies retrieval
+and pairing without a background secret-cleanup process.
+
+Candidate setup completes both sidecars before retiring the old pairing. Existing
+strict authority, receiver and client record schemas and all wire formats remain
+unchanged. Older binaries ignore the optional private cache; state still prevents
+newer code from revealing it after an old binary consumes the attempt. A paired
+tunnel never depends on either spent sidecar.
 
 Until paired, a receiver republishes its offer after relay/network restart. If
 already approved, it may restore only the exact unexpired relay token previously

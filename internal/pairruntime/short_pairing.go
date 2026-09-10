@@ -19,6 +19,13 @@ var (
 	ErrApprovalMissing  = errors.New("pairruntime: receiver is not approved; run its approval command on the selected VPS")
 )
 
+// ApprovalRequired carries only public, code-authenticated scope so the client
+// can print the exact missing VPS action without exposing a private code.
+type ApprovalRequired struct{ Origin, ReceiverID string }
+
+func (*ApprovalRequired) Error() string { return ErrApprovalMissing.Error() }
+func (*ApprovalRequired) Unwrap() error { return ErrApprovalMissing }
+
 // PairClientShort retrieves only public data using a secret-derived locator.
 // The full offer MAC, existing signed advertisement, expiry and selected origin
 // are authenticated before any secret-bearing request or client state exists.
@@ -71,7 +78,7 @@ func PairClientShort(ctx context.Context, path, origin string, code []byte, dial
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return ErrApprovalMissing
+		return &ApprovalRequired{Origin: origin, ReceiverID: ad.ReceiverID}
 	}
 	info, err := public.FetchServerInfo(ctx)
 	if err != nil {

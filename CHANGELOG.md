@@ -7,6 +7,18 @@ authenticated artifacts of the documented release lane. The legacy 0.1.0 lane
 additionally requires its signed qualification record. Git tags do not publish
 artifacts automatically.
 
+## [0.6.1]
+
+- Add owner-only recovery of the same unused receiver code, bound to the exact
+  pending attempt. Keep private codes out of the relay and network worker.
+- Print receiver-ID-specific retrieval and state-aware next commands across all
+  roles, including missing approval, interrupted setup and unavailable services.
+- Preserve pending and paired identities on setup retry. Require `--replace`
+  for deliberate new receiver identities and explain new-ID reapproval.
+- Report new tunnels as UNDER CONSTRUCTION until a live end-to-end carrier
+  check succeeds. Add `pair check`; SSH login policy remains separate.
+- Accept 0.6.0 package upgrades without altering published release bytes.
+
 ## [0.6.0]
 
 - Select relay setup by its entered public URL unless an instance name is

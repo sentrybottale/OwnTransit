@@ -1,5 +1,15 @@
 # OwnTransit v1 shipping plan
 
+## Receiver-owned 0.6.1 recovery closure
+
+Use the same supported platforms, nine signed assets and existing signer.
+Recovery must retain the exact unexpired pending code locally, preserve identity
+on ordinary retry, and require explicit replacement/reapproval for a new identity.
+Exercise printed commands and lost-code recovery through a real SSH fixture.
+Public relay steps remain UNDER CONSTRUCTION; only the client's actual
+authenticated carrier and fixed SSH-dial check may report ready. No new wire
+profile, SSH management, secret-bearing relay API or assurance ceremony is added.
+
 ## Receiver-owned 0.6.0 migration closure
 
 Require the normal public relay install/setup path to finish an existing

@@ -107,48 +107,24 @@ func tunnelStatus(path string, receiver bool) string {
 	return "paired"
 }
 
-func listTunnels(base string, receiver bool, output io.Writer) error {
-	names := []string{}
-	if _, err := os.Lstat(base); err == nil {
-		names = append(names, defaultTunnel)
-	} else if !errors.Is(err, os.ErrNotExist) {
+func listTunnels(base string, receiver bool, output io.Writer, executable ...string) error {
+	program := "owntransit-preview"
+	if receiver {
+		program = "owntransit-connector-preview"
+	}
+	if len(executable) > 0 {
+		program = executable[0]
+	}
+	prefix := ""
+	if receiver {
+		prefix = "sudo "
+	}
+	names, err := localTunnelNames(base)
+	if err != nil {
 		return err
 	}
-	root, err := securefs.OpenRoot(tunnelRoot(base))
-	if err == nil {
-		defer root.Close()
-		dir, err := os.Open(tunnelRoot(base))
-		if err != nil {
-			return err
-		}
-		defer dir.Close()
-		entries, err := dir.ReadDir(maxListedTunnels*2 + 1)
-		if err != nil && !errors.Is(err, io.EOF) {
-			return err
-		}
-		if len(entries) > maxListedTunnels*2 {
-			return errors.New("too many local tunnel entries")
-		}
-		for _, entry := range entries {
-			name := entry.Name()
-			// Receiver rebuild journals are sibling directories, not tunnels.
-			if strings.HasSuffix(name, ".setup") && validTunnelName(strings.TrimSuffix(name, ".setup")) {
-				continue
-			}
-			if !validTunnelName(name) || name == defaultTunnel || !entry.IsDir() {
-				return errors.New("unrecognized entry in named tunnel directory")
-			}
-			names = append(names, name)
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	if len(names) > maxListedTunnels {
-		return errors.New("too many local tunnels to list")
-	}
-	sort.Strings(names)
 	if len(names) == 0 {
-		_, err := fmt.Fprintln(output, "No tunnels yet. Create one with pair setup --tunnel NAME.")
+		_, err := fmt.Fprintf(output, "UNDER CONSTRUCTION: no tunnels yet. Start on THIS machine:\n  %s%s\n", prefix, pairCommand(program, "setup", ""))
 		return err
 	}
 	if _, err := fmt.Fprintln(output, "TUNNEL  PAIRING"); err != nil {
@@ -159,7 +135,63 @@ func listTunnels(base string, receiver bool, output io.Writer) error {
 		if _, err := fmt.Fprintf(output, "%s  %s\n", name, tunnelStatus(path, receiver)); err != nil {
 			return err
 		}
+		if receiver {
+			r, e := receiverpairing.Open(filepath.Join(path, "authority"))
+			if e == nil {
+				s, e := r.Status()
+				if e == nil {
+					fmt.Fprintf(output, "  Receiver ID: %s\n", s.ReceiverID)
+				}
+			}
+		}
+		fmt.Fprintf(output, "  Next commands:\n    %s%s\n", prefix, pairCommand(program, "next", "", name))
+		if receiver {
+			fmt.Fprintf(output, "  Private code:\n    %s%s\n", prefix, pairCommand(program, "code", "", name))
+		}
 	}
-	_, err = fmt.Fprintln(output, "Pairing status is local; it does not prove the peer is currently reachable.")
+	_, err = fmt.Fprintln(output, "Pairing status is local; it does not prove the peer is currently reachable. Run the exact Next commands line for your tunnel.")
 	return err
+}
+
+func localTunnelNames(base string) ([]string, error) {
+	names := []string{}
+	if _, err := os.Lstat(base); err == nil {
+		names = append(names, defaultTunnel)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	root, err := securefs.OpenRoot(tunnelRoot(base))
+	if err == nil {
+		defer root.Close()
+		dir, err := os.Open(tunnelRoot(base))
+		if err != nil {
+			return nil, err
+		}
+		defer dir.Close()
+		entries, err := dir.ReadDir(maxListedTunnels*2 + 1)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return nil, err
+		}
+		if len(entries) > maxListedTunnels*2 {
+			return nil, errors.New("too many local tunnel entries")
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			// Receiver rebuild journals are sibling directories, not tunnels.
+			if strings.HasSuffix(name, ".setup") && validTunnelName(strings.TrimSuffix(name, ".setup")) {
+				continue
+			}
+			if !validTunnelName(name) || name == defaultTunnel || !entry.IsDir() {
+				return nil, errors.New("unrecognized entry in named tunnel directory")
+			}
+			names = append(names, name)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if len(names) > maxListedTunnels {
+		return nil, errors.New("too many local tunnels to list")
+	}
+	sort.Strings(names)
+	return names, nil
 }
