@@ -127,7 +127,7 @@ func TestManagedFreshLocalVerificationRequiresApplyingMissingRoute(t *testing.T)
 	command = func(ctx context.Context, program string, args ...string) ([]byte, error) {
 		if program == "/usr/bin/podman" && len(args) > 0 && args[0] == "run" {
 			joined := " " + strings.Join(args, " ") + " "
-			if !strings.Contains(joined, " pair init ") || !strings.Contains(joined, " --volume="+f.target.dataRoot()+":/state:rw ") || initialized {
+			if !strings.Contains(joined, " "+f.newImage+" init --state /state/relay ") || !strings.Contains(joined, " --volume="+f.target.dataRoot()+":/state:rw ") || initialized {
 				return nil, errors.New("unexpected fresh identity initialization")
 			}
 			f.calls = append(f.calls, program+" "+strings.Join(args, " "))
@@ -159,7 +159,9 @@ func TestManagedFreshLocalVerificationRequiresApplyingMissingRoute(t *testing.T)
 				f.enabled[f.target.unitName] = true
 			}
 			if args[0] == "start" || strings.Contains(strings.Join(args, " "), "--now") {
-				f.containers[f.target.container] = f.container(f.target, f.newImage, "f")
+				started := f.container(f.target, f.newImage, "f")
+				started.Config.Cmd = []string{"serve", "--state", "/state/relay"}
+				f.containers[f.target.container] = started
 			}
 			return nil, nil
 		}
