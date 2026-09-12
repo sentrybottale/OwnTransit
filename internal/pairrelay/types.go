@@ -45,10 +45,11 @@ var (
 	ErrUnavailable  = errors.New("pairrelay: route unavailable")
 	// Relay transport failure remains an unavailable route for existing callers.
 	// It is a local diagnostic category, never a new wire response or authority.
-	ErrTransport     = fmt.Errorf("%w: relay transport unavailable", ErrUnavailable)
-	ErrCapacity      = errors.New("pairrelay: capacity exhausted")
-	ErrExpired       = errors.New("pairrelay: authorization expired")
-	ErrAlreadyClosed = errors.New("pairrelay: relay is closed")
+	ErrTransport      = fmt.Errorf("%w: relay transport unavailable", ErrUnavailable)
+	ErrPendingTimeout = fmt.Errorf("%w: pending relay connection timed out", ErrUnavailable)
+	ErrCapacity       = errors.New("pairrelay: capacity exhausted")
+	ErrExpired        = errors.New("pairrelay: authorization expired")
+	ErrAlreadyClosed  = errors.New("pairrelay: relay is closed")
 )
 
 // Role is a relay-visible connection role. It is not carried in a route token;

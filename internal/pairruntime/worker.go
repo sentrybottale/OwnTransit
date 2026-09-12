@@ -8,7 +8,9 @@ import (
 	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"io"
+	"log"
 	"net"
 	"sync"
 	"time"
@@ -342,6 +344,7 @@ func serveReceiver(ctx context.Context, agent ReceiverAgent, dial pairrelay.Dial
 		}
 	}()
 	semaphore := make(chan struct{}, 4)
+	var lastPendingNotice time.Time
 	for ctx.Err() == nil {
 		s, err = agent.Snapshot()
 		if err != nil {
@@ -405,6 +408,10 @@ func serveReceiver(ctx context.Context, agent ReceiverAgent, dial pairrelay.Dial
 		raw, e := ep.Accept(ctx)
 		if e != nil {
 			<-semaphore
+			if errors.Is(e, pairrelay.ErrPendingTimeout) && (lastPendingNotice.IsZero() || time.Since(lastPendingNotice) >= time.Minute) {
+				log.Print("OwnTransit Target: pending relay connection timed out; reconnecting with retained pairing.")
+				lastPendingNotice = time.Now()
+			}
 			if err := pause(ctx, 200*time.Millisecond); err != nil {
 				return err
 			}

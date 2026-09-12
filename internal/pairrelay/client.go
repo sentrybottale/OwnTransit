@@ -6,6 +6,8 @@ import (
 	"crypto/tls"
 	"net"
 	"time"
+
+	"github.com/sentrybottale/owntransit/internal/transport"
 )
 
 // PublicClient performs public-advertisement and opaque pairing operations. It
@@ -200,6 +202,8 @@ type endpoint struct {
 	config EndpointConfig
 	role   Role
 	dial   DialFunc
+	// Local-only bound. Tests shorten it on their own endpoint instance.
+	pendingTimeout time.Duration
 }
 
 // Receiver opens outbound waiting legs. Accept returns only after the relay has
@@ -248,7 +252,7 @@ func newEndpoint(config EndpointConfig, role Role) (*endpoint, error) {
 	config.Descriptor.AdmissionCAPEM = append([]byte(nil), config.Descriptor.AdmissionCAPEM...)
 	config.RelayCAPEM = append([]byte(nil), config.RelayCAPEM...)
 	config.Certificate.Certificate = cloneByteSlices(config.Certificate.Certificate)
-	return &endpoint{config: config, role: role, dial: dial}, nil
+	return &endpoint{config: config, role: role, dial: dial, pendingTimeout: 45 * time.Second}, nil
 }
 
 func (receiver *Receiver) Accept(ctx context.Context) (net.Conn, error) {
@@ -308,7 +312,25 @@ func (value *endpoint) open(ctx context.Context, kind byte) (net.Conn, error) {
 	if err != nil || raw == nil {
 		return nil, ErrTransport
 	}
-	fail := func(err error) (net.Conn, error) { _ = raw.Close(); return nil, err }
+	var pending *pendingOpen
+	if kind == kindRuntime {
+		pending, err = guardPendingOpen(ctx, raw, value.pendingTimeout)
+		if err != nil {
+			_ = transport.Abort(raw)
+			return nil, err
+		}
+		defer pending.timer.Stop()
+	}
+	fail := func(err error) (net.Conn, error) {
+		_ = transport.Abort(raw)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if pending != nil && !time.Now().Before(pending.deadline) {
+			return nil, ErrPendingTimeout
+		}
+		return nil, err
+	}
 	preface, err := encodeRuntimePreface(runtimePreface{
 		token: value.config.Token, admissionCA: value.config.AdmissionCAPEM,
 		role: value.role, peerID: value.config.PeerID,
@@ -331,9 +353,10 @@ func (value *endpoint) open(ctx context.Context, kind byte) (net.Conn, error) {
 	}
 	frame, err := readWireFrame(secured, 0)
 	if err != nil || requireKind(frame, kindReady) != nil || len(frame.data) != 0 {
-		_ = secured.Close()
-		return nil, ErrUnavailable
+		return fail(ErrUnavailable)
 	}
-	_ = secured.SetDeadline(time.Time{})
+	if err := pending.promote(); err != nil {
+		return fail(err)
+	}
 	return secured, nil
 }

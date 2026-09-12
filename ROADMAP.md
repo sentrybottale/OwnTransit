@@ -1,5 +1,16 @@
 # OwnTransit roadmap
 
+## 0.8 — bounded pending reconnects and usable upgrades
+
+- Bound silent pre-SSH Relay waits locally and retry with retained identities.
+  Retire the pending timer before promotion; never replay or reconnect an
+  existing SSH byte stream. Keep terminal alarms and peer authentication intact.
+- Exercise timeout, cancellation, partial messages, recovery and active-stream
+  survival, and provide bounded non-secret timeout diagnostics.
+- Preserve existing canonical 0.7 installations during 0.8 package upgrades.
+- Accept the distinct exact legacy enrollment sibling during carrier-route
+  reuse; do not rewrite working websites to satisfy the parser.
+
 ## 0.7 — local role menus and explicit lifecycle
 
 - Use Client, Relay and Target throughout the current installation flow, with
@@ -88,6 +99,17 @@ all receiver instances keep the same fixed local SSH destination.
 
 ## Remaining product work
 
+- Add a compact, copyable "Connect over SSH" example block beside the connection
+  instructions in `README.md` and `PAIRING_INSTALL.md`: Linux and macOS Client
+  paths, named tunnel selection, and an optional `-i` SSH identity key. Explain
+  that commands run on the Client, which placeholders to replace, and that the
+  SSH user and verified host identity belong to the Target, not the Relay.
+  Keep examples consistent with the CLI's printed command, use only reserved
+  example hosts, and do not weaken SSH host-key verification.
+- Show the already-installed Relay entrypoint explicitly, without an installer
+  or `curl`: `sudo owntransit-relay setup`. Explain that it opens the menu and
+  **Start or update this relay** starts/updates the selected managed service;
+  include `sudo owntransit-relay setup --instance NAME` for a named Relay.
 - Optional P2P with relay fallback to reduce relay bandwidth.
 - apt/Homebrew distribution repositories and packaging expansion.
 - Broader shared-relay fairness, overload, restart/upgrade and capacity coverage.

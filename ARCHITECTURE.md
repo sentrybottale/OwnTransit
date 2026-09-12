@@ -1,5 +1,15 @@
 # OwnTransit architecture
 
+## 0.8 connection liveness
+
+Before a runtime connection is promoted, the endpoint locally bounds its
+preface, outer TLS and Relay READY exchange to 45 seconds after dialing. Timeout
+aborts only that attempt and the Target retries using its retained pairing.
+Successful promotion must retire the timer and clear the socket deadline before
+inner authentication and SSH carriage. Established SSH sessions are never
+reconnected or replayed by this mechanism. No trust, framing or destination
+selection changes are introduced.
+
 ## Current 0.7 development profile
 
 0.7 uses the local roles **Client**, **Relay** and

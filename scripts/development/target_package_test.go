@@ -29,9 +29,9 @@ func TestTargetPackageTemplateMigrationPreservesConfinement(t *testing.T) {
 	if start < 0 || end < 0 {
 		t.Fatal("target unit missing")
 	}
-	current := strings.ReplaceAll(s[start:start+end+1], "$prefix", "/opt/owntransit/0.7.0")
+	current := strings.ReplaceAll(s[start:start+end+1], "$prefix", "/opt/owntransit/0.8.0")
 	legacy := strings.NewReplacer(
-		"0.7.0", "0.6.1",
+		"0.8.0", "0.6.1",
 		"/opt/owntransit/", "/opt/owntransit-preview/",
 		"/target/owntransit-target serve", "/connector/owntransit-connector pair serve",
 		"/target\n", "/connector\n",
@@ -43,6 +43,8 @@ func TestTargetPackageTemplateMigrationPreservesConfinement(t *testing.T) {
 	}{
 		{"current", current, true},
 		{"previous", legacy, true},
+		{"previous-canonical", strings.ReplaceAll(current, "0.8.0", "0.7.0"), true},
+		{"unknown-canonical", strings.ReplaceAll(current, "0.8.0", "0.7.9"), false},
 		{"changed-confinement", strings.Replace(legacy, "ProtectSystem=strict", "ProtectSystem=no", 1), false},
 		{"changed-state", strings.ReplaceAll(legacy, "/var/lib/owntransit-pair", "/var/lib/other"), false},
 		{"extra-environment", legacy + "Environment=UNMANAGED=yes\n", false},

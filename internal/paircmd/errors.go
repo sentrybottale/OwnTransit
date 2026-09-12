@@ -45,6 +45,8 @@ func failureMessage(operation string, err error) string {
 		return "Operation timed out or authorization freshness was lost. Check connectivity and the clock, then retry the exact command below. Existing pairing is retained."
 	case errors.Is(err, pairrelay.ErrTransport):
 		return "Relay connection failed. Check the public URL, HTTPS route and network, then retry. Keep the existing pairing."
+	case errors.Is(err, pairrelay.ErrPendingTimeout):
+		return "The relay connection stalled before the tunnel was ready. Retry with the existing pairing; no keys were reset."
 	case errors.Is(err, pairrelay.ErrUnavailable), errors.Is(err, pairrelay.ErrCapacity):
 		return "No target path is available. Check the relay and target services, then retry. Keep the existing pairing."
 	case errors.Is(err, pairrelay.ErrUnauthorized), errors.Is(err, pairruntime.ErrPeerAuthorization), errors.Is(err, leasewire.ErrProtocol):

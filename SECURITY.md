@@ -1,5 +1,27 @@
 # OwnTransit security policy
 
+## 0.8 pending-connection recovery
+
+Runtime endpoint connections have a local 45-second guard after the WebSocket
+dial, covering the preface, outer mTLS and the Relay READY response. The dial
+retains its existing DNS/connect/HTTP time bounds. A silent or trickling peer
+cannot park the Target's runtime-accept loop indefinitely. The guard aborts the
+underlying transport; timeout remains transient unavailability, not an alarm or
+permission to change keys. Its timer must be stopped successfully and its
+deadline cleared before a promoted stream is handed to inner TLS. It therefore
+adds no short lifetime limit to established SSH streams. Existing session,
+certificate-expiry and authorization-lease bounds remain independent.
+
+This changes no authenticated wire fields or endpoint trust. A malicious Relay
+can still deny service; retry is recovery from a stalled attempt, not a promise
+of availability. Target timeout notices are fixed text, rate-limited to at most
+one per minute, and contain no peer errors, tokens or keys.
+
+An existing exact `/connects/enrollment` location cannot override the distinct
+exact `/connects` URI. The Relay manager now recognizes that legacy sibling
+without modifying it. Other ambiguous/prefix/regex carrier matches, duplicate
+carrier locations and wrong-instance upstreams remain rejected.
+
 ## Current 0.7 development boundary
 
 0.7 source uses the local Client, Relay and Target roles and the canonical
