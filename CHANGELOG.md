@@ -7,6 +7,20 @@ authenticated artifacts of the documented release lane. The legacy 0.1.0 lane
 additionally requires its signed qualification record. Git tags do not publish
 artifacts automatically.
 
+## [0.8.0]
+
+- Bound runtime relay preface, outer TLS and READY waits with a local 45-second
+  pending deadline and transport abort. Reconnect using retained identities;
+  atomically retire that guard before returning a promoted connection so it
+  cannot terminate an established SSH session.
+- Add rate-limited, fixed-text Target timeout notices and a specific Client
+  pending-stall diagnostic. No private state or raw relay errors are logged.
+- Reuse an exact carrier route beside the legacy exact `/connects/enrollment`
+  sibling without changing either route. Keep ambiguous routes, duplicate
+  carriers and cross-instance upstreams rejected.
+- Support canonical 0.7.0-to-0.8.0 Linux and Mac package upgrades while retaining
+  endpoint state, previous software and operator-owned SSH settings.
+
 ## [0.7.0]
 
 Client / Relay / Target menus. Availability is established by the signed

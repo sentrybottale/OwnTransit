@@ -1,4 +1,4 @@
-# Recover an OwnTransit 0.7.0 tunnel
+# Recover an OwnTransit 0.8.0 tunnel
 
 A new tunnel stays **UNDER CONSTRUCTION** until the Client completes its actual
 authenticated end-to-end check. Relay approval and local pairing state are

@@ -302,6 +302,11 @@ func NginxRouteForPort(data []byte, hostname string, port int) (RouteEdit, error
 	for i := range site.children {
 		b := &site.children[i]
 		if len(b.words) > 0 && b.words[0].text == "location" {
+			// The legacy exchange is a distinct exact URI. It cannot override
+			// the exact /connects carrier, and reuse must leave it untouched.
+			if len(b.words) == 3 && b.words[1].text == "=" && b.words[2].text == "/connects/enrollment" {
+				continue
+			}
 			for _, w := range b.words[1:] {
 				if strings.Contains(w.text, "/connects") {
 					if len(b.words) != 3 || b.words[1].text != "=" || b.words[2].text != "/connects" {

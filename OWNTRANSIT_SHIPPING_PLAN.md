@@ -1,5 +1,16 @@
 # OwnTransit v1 shipping plan
 
+## 0.8 bounded reconnect closure
+
+Require silent/partial pending-exchange timeout, cancellation, repeated admission
+with unchanged identity, and promoted-stream survival beyond the pending bound.
+Exercise 0.7.0 canonical package upgrades on the supported Linux and Mac fixture
+paths, plus exact legacy-enrollment sibling reuse without website edits. Keep
+the existing signer, nine-asset release lane and both security build profiles.
+Do not overwrite earlier releases or claim the original live network trigger
+was proven from a restarted process. This release adds no live-host or reboot
+mutation requirement.
+
 ## Current 0.7 development acceptance
 
 Ship 0.7 only after the existing bounded source and authenticated

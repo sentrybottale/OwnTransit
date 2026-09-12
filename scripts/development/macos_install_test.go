@@ -64,9 +64,9 @@ func TestMacInstallerIsolatedLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	top := "owntransit-0.7.0-darwin-arm64"
+	top := "owntransit-0.8.0-darwin-arm64"
 	files := map[string][]byte{
-		"CAPSULE": []byte("schema=owntransit.development-capsule.v1\nversion=0.7.0\nos=darwin\narch=arm64\n"),
+		"CAPSULE": []byte("schema=owntransit.development-capsule.v1\nversion=0.8.0\nos=darwin\narch=arm64\n"),
 		"LICENSE": []byte("fixture license\n"), "NOTICE": []byte("fixture notices\n"),
 		"owntransit-client": []byte("#!/bin/sh\nprintf 'fixture-client\\n'\n"), "install-macos.sh": source,
 	}
@@ -107,7 +107,7 @@ func TestMacInstallerIsolatedLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(filepath.Join(assets, top+".tar.gz"), archive.Bytes(), 0600)
-	members := []string{"DEVELOPMENT.txt", "install-linux.sh", "install-macos.sh", top + ".tar.gz", "owntransit-0.7.0-linux-amd64.tar.gz", "owntransit-0.7.0-linux-arm64.tar.gz"}
+	members := []string{"DEVELOPMENT.txt", "install-linux.sh", "install-macos.sh", top + ".tar.gz", "owntransit-0.8.0-linux-amd64.tar.gz", "owntransit-0.8.0-linux-arm64.tar.gz"}
 	sort.Strings(members)
 	sums.Reset()
 	for _, name := range members {
@@ -153,6 +153,41 @@ func TestMacInstallerIsolatedLifecycle(t *testing.T) {
 	}
 	run(true, "client") // exact reinstall
 	software := filepath.Join(home, "Library/Application Support/OwnTransitSoftware")
+	// Upgrade the canonical 0.7 command atomically, retaining old software.
+	priorCanonical := filepath.Join(software, "0.7.0")
+	if err := os.Mkdir(priorCanonical, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range files {
+		mode := os.FileMode(0644)
+		if name == "owntransit-client" || name == "install-macos.sh" {
+			mode = 0755
+		}
+		write(filepath.Join(priorCanonical, name), bytes.ReplaceAll(data, []byte("0.8.0"), []byte("0.7.0")), mode)
+	}
+	if err := os.Remove(alias); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(priorCanonical, "owntransit-client"), alias); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(priorCanonical, "owntransit-client"), 0777); err != nil {
+		t.Fatal(err)
+	}
+	run(false, "client")
+	if got, _ := os.Readlink(alias); got != filepath.Join(priorCanonical, "owntransit-client") {
+		t.Fatal("unsafe prior alias was changed")
+	}
+	if err := os.Chmod(filepath.Join(priorCanonical, "owntransit-client"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	run(true, "client")
+	if got, _ := os.Readlink(alias); got != filepath.Join(software, "0.8.0", "owntransit-client") {
+		t.Fatal("canonical upgrade did not select new client")
+	}
+	if _, err := os.Stat(filepath.Join(priorCanonical, "owntransit-client")); err != nil {
+		t.Fatal("old canonical software was purged")
+	}
 	// The previous software and credential locations are retained; only exact old
 	// managed aliases are retired.
 	previous := filepath.Join(software, "0.6.1")

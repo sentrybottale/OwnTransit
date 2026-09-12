@@ -8,8 +8,8 @@ LC_ALL=C
 export LC_ALL
 unset CDPATH ENV BASH_ENV TAR_OPTIONS GZIP SSH_AUTH_SOCK SSH_ASKPASS DISPLAY
 umask 077
-version=0.7.0
-base=https://github.com/sentrybottale/OwnTransit/releases/download/v0.7.0
+version=0.8.0
+base=https://github.com/sentrybottale/OwnTransit/releases/download/v0.8.0
 fail() { printf 'owntransit-install: %s\n' "$*" >&2; exit 1; }
 quote() { printf "'"; printf '%s' "$1" | sed "s/'/'\"'\"'/g"; printf "'"; }
 test "$(uname -s):$(uname -m)" = Darwin:arm64 || fail 'Apple-silicon macOS is required'
@@ -55,7 +55,7 @@ check_release() {
   done
 }
 if test "$action" = --uninstall; then
-  test -e "$target" || { printf '%s\n' 'OwnTransit 0.7.0 client is not installed here.'; exit 0; }
+  test -e "$target" || { printf '%s\n' 'OwnTransit 0.8.0 client is not installed here.'; exit 0; }
   for path in "$user_home/Library" "$user_home/Library/Application Support" "$software" "$target" "$user_home/.local" "$bindir"; do protected "$path"; done
   owned_alias "$alias_path" || fail 'client command is not managed; nothing removed'
   check_release
@@ -69,8 +69,16 @@ if test "$action" = --uninstall; then
 fi
 for path in "$user_home/Library" "$user_home/Library/Application Support" "$software" "$user_home/.local" "$bindir"; do ensure "$path"; done
 stage=$(mktemp -d "$software/download.XXXXXXXX")
+link_stage=
 cleanup() {
   status=$?; trap - EXIT HUP INT TERM
+  if test -n "$link_stage"; then
+    case "$link_stage" in "$bindir"/.owntransit-link.*) ;; *) exit 1 ;; esac
+    if test -d "$link_stage" && test ! -L "$link_stage" && test "$(stat -f %u "$link_stage")" = "$uid"; then
+      rm -f -- "$link_stage/client"
+      rmdir "$link_stage"
+    fi
+  fi
   case "$stage" in "$software"/download.*) ;; *) exit 1 ;; esac
   suffix=${stage##*/download.}; case "$suffix" in ''|*[!A-Za-z0-9]*) exit 1 ;; esac
   if test -d "$stage" && test ! -L "$stage" && test "$(stat -f %u "$stage")" = "$uid"; then rm -rf -- "$stage"; fi
@@ -96,7 +104,7 @@ fetch DEVELOPMENT-SHA256SUMS.sig 8192
 ssh-keygen -Y verify -f "$stage/allowed_signers" -I owntransit-development -n owntransit-development-v1 \
   -s "$stage/DEVELOPMENT-SHA256SUMS.sig" < "$stage/DEVELOPMENT-SHA256SUMS" >/dev/null 2>&1 || fail 'release signature rejected'
 test "$(wc -l < "$stage/DEVELOPMENT-SHA256SUMS" | tr -d '[:space:]')" = 6 || fail 'unexpected release inventory'
-awk 'BEGIN {ok=1;p=""} {if(NF!=2 || length($1)!=64 || $1!~/^[0-9a-f]+$/ || $0!=$1 "  " $2 || seen[$2]++ || (p!="" && p>=$2))ok=0; if($2!="DEVELOPMENT.txt" && $2!="install-linux.sh" && $2!="install-macos.sh" && $2!="owntransit-0.7.0-darwin-arm64.tar.gz" && $2!="owntransit-0.7.0-linux-amd64.tar.gz" && $2!="owntransit-0.7.0-linux-arm64.tar.gz")ok=0;p=$2} END {exit ok?0:1}' "$stage/DEVELOPMENT-SHA256SUMS" || fail 'malformed release inventory'
+awk 'BEGIN {ok=1;p=""} {if(NF!=2 || length($1)!=64 || $1!~/^[0-9a-f]+$/ || $0!=$1 "  " $2 || seen[$2]++ || (p!="" && p>=$2))ok=0; if($2!="DEVELOPMENT.txt" && $2!="install-linux.sh" && $2!="install-macos.sh" && $2!="owntransit-0.8.0-darwin-arm64.tar.gz" && $2!="owntransit-0.8.0-linux-amd64.tar.gz" && $2!="owntransit-0.8.0-linux-arm64.tar.gz")ok=0;p=$2} END {exit ok?0:1}' "$stage/DEVELOPMENT-SHA256SUMS" || fail 'malformed release inventory'
 top=owntransit-$version-darwin-arm64
 archive=$top.tar.gz
 expected=$(awk -v name="$archive" '$2==name {print $1}' "$stage/DEVELOPMENT-SHA256SUMS")
@@ -116,8 +124,15 @@ test "$(wc -c < "$stage/$top/SHA256SUMS" | tr -d '[:space:]')" -le 8192 || fail 
 test "$(wc -l < "$stage/$top/SHA256SUMS" | tr -d '[:space:]')" = 5 || fail 'unexpected capsule inventory count'
 awk 'BEGIN{ok=1;p=""} {if(NF!=2 || length($1)!=64 || $1!~/^[0-9a-f]+$/ || $0!=$1 "  " $2 || seen[$2]++ || (p!="" && p>=$2))ok=0;if($2!="CAPSULE" && $2!="LICENSE" && $2!="NOTICE" && $2!="install-macos.sh" && $2!="owntransit-client")ok=0;p=$2} END{exit ok?0:1}' "$stage/$top/SHA256SUMS" || fail 'malformed capsule inventory'
 (cd "$stage/$top" && shasum -a 256 -c SHA256SUMS >/dev/null) || fail 'capsule checksum mismatch'
+previous_alias=
 if test -e "$alias_path" || test -L "$alias_path"; then
-  owned_alias "$alias_path" || fail 'refusing to replace an unmanaged client command'
+  test -L "$alias_path" && test "$(stat -f %u "$alias_path")" = "$uid" || fail 'refusing to replace an unmanaged client command'
+  previous_alias=$(readlink "$alias_path")
+  case "$previous_alias" in
+    "$target/owntransit-client") ;;
+    "$software/0.7.0/owntransit-client") check_release "$software/0.7.0" ;;
+    *) fail 'refusing to replace an unmanaged client command' ;;
+  esac
 fi
 if test -e "$target" || test -L "$target"; then
   check_release
@@ -126,7 +141,18 @@ if test -e "$target" || test -L "$target"; then
     cmp -s "$target/$member" "$stage/$top/$member" || fail 'existing release differs; refusing overwrite'
   done
 else mv -- "$stage/$top" "$target"; fi
-if test ! -L "$alias_path"; then ln -s "$target/owntransit-client" "$alias_path"; fi
+if test -n "$previous_alias"; then
+  test -L "$alias_path" && test "$(stat -f %u "$alias_path")" = "$uid" && test "$(readlink "$alias_path")" = "$previous_alias" || fail 'client command changed during installation'
+else
+  test ! -e "$alias_path" && test ! -L "$alias_path" || fail 'client command appeared during installation'
+fi
+if test "$previous_alias" != "$target/owntransit-client"; then
+  link_stage=$(mktemp -d "$bindir/.owntransit-link.XXXXXXXX")
+  ln -s "$target/owntransit-client" "$link_stage/client"
+  mv -f -- "$link_stage/client" "$alias_path"
+  rmdir "$link_stage"
+  link_stage=
+fi
 # Retire only an exact, owned alias from the previous package line. Old release
 # directories and endpoint credentials stay in place.
 for old_alias in "$bindir/owntransit-preview" "$bindir/owntransit"; do
@@ -143,7 +169,7 @@ for old_alias in "$bindir/owntransit-preview" "$bindir/owntransit"; do
   rm -- "$old_alias"
 done
 command_path=$alias_path
-printf '%s\n' 'OwnTransit 0.7.0 Client installed for macOS arm64. Pairing state retained.'
+printf '%s\n' 'OwnTransit 0.8.0 Client installed for macOS arm64. Pairing state retained.'
 printf 'NEXT — on THIS Mac, without sudo:\n  '; quote "$command_path"; printf ' setup\n'
 printf '%s\n' 'Choose New tunnel or Continue tunnel from the menu.'
 }
