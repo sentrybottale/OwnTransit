@@ -1,7 +1,7 @@
 # Install OwnTransit
 
 > Legacy 0.1.0 guide. These commands do not install the receiver-owned pairing
-> profile. For the 0.7 Client/Relay/Target flow and canonical commands,
+> profile. For the product 1.0 Client/Relay/Target flow and canonical commands,
 > use [PAIRING_INSTALL.md](PAIRING_INSTALL.md). The names below belong to the
 > historical release, not current CLI compatibility aliases.
 

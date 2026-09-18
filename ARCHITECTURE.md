@@ -10,9 +10,9 @@ inner authentication and SSH carriage. Established SSH sessions are never
 reconnected or replayed by this mechanism. No trust, framing or destination
 selection changes are introduced.
 
-## Current 0.7 development profile
+## Current 1.0 product profile
 
-0.7 uses the local roles **Client**, **Relay** and
+1.0 retains the 0.8 runtime and uses the local roles **Client**, **Relay** and
 **Target**. The canonical programs are `owntransit-client`,
 `owntransit-relay` and `owntransit-target`; running one without arguments or
 with `setup` opens its local menu. Installers select `client`, `relay` or

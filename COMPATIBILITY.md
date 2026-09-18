@@ -1,13 +1,21 @@
 # OwnTransit wire compatibility
 
-## Current 0.7 commands and local state
+## Product 1.x commands and local state
 
-The 0.7 flow uses Client, Relay and Target roles, with canonical
+Product 1.0 retains the 0.8 runtime and Client, Relay and Target roles, with canonical
 `owntransit-client`, `owntransit-relay` and `owntransit-target` programs. Their
 no-argument or `setup` entry opens the local menu. Earlier command names,
 preview aliases and the public `pair` prefix are not compatibility shims.
 This CLI change does not rename authenticated bytes or select a different
 pairing/carrier profile.
+
+The documented public commands and retained pairing-state upgrade path form
+the 1.x compatibility baseline. Breaking that public contract requires a new
+major release and an explicit migration plan; this does not promise support for
+private implementation APIs, every old preview CLI, or arbitrary modified
+installations. Recognized canonical 0.7.0/0.8.0 installations can upgrade to
+1.0.0 without re-pairing. Product version 1.0 is not a switch to the historical
+administrator-led "v1 wire profile" described below.
 
 Existing neutral endpoint state roots preserve identities. Local endpoint
 removal records, Relay menu names and public admission inventory are not wire

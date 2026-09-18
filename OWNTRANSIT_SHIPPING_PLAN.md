@@ -1,5 +1,19 @@
 # OwnTransit v1 shipping plan
 
+## Product 1.0.0 feature baseline
+
+Promote the existing 0.8 runtime without new protocol or feature scope. Validate
+recognized 0.7.0/0.8.0 package upgrades, preserve existing identities and SSH
+ownership, and run the existing source, native CI and signed nine-asset checks.
+Product 1.0 is distinct from the historical administrator-led v1/0.1.0 contract
+below. Retain the current signer and signature namespace; no new signing
+ceremony, host, reboot, or independent certification requirement is introduced.
+
+Document the remaining proxy-rate-limit/retry and independent-recovery limits.
+Do not present a version bump as proof that those limitations, a particular live
+outage, or external-assurance work have been resolved. Live upgrades remain a
+separately authorized operator action.
+
 ## 0.8 bounded reconnect closure
 
 Require silent/partial pending-exchange timeout, cancellation, repeated admission
@@ -11,7 +25,7 @@ Do not overwrite earlier releases or claim the original live network trigger
 was proven from a restarted process. This release adds no live-host or reboot
 mutation requirement.
 
-## Current 0.7 development acceptance
+## Historical 0.7 development acceptance
 
 Ship 0.7 only after the existing bounded source and authenticated
 artifact checks pass for the exact candidate. Retain the supported Linux

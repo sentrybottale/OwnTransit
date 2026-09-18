@@ -7,6 +7,17 @@ authenticated artifacts of the documented release lane. The legacy 0.1.0 lane
 additionally requires its signed qualification record. Git tags do not publish
 artifacts automatically.
 
+## [1.0.0]
+
+- Release the existing Client/Relay/Target feature baseline, retaining the 0.8
+  runtime, authenticated wire values, pending-connection guard and SSH boundary.
+- Support recognized canonical 0.7.0 and 0.8.0 package upgrades without changing
+  endpoint identities; establish the documented 1.x CLI/state compatibility baseline.
+- Clarify operational limits around proxy-rate-limit retries and independent
+  host recovery. A 1.0 label does not assert independent security certification
+  or resolution of an operator's existing live outage.
+- Keep immutable signed platform downloads and the existing distribution signer.
+
 ## [0.8.0]
 
 - Bound runtime relay preface, outer TLS and READY waits with a local 45-second
