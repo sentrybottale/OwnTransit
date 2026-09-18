@@ -1,5 +1,15 @@
 # OwnTransit roadmap
 
+## 1.0 — current feature baseline
+
+- Promote the 0.8 runtime without new transport or enrollment behavior.
+- Preserve 0.7/0.8 pairing state during recognized package upgrades and adopt
+  the documented 1.x command/state compatibility baseline.
+- Keep proxy HTTP 429-aware backoff and more precise transport diagnostics as
+  follow-up work; independent recovery remains an operator responsibility.
+- Provide Client-side SSH/SCP examples and the direct installed Relay setup
+  command, including local tunnel/instance names and optional SSH identity keys.
+
 ## 0.8 — bounded pending reconnects and usable upgrades
 
 - Bound silent pre-SSH Relay waits locally and retry with retained identities.
@@ -99,17 +109,9 @@ all receiver instances keep the same fixed local SSH destination.
 
 ## Remaining product work
 
-- Add a compact, copyable "Connect over SSH" example block beside the connection
-  instructions in `README.md` and `PAIRING_INSTALL.md`: Linux and macOS Client
-  paths, named tunnel selection, and an optional `-i` SSH identity key. Explain
-  that commands run on the Client, which placeholders to replace, and that the
-  SSH user and verified host identity belong to the Target, not the Relay.
-  Keep examples consistent with the CLI's printed command, use only reserved
-  example hosts, and do not weaken SSH host-key verification.
-- Show the already-installed Relay entrypoint explicitly, without an installer
-  or `curl`: `sudo owntransit-relay setup`. Explain that it opens the menu and
-  **Start or update this relay** starts/updates the selected managed service;
-  include `sudo owntransit-relay setup --instance NAME` for a named Relay.
+- Add bounded HTTP 429-aware retry backoff and clearer rate-limit diagnostics;
+  avoid reconnect loops competing with legitimate admission traffic.
+
 - Optional P2P with relay fallback to reduce relay bandwidth.
 - apt/Homebrew distribution repositories and packaging expansion.
 - Broader shared-relay fairness, overload, restart/upgrade and capacity coverage.

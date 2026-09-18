@@ -22,14 +22,21 @@ exact `/connects` URI. The Relay manager now recognizes that legacy sibling
 without modifying it. Other ambiguous/prefix/regex carrier matches, duplicate
 carrier locations and wrong-instance upstreams remain rejected.
 
-## Current 0.7 development boundary
+## Current 1.0 product boundary
 
-0.7 source uses the local Client, Relay and Target roles and the canonical
+1.0 retains the 0.8 runtime, local Client, Relay and Target roles and the canonical
 `owntransit-client`, `owntransit-relay` and `owntransit-target` commands.
 Their `setup` menus expose only local role operations. Earlier public names,
 preview aliases and the `pair` command prefix are not retained as CLI shims.
-Historical sections below describe their named release; they do not promise
-current CLI compatibility or establish that 0.7 is published or qualified.
+Historical sections below describe their named release, not additional
+certification of product 1.0. The 1.x compatibility contract is documented in
+COMPATIBILITY.md. Independent assessment and universal availability are not claimed.
+
+Tight reverse-proxy upgrade quotas can cause HTTP 429 and prevent reconnection;
+the existing retry cadence does not adapt to that response and some failures
+are reported only as a generic transport error. This is a disclosed operational
+limitation, not fixed by the 1.0 version change. A Relay cannot administer a
+Target through a broken tunnel; retain independent maintenance access.
 
 The private Target code remains available only to its local authority owner
 and the independently chosen Client. The Relay stores public planning and

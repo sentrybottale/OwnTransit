@@ -1,7 +1,7 @@
 # Hostile enrollment exchange
 
 This document specifies the unchanged legacy administrator-led profile and
-retains that profile's historical command names. In the 0.7 flow,
+retains that profile's historical command names. In the product 1.0 flow,
 `owntransit-client setup` and `owntransit-target setup` select the receiver-owned
 profile in [RECEIVER_PAIRING.md](RECEIVER_PAIRING.md), not this human comparison
 procedure. Current instructions are in [PAIRING_INSTALL.md](PAIRING_INSTALL.md);
