@@ -1,6 +1,6 @@
 # OwnTransit roadmap
 
-## Unreleased — automatic recovery without identity resets
+## 1.0.1 — automatic recovery without identity resets
 
 - Implement bounded, jittered network retry across Target loops and new Client
   connections; classify HTTP 429 and clamp untrusted Retry-After hints.
@@ -120,8 +120,8 @@ all receiver instances keep the same fixed local SSH destination.
 
 ## Remaining product work
 
-- Qualify and release the unreleased HTTP 429-aware retry changes above; broader
-  host-wide/shared-NAT fairness and admission capacity remain additional work.
+- Broader host-wide/shared-NAT fairness and admission capacity beyond the
+  per-loop HTTP 429-aware retry policy.
 
 - Optional P2P with relay fallback to reduce relay bandwidth.
 - apt/Homebrew distribution repositories and packaging expansion.

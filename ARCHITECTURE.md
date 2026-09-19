@@ -1,6 +1,6 @@
 # OwnTransit architecture
 
-## Unreleased: transient network recovery
+## 1.0.1: transient network recovery
 
 Target retry loops retain the same origin, pairing and policy across network
 failure. Each independent loop backs off from one second exponentially to a
@@ -19,7 +19,7 @@ command when connectivity returns. No application bytes or old session grants
 are replayed. This is local scheduling, not a wire/state migration; unchanged
 peers still use fresh mTLS and the same authenticated profiles.
 
-These source changes are not present in the immutable 1.0.0 downloads.
+These changes require installing 1.0.1; the immutable 1.0.0 downloads are unchanged.
 
 ## 0.8 connection liveness
 

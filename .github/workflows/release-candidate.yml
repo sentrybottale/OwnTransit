@@ -170,12 +170,12 @@ jobs:
           set -eu
           mkdir -p "$RUNNER_TEMP/owntransit-selftest"
           for role in owntransit-client owntransit-target owntransit-relay; do
-            go build -mod=readonly -trimpath -ldflags "-X github.com/sentrybottale/owntransit/internal/buildinfo.Version=1.0.0-dev -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA" -o "$RUNNER_TEMP/owntransit-selftest/$role" "./cmd/$role"
+            go build -mod=readonly -trimpath -ldflags "-X github.com/sentrybottale/owntransit/internal/buildinfo.Version=1.0.1-dev -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA" -o "$RUNNER_TEMP/owntransit-selftest/$role" "./cmd/$role"
           done
           cp PAIRING_INSTALL.md LICENSE THIRD_PARTY_NOTICES.md "$RUNNER_TEMP/owntransit-selftest/"
-          CGO_ENABLED=0 go build -mod=readonly -trimpath -tags=owntransit_relay_container -ldflags "-X github.com/sentrybottale/owntransit/internal/buildinfo.Version=1.0.0-dev -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA" -o "$RUNNER_TEMP/owntransit-selftest/owntransit-relay-container" ./cmd/owntransit-relay
-          docker build --network=none -f deploy/pairing/Containerfile -t owntransit-relay:1.0.0-dev "$RUNNER_TEMP/owntransit-selftest"
-          docker save -o "$RUNNER_TEMP/owntransit-selftest/owntransit-relay-image.tar" owntransit-relay:1.0.0-dev
+          CGO_ENABLED=0 go build -mod=readonly -trimpath -tags=owntransit_relay_container -ldflags "-X github.com/sentrybottale/owntransit/internal/buildinfo.Version=1.0.1-dev -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA" -o "$RUNNER_TEMP/owntransit-selftest/owntransit-relay-container" ./cmd/owntransit-relay
+          docker build --network=none -f deploy/pairing/Containerfile -t owntransit-relay:1.0.1-dev "$RUNNER_TEMP/owntransit-selftest"
+          docker save -o "$RUNNER_TEMP/owntransit-selftest/owntransit-relay-image.tar" owntransit-relay:1.0.1-dev
       - name: Upload explicitly unreleased Linux self-test binaries
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -238,7 +238,7 @@ jobs:
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/owntransit-selftest"
-          go build -mod=readonly -trimpath -ldflags "-X github.com/sentrybottale/owntransit/internal/buildinfo.Version=1.0.0-dev -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA" -o "$RUNNER_TEMP/owntransit-selftest/owntransit-client" ./cmd/owntransit-client
+          go build -mod=readonly -trimpath -ldflags "-X github.com/sentrybottale/owntransit/internal/buildinfo.Version=1.0.1-dev -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA" -o "$RUNNER_TEMP/owntransit-selftest/owntransit-client" ./cmd/owntransit-client
           cp PAIRING_INSTALL.md LICENSE THIRD_PARTY_NOTICES.md "$RUNNER_TEMP/owntransit-selftest/"
       - name: Upload explicitly unreleased Apple-silicon self-test client
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

@@ -8,8 +8,8 @@ LC_ALL=C
 export LC_ALL
 unset CDPATH ENV BASH_ENV TAR_OPTIONS GZIP SSH_AUTH_SOCK SSH_ASKPASS DISPLAY
 umask 077
-version=1.0.0
-base=https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.0
+version=1.0.1
+base=https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.1
 fail() { printf 'owntransit-install: %s\n' "$*" >&2; exit 1; }
 quote() { printf "'"; printf '%s' "$1" | sed "s/'/'\"'\"'/g"; printf "'"; }
 test "$(uname -s):$(uname -m)" = Darwin:arm64 || fail 'Apple-silicon macOS is required'
@@ -55,7 +55,7 @@ check_release() {
   done
 }
 if test "$action" = --uninstall; then
-  test -e "$target" || { printf '%s\n' 'OwnTransit 1.0.0 client is not installed here.'; exit 0; }
+  test -e "$target" || { printf '%s\n' 'OwnTransit 1.0.1 client is not installed here.'; exit 0; }
   for path in "$user_home/Library" "$user_home/Library/Application Support" "$software" "$target" "$user_home/.local" "$bindir"; do protected "$path"; done
   owned_alias "$alias_path" || fail 'client command is not managed; nothing removed'
   check_release
@@ -104,7 +104,7 @@ fetch DEVELOPMENT-SHA256SUMS.sig 8192
 ssh-keygen -Y verify -f "$stage/allowed_signers" -I owntransit-development -n owntransit-development-v1 \
   -s "$stage/DEVELOPMENT-SHA256SUMS.sig" < "$stage/DEVELOPMENT-SHA256SUMS" >/dev/null 2>&1 || fail 'release signature rejected'
 test "$(wc -l < "$stage/DEVELOPMENT-SHA256SUMS" | tr -d '[:space:]')" = 6 || fail 'unexpected release inventory'
-awk 'BEGIN {ok=1;p=""} {if(NF!=2 || length($1)!=64 || $1!~/^[0-9a-f]+$/ || $0!=$1 "  " $2 || seen[$2]++ || (p!="" && p>=$2))ok=0; if($2!="DEVELOPMENT.txt" && $2!="install-linux.sh" && $2!="install-macos.sh" && $2!="owntransit-1.0.0-darwin-arm64.tar.gz" && $2!="owntransit-1.0.0-linux-amd64.tar.gz" && $2!="owntransit-1.0.0-linux-arm64.tar.gz")ok=0;p=$2} END {exit ok?0:1}' "$stage/DEVELOPMENT-SHA256SUMS" || fail 'malformed release inventory'
+awk 'BEGIN {ok=1;p=""} {if(NF!=2 || length($1)!=64 || $1!~/^[0-9a-f]+$/ || $0!=$1 "  " $2 || seen[$2]++ || (p!="" && p>=$2))ok=0; if($2!="DEVELOPMENT.txt" && $2!="install-linux.sh" && $2!="install-macos.sh" && $2!="owntransit-1.0.1-darwin-arm64.tar.gz" && $2!="owntransit-1.0.1-linux-amd64.tar.gz" && $2!="owntransit-1.0.1-linux-arm64.tar.gz")ok=0;p=$2} END {exit ok?0:1}' "$stage/DEVELOPMENT-SHA256SUMS" || fail 'malformed release inventory'
 top=owntransit-$version-darwin-arm64
 archive=$top.tar.gz
 expected=$(awk -v name="$archive" '$2==name {print $1}' "$stage/DEVELOPMENT-SHA256SUMS")
@@ -132,6 +132,7 @@ if test -e "$alias_path" || test -L "$alias_path"; then
     "$target/owntransit-client") ;;
     "$software/0.7.0/owntransit-client") check_release "$software/0.7.0" ;;
     "$software/0.8.0/owntransit-client") check_release "$software/0.8.0" ;;
+    "$software/1.0.0/owntransit-client") check_release "$software/1.0.0" ;;
     *) fail 'refusing to replace an unmanaged client command' ;;
   esac
 fi
@@ -170,7 +171,7 @@ for old_alias in "$bindir/owntransit-preview" "$bindir/owntransit"; do
   rm -- "$old_alias"
 done
 command_path=$alias_path
-printf '%s\n' 'OwnTransit 1.0.0 Client installed for macOS arm64. Pairing state retained.'
+printf '%s\n' 'OwnTransit 1.0.1 Client installed for macOS arm64. Pairing state retained.'
 printf 'NEXT — on THIS Mac, without sudo:\n  '; quote "$command_path"; printf ' setup\n'
 printf '%s\n' 'Choose New tunnel or Continue tunnel from the menu.'
 }

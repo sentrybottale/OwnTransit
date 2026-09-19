@@ -9,9 +9,9 @@ test -f /.dockerenv || fail 'refuses to mutate a non-container host'
 
 case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; *) fail 'unsupported test architecture' ;; esac
 project_root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
-bundle=/root/owntransit-1.0.0-linux-$arch
+bundle=/root/owntransit-1.0.1-linux-$arch
 install -d -o root -g root -m 0700 "$bundle"
-printf 'schema=owntransit.development-capsule.v1\nversion=1.0.0\nos=linux\narch=%s\n' "$arch" > "$bundle/CAPSULE"
+printf 'schema=owntransit.development-capsule.v1\nversion=1.0.1\nos=linux\narch=%s\n' "$arch" > "$bundle/CAPSULE"
 printf '%s\n' development-license > "$bundle/LICENSE"
 printf '%s\n' development-notice > "$bundle/NOTICE"
 printf '%s\n' '#!/bin/sh' 'exit 0' > "$bundle/owntransit-client"
@@ -52,8 +52,8 @@ grep -Fqx 'NEXT — on THIS Client computer, without sudo:' "$client_output"
 grep -Fqx '  /usr/local/bin/owntransit-client setup' "$client_output"
 grep -Fqx 'Choose New tunnel or Continue tunnel from the menu.' "$client_output"
 if grep -Eq 'otrelay1\.|otpair1\.|otpair2\.|setup --tunnel|--replace' "$client_output"; then fail 'installer bypassed the menu handoff'; fi
-test -x /opt/owntransit/1.0.0/client/owntransit-client
-test "$(readlink /usr/local/bin/owntransit-client)" = /opt/owntransit/1.0.0/client/owntransit-client
+test -x /opt/owntransit/1.0.1/client/owntransit-client
+test "$(readlink /usr/local/bin/owntransit-client)" = /opt/owntransit/1.0.1/client/owntransit-client
 test ! -e /var/lib/owntransit-pair && test ! -e /var/lib/owntransit || fail 'client install created runtime or legacy state'
 
 install -d -m 0755 /run/systemd/system
@@ -61,10 +61,10 @@ install -d -m 0755 /run/systemd/system
 "$bundle/install-linux.sh" --bundle "$bundle" --role target > /tmp/owntransit-target.out
 grep -Fqx 'NEXT — on THIS Target machine:' /tmp/owntransit-target.out
 grep -Fqx '  sudo /usr/local/bin/owntransit-target setup' /tmp/owntransit-target.out
-test -x /opt/owntransit/1.0.0/target/owntransit-target
-test "$(readlink /usr/local/bin/owntransit-target)" = /opt/owntransit/1.0.0/target/owntransit-target
+test -x /opt/owntransit/1.0.1/target/owntransit-target
+test "$(readlink /usr/local/bin/owntransit-target)" = /opt/owntransit/1.0.1/target/owntransit-target
 test -f /etc/systemd/system/owntransit-target.service
-grep -Fqx 'ExecStart=/opt/owntransit/1.0.0/target/owntransit-target serve --state /var/lib/owntransit-pair' /etc/systemd/system/owntransit-target.service
+grep -Fqx 'ExecStart=/opt/owntransit/1.0.1/target/owntransit-target serve --state /var/lib/owntransit-pair' /etc/systemd/system/owntransit-target.service
 grep -Fqx 'CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_KILL' /etc/systemd/system/owntransit-target.service
 grep -Fqx 'AmbientCapabilities=CAP_SETUID' /etc/systemd/system/owntransit-target.service
 grep -Fqx 'Type=notify' /etc/systemd/system/owntransit-target.service
@@ -82,9 +82,9 @@ chmod 0644 "$legacy_unit"
 rm -- "$unit"
 "$bundle/install-linux.sh" --bundle "$bundle" --role target >/tmp/target-upgrade.out
 test ! -e "$legacy_unit"
-grep -Fqx 'ExecStart=/opt/owntransit/1.0.0/target/owntransit-target serve --state /var/lib/owntransit-pair' "$unit"
+grep -Fqx 'ExecStart=/opt/owntransit/1.0.1/target/owntransit-target serve --state /var/lib/owntransit-pair' "$unit"
 # Canonical predecessors upgrade without re-pairing.
-for prior_version in 0.7.0 0.8.0; do
+for prior_version in 0.7.0 0.8.0 1.0.0; do
 install -d -m 0755 "/opt/owntransit/$prior_version/target"
 install -m 0755 "$bundle/owntransit-target" "/opt/owntransit/$prior_version/target/owntransit-target"
 sed "s/1\\.0\\.0/$prior_version/g" "$unit" > /tmp/target-previous.service
@@ -92,8 +92,8 @@ install -m 0644 /tmp/target-previous.service "$unit"
 rm -- /usr/local/bin/owntransit-target
 ln -s "/opt/owntransit/$prior_version/target/owntransit-target" /usr/local/bin/owntransit-target
 "$bundle/install-linux.sh" --bundle "$bundle" --role target >/tmp/target-canonical-upgrade.out
-test "$(readlink /usr/local/bin/owntransit-target)" = /opt/owntransit/1.0.0/target/owntransit-target
-grep -Fqx 'ExecStart=/opt/owntransit/1.0.0/target/owntransit-target serve --state /var/lib/owntransit-pair' "$unit"
+test "$(readlink /usr/local/bin/owntransit-target)" = /opt/owntransit/1.0.1/target/owntransit-target
+grep -Fqx 'ExecStart=/opt/owntransit/1.0.1/target/owntransit-target serve --state /var/lib/owntransit-pair' "$unit"
 test -x "/opt/owntransit/$prior_version/target/owntransit-target"
 done
 printf '%s\n' 'Environment=UNMANAGED_CHANGE=yes' >> "$unit"
@@ -106,7 +106,7 @@ if "$bundle/install-linux.sh" --bundle "$bundle" --role relay >/tmp/unmanaged.ou
   fail 'unmanaged relay alias was overwritten'
 fi
 test "$(cat /usr/local/bin/owntransit-relay)" = unmanaged
-test ! -e /opt/owntransit/1.0.0/relay || fail 'alias conflict partially installed relay role'
+test ! -e /opt/owntransit/1.0.1/relay || fail 'alias conflict partially installed relay role'
 rm -- /usr/local/bin/owntransit-relay
 relay_output=/tmp/owntransit-relay.out
 "$bundle/install-linux.sh" --bundle "$bundle" --role relay > "$relay_output"
@@ -114,9 +114,9 @@ grep -Fqx 'NEXT — on THIS VPS:' "$relay_output"
 grep -Fqx '  sudo /usr/local/bin/owntransit-relay setup' "$relay_output"
 if grep -Fq -- '--instance default' "$relay_output"; then fail 'unqualified relay install silently selected default'; fi
 if grep -Fq 'podman run' "$relay_output"; then fail 'installer exposed manual container setup'; fi
-test -x /opt/owntransit/1.0.0/relay/owntransit-relay
-test -f /opt/owntransit/1.0.0/relay/owntransit-relay.oci.tar
-test "$(readlink /usr/local/bin/owntransit-relay)" = /opt/owntransit/1.0.0/relay/owntransit-relay
+test -x /opt/owntransit/1.0.1/relay/owntransit-relay
+test -f /opt/owntransit/1.0.1/relay/owntransit-relay.oci.tar
+test "$(readlink /usr/local/bin/owntransit-relay)" = /opt/owntransit/1.0.1/relay/owntransit-relay
 test "$(cat /tmp/owntransit-relay-hook-helper.args)" = "$(printf 'migrate-package-hooks\n--package-lock-fd\n9')" || fail 'relay hook migration lost the protected package-lock handoff'
 # No old alias is retired before the real ownership validator has completed.
 install -d -m 0755 /opt/owntransit-preview/0.6.1/relay
@@ -138,7 +138,7 @@ if "$bundle/install-linux.sh" --bundle "$bundle" --role client --instance alpha 
 ( flock -s 8; "$bundle/install-linux.sh" --bundle "$bundle" --role relay >/tmp/relay-package-race.out 2>&1 && exit 1; exit 0 ) 8<>/var/lib/owntransit-relay-manager/package.lock || fail 'relay package ignored a shared management lock'
 "$bundle/install-linux.sh" --bundle "$bundle" --role relay --instance alpha --action uninstall >/tmp/relay-alpha-uninstall.out
 test "$(cat /tmp/owntransit-relay-package-helper.args)" = "$(printf 'uninstall-managed\n--instance\nalpha\n--package-lock-fd\n9')" || fail 'scoped removal lost instance or package lock handoff'
-test -x /usr/local/bin/owntransit-relay && test -f /opt/owntransit/1.0.0/relay/owntransit-relay.oci.tar || fail 'scoped removal removed shared software'
+test -x /usr/local/bin/owntransit-relay && test -f /opt/owntransit/1.0.1/relay/owntransit-relay.oci.tar || fail 'scoped removal removed shared software'
 
 # Exact prior aliases are retired; previous software remains immutable.
 install -d -m 0755 /opt/owntransit-preview/0.6.1/client
@@ -150,17 +150,17 @@ ln -s /opt/owntransit-preview/0.6.1/client/owntransit /usr/local/bin/owntransit
 test ! -e /usr/local/bin/owntransit-preview && test ! -L /usr/local/bin/owntransit-preview
 test ! -e /usr/local/bin/owntransit && test ! -L /usr/local/bin/owntransit
 test -x /opt/owntransit-preview/0.6.1/client/owntransit
-test "$(readlink /usr/local/bin/owntransit-client)" = /opt/owntransit/1.0.0/client/owntransit-client
+test "$(readlink /usr/local/bin/owntransit-client)" = /opt/owntransit/1.0.1/client/owntransit-client
 
 # A non-purging uninstall removes only verified local software and services.
 for role in client relay; do
- for prior_version in 0.7.0 0.8.0; do
+ for prior_version in 0.7.0 0.8.0 1.0.0; do
   install -d -m 0755 "/opt/owntransit/$prior_version/$role"
   install -m 0755 "$bundle/owntransit-$role" "/opt/owntransit/$prior_version/$role/owntransit-$role"
   rm -- "/usr/local/bin/owntransit-$role"
   ln -s "/opt/owntransit/$prior_version/$role/owntransit-$role" "/usr/local/bin/owntransit-$role"
   "$bundle/install-linux.sh" --bundle "$bundle" --role "$role" >/tmp/canonical-upgrade.out
-  test "$(readlink "/usr/local/bin/owntransit-$role")" = "/opt/owntransit/1.0.0/$role/owntransit-$role"
+  test "$(readlink "/usr/local/bin/owntransit-$role")" = "/opt/owntransit/1.0.1/$role/owntransit-$role"
   test -x "/opt/owntransit/$prior_version/$role/owntransit-$role"
  done
 done
@@ -169,7 +169,7 @@ printf '%s\n' retained-state > /var/lib/owntransit-pair/uninstall-fixture
 if "$bundle/install-linux.sh" --bundle "$bundle" --role target --action uninstall >/tmp/edited-uninstall.out 2>&1; then
   fail 'modified target unit was removed'
 fi
-install -m 0644 /opt/owntransit/1.0.0/target/service.template "$unit"
+install -m 0644 /opt/owntransit/1.0.1/target/service.template "$unit"
 for tunnel in alpha bravo; do
   install -d -m 0700 "/var/lib/owntransit-tunnels/$tunnel"
   printf '%s\n' "retained-$tunnel" > "/var/lib/owntransit-tunnels/$tunnel/pairing-fixture"
@@ -199,7 +199,7 @@ printf '%s\n' unmanaged-command > /usr/local/bin/owntransit
 test "$(cat /usr/local/bin/owntransit)" = unmanaged-command
 "$bundle/install-linux.sh" --bundle "$bundle" --role client --action uninstall
 test "$(cat /usr/local/bin/owntransit)" = unmanaged-command
-test ! -e /opt/owntransit/1.0.0/client
+test ! -e /opt/owntransit/1.0.1/client
 "$bundle/install-linux.sh" --bundle "$bundle" --role client --action uninstall
 "$bundle/install-linux.sh" --bundle "$bundle" --role client
 "$bundle/install-linux.sh" --bundle "$bundle" --role relay --action uninstall

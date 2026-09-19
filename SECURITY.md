@@ -1,6 +1,6 @@
 # OwnTransit security policy
 
-## Unreleased: network retry policy
+## 1.0.1: network retry policy
 
 Network loss, DNS/connect failure and HTTP admission throttling remain transient
 unavailability. They never create, clear or replace an endpoint identity, alarm,
@@ -19,8 +19,8 @@ local worker. Cancellation and policy-alarm watchers interrupt sleeps.
 
 Target notices are fixed text, shared across its loops and limited to one per
 minute. Backoff is per loop, not a host-wide quota across independent processes
-or tunnels. Reverse-proxy protections remain necessary. Publication of 1.0.0
-does not install these unreleased changes, and independent recovery remains
+or tunnels. Reverse-proxy protections remain necessary. Older downloads
+do not include these changes, and independent recovery remains
 necessary for host/process failures beyond transport retry.
 
 ## 0.8 pending-connection recovery

@@ -7,7 +7,7 @@ authenticated artifacts of the documented release lane. The legacy 0.1.0 lane
 additionally requires its signed qualification record. Git tags do not publish
 artifacts automatically.
 
-## [Unreleased]
+## [1.0.1]
 
 - Retry transient Target network failures automatically with retained pairing,
   exponential backoff and scheduling jitter instead of rapid reconnect loops.
@@ -20,7 +20,7 @@ artifacts automatically.
   SSH sessions are never replayed or rebound after disconnection.
 - Exercise repeated network drops, offline Target startup, rate limiting,
   cancellation and terminal alarms using real isolated WebSocket/mTLS/SSH
-  fixtures. No live deployment or new signed release is implied by this entry.
+  fixtures. Preserve canonical 0.7, 0.8 and 1.0.0 installations during upgrades.
 
 ## [1.0.0]
 
