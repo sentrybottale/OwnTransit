@@ -1,5 +1,14 @@
 # OwnTransit v1 shipping plan
 
+## 1.0.1 network recovery patch
+
+Use the existing signer, platform matrix and nine-asset release lane. Require
+both race/vet profiles, bounded outage/offline-start/429/alarm regression tests,
+native platform CI and exact signed-artifact verification. Preserve canonical
+0.7, 0.8 and 1.0.0 predecessors. No new wire profile, identity migration, signer
+or machine is required. Deploy only explicitly authorized installations; keep
+SSH/pairing state and unrelated relay instances unchanged, with rollback ready.
+
 ## Product 1.0.0 feature baseline
 
 Promote the existing 0.8 runtime without new protocol or feature scope. Validate

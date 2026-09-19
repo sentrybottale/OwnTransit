@@ -7,6 +7,21 @@ authenticated artifacts of the documented release lane. The legacy 0.1.0 lane
 additionally requires its signed qualification record. Git tags do not publish
 artifacts automatically.
 
+## [1.0.1]
+
+- Retry transient Target network failures automatically with retained pairing,
+  exponential backoff and scheduling jitter instead of rapid reconnect loops.
+  Bound untrusted HTTP 429 Retry-After hints to 5–30 seconds and report only a
+  fixed local diagnostic. No relay response may reset trust or clear an alarm.
+- Apply backoff to setup publication, pairing/credential exchange and new Client
+  connections. Retry a failed relay-token transport before attempting data;
+  bound each client exchange attempt and preserve the overall opening budget.
+- Retire the Client opening timer before handing off a live stream. Existing
+  SSH sessions are never replayed or rebound after disconnection.
+- Exercise repeated network drops, offline Target startup, rate limiting,
+  cancellation and terminal alarms using real isolated WebSocket/mTLS/SSH
+  fixtures. Preserve canonical 0.7, 0.8 and 1.0.0 installations during upgrades.
+
 ## [1.0.0]
 
 - Release the existing Client/Relay/Target feature baseline, retaining the 0.8

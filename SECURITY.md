@@ -1,5 +1,28 @@
 # OwnTransit security policy
 
+## 1.0.1: network retry policy
+
+Network loss, DNS/connect failure and HTTP admission throttling remain transient
+unavailability. They never create, clear or replace an endpoint identity, alarm,
+pin, authorization floor or relay origin. All reconnects perform the existing
+fresh authentication before the fixed SSH dial. Failed active sessions close;
+they are never resumed by replaying bytes into a replacement carrier.
+
+Independent worker loops use bounded exponential backoff with scheduling jitter.
+An HTTP 429 response may supply one Retry-After value of at most 64 bytes;
+integer seconds or an HTTP date are clamped locally to 5–30 seconds. Missing,
+ambiguous or invalid hints use five seconds. Only the fixed error category and
+bounded duration survive parsing: no response body, raw error or header text
+enters diagnostics. The malicious Relay still has denial-of-service capability;
+its retry hint grants no authentication authority and cannot indefinitely park a
+local worker. Cancellation and policy-alarm watchers interrupt sleeps.
+
+Target notices are fixed text, shared across its loops and limited to one per
+minute. Backoff is per loop, not a host-wide quota across independent processes
+or tunnels. Reverse-proxy protections remain necessary. Older downloads
+do not include these changes, and independent recovery remains
+necessary for host/process failures beyond transport retry.
+
 ## 0.8 pending-connection recovery
 
 Runtime endpoint connections have a local 45-second guard after the WebSocket

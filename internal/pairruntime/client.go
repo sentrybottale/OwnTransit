@@ -19,13 +19,16 @@ import (
 var ErrPeerAuthorization = errors.New("pairruntime: endpoint authentication or authorization did not complete")
 
 func exchangeRetry(ctx context.Context, public *pairrelay.PublicClient, token, request []byte) ([]byte, error) {
+	var retry networkRetry
 	for i := 0; i < 30; i++ {
-		response, err := public.ExchangePairing(ctx, token, request)
+		attempt, cancel := context.WithTimeout(ctx, 10*time.Second)
+		response, err := public.ExchangePairing(attempt, token, request)
+		cancel()
 		if err == nil {
 			return response, nil
 		}
-		if err := pause(ctx, 200*time.Millisecond); err != nil {
-			return nil, err
+		if e := retry.wait(ctx, err); e != nil {
+			return nil, errors.Join(err, e)
 		}
 	}
 	return nil, pairrelay.ErrUnavailable
@@ -264,13 +267,20 @@ func endpointConfig(s clientRecord, a Authorization, dial pairrelay.DialFunc) (p
 // OpenClient performs renewal if required, then opens one fresh carrier. The
 // returned connection is ready for SSH DATA; it never reconnects that stream.
 func OpenClient(ctx context.Context, path string, dial pairrelay.DialFunc) (*leasewire.Conn, func(), error) {
+	return openClient(ctx, path, dial, 30*time.Second)
+}
+
+// openingBudget is shortened only by isolated tests, never by a CLI, network
+// message or runtime setting. It does not bound an established SSH session.
+func openClient(ctx context.Context, path string, dial pairrelay.DialFunc, openingBudget time.Duration) (*leasewire.Conn, func(), error) {
 	gate, err := Admission(path)
 	if err != nil {
 		return nil, nil, err
 	}
 	ctx, cancelPolicy := watchPolicy(ctx, path)
-	release := func() { cancelPolicy(); gate.Close() }
-	openingTimer := time.AfterFunc(30*time.Second, cancelPolicy)
+	ctx, cancelOpening := context.WithCancelCause(ctx)
+	release := func() { cancelOpening(context.Canceled); cancelPolicy(); gate.Close() }
+	openingTimer := time.AfterFunc(openingBudget, func() { cancelOpening(context.DeadlineExceeded) })
 	defer openingTimer.Stop()
 	root, err := securefs.OpenRoot(path)
 	if err != nil {
@@ -339,9 +349,21 @@ func OpenClient(ctx context.Context, path string, dial pairrelay.DialFunc) (*lea
 	}
 	// Relay token rotation is admission-only. Failure never authorizes weaker
 	// endpoint trust; the subsequent runtime dial must still succeed normally.
-	renewCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	token, renewErr := endpoint.RenewToken(renewCtx)
-	cancel()
+	var retry networkRetry
+	var token []byte
+	var renewErr error
+	for {
+		renewCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		token, renewErr = endpoint.RenewToken(renewCtx)
+		cancel()
+		if !errors.Is(renewErr, pairrelay.ErrTransport) {
+			break
+		}
+		if e := retry.wait(ctx, renewErr); e != nil {
+			release()
+			return nil, nil, errors.Join(renewErr, e)
+		}
+	}
 	if renewErr == nil {
 		s.Token = token
 		if err := writeRecord(root, "client.json", s, false); err != nil {
@@ -356,13 +378,16 @@ func OpenClient(ctx context.Context, path string, dial pairrelay.DialFunc) (*lea
 		}
 	}
 	var raw net.Conn
+	if renewErr == nil {
+		retry.reset()
+	}
 	for attempt := 0; attempt < 30; attempt++ {
 		raw, err = endpoint.Dial(ctx)
 		if err == nil {
 			break
 		}
-		if e := pause(ctx, 200*time.Millisecond); e != nil {
-			err = e
+		if e := retry.wait(ctx, err); e != nil {
+			err = errors.Join(err, e)
 			break
 		}
 	}
@@ -374,6 +399,13 @@ func OpenClient(ctx context.Context, path string, dial pairrelay.DialFunc) (*lea
 	if err != nil {
 		release()
 		return nil, nil, errors.Join(ErrPeerAuthorization, err)
+	}
+	// The opening timer cannot survive into an established SSH stream. If it
+	// won the race, fail this attempt instead of returning a doomed session.
+	if !openingTimer.Stop() || ctx.Err() != nil {
+		_ = l.Close()
+		release()
+		return nil, nil, context.DeadlineExceeded
 	}
 	return l, release, nil
 }

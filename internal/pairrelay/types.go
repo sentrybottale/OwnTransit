@@ -46,6 +46,7 @@ var (
 	// Relay transport failure remains an unavailable route for existing callers.
 	// It is a local diagnostic category, never a new wire response or authority.
 	ErrTransport      = fmt.Errorf("%w: relay transport unavailable", ErrUnavailable)
+	ErrRateLimited    = fmt.Errorf("%w: HTTP admission rate limited", ErrTransport)
 	ErrPendingTimeout = fmt.Errorf("%w: pending relay connection timed out", ErrUnavailable)
 	ErrCapacity       = errors.New("pairrelay: capacity exhausted")
 	ErrExpired        = errors.New("pairrelay: authorization expired")

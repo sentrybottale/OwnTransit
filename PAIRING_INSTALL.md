@@ -1,4 +1,4 @@
-# Install and use OwnTransit 1.0.0
+# Install and use OwnTransit 1.0.1
 
 The three roles are **Client**, **Relay** and **Target**. The Client is the
 computer you connect from; the Target is the private computer running SSH.
@@ -13,7 +13,7 @@ selected role. SSH must already be configured by its operator.
 On the public Linux VPS:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.0/install-linux.sh | sudo sh -s -- relay
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.1/install-linux.sh | sudo sh -s -- relay
 ```
 
 The installer opens the Relay menu if it has an interactive terminal. Otherwise,
@@ -41,7 +41,7 @@ or access to SSH. The Relay does not receive the private pairing code.
 On the private Linux machine running your SSH server:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.0/install-linux.sh | sudo sh -s -- target
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.1/install-linux.sh | sudo sh -s -- target
 ```
 
 After installation:
@@ -82,7 +82,7 @@ local status cannot prove that the Client can reach the Target.
 For a Linux Client, install with sudo:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.0/install-linux.sh | sudo sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.1/install-linux.sh | sudo sh -s -- client
 ```
 
 Then run setup as your ordinary user:
@@ -94,7 +94,7 @@ owntransit-client setup
 For an Apple-silicon Mac Client, install without sudo:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.0/install-macos.sh | sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.1/install-macos.sh | sh -s -- client
 ```
 
 Then use the printed path:
@@ -216,7 +216,7 @@ its recovery state. Rerun the displayed setup step with the same public URL;
 do not delete journals, replace identities or change SSH to bypass an error.
 
 The documented Client/Relay/Target commands are the 1.x compatibility baseline.
-Recognized 0.7.0 and 0.8.0 installations retain their pairing state on upgrade;
+Recognized 0.7.0, 0.8.0 and 1.0.0 installations retain their pairing state on upgrade;
 published earlier versions remain immutable. Retained paired state is not an
 invitation to mix different historical enrollment profiles.
 Routine installation, retry and restart do not silently replace a pairing.
@@ -229,7 +229,7 @@ On Linux, select the local role explicitly; replace `client` below with
 `target` or `relay` only on that role's machine:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.0/install-linux.sh | sudo sh -s -- client --uninstall
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.1/install-linux.sh | sudo sh -s -- client --uninstall
 ```
 
 Target uninstall stops its owned services and retains their pairing state.
@@ -240,7 +240,7 @@ It does not remove tunnels from Client or Target machines.
 On Mac, use the installed local uninstaller:
 
 ```sh
-sh "$HOME/Library/Application Support/OwnTransitSoftware/1.0.0/install-macos.sh" --uninstall
+sh "$HOME/Library/Application Support/OwnTransitSoftware/1.0.1/install-macos.sh" --uninstall
 ```
 
 Uninstall keeps private pairing and alarm state. Reinstallation does not clear
@@ -253,11 +253,15 @@ a killswitch or restore an explicitly removed endpoint tunnel automatically.
   to repair a broken tunnel, and software publication does not update installed
   services automatically.
 - Reverse-proxy quotas must allow enrollment, token renewal and runtime
-  connections, not just one WebSocket per SSH login. Current retries may occur
-  every 200 ms and do not adapt to HTTP 429; overly restrictive per-peer/global
-  upgrade limits can prevent recovery and may appear as a generic transport
-  failure. Keep rate and connection protection, but size it for the combined
-  workload and check proxy logs before treating this as an SSH-key problem.
+  connections, not just one WebSocket per SSH login. Version 1.0.1 retries with
+  bounded exponential backoff and jitter; HTTP 429 imposes a 5–30-second wait.
+  Backoff is per loop, not a host-wide quota across tunnels or NAT peers. Keep
+  rate and connection protection, size it for the combined workload, and check
+  proxy logs if throttling persists.
+- The Target retries ordinary outages without replacing identities or requiring
+  a restart. The Client retries a new connection within its 30-second opening
+  budget. If it fails, or an established SSH session breaks, run a new SSH
+  command. Old streams are never replayed. Explicit killswitches remain terminal.
 - The 45-second guard bounds pending runtime connections, not every possible
   host/process failure. It cannot guarantee service through a malicious Relay,
   fix a stopped host, or recover an unavailable network or damaged local state.
@@ -268,7 +272,7 @@ The first installer download trusts GitHub HTTPS. The bootstrap then verifies
 the pinned distribution signer, exact signed inventory and selected archive
 before extraction or execution. Signing keys never belong on the Relay.
 
-Linux software lives under `/opt/owntransit/1.0.0/`; Mac software remains under
+Linux software lives under `/opt/owntransit/1.0.1/`; Mac software remains under
 the user's `Library/Application Support/OwnTransitSoftware`. Existing default
 and named endpoint state locations are retained. No Apple signing subscription
 is needed; the Mac Client is not notarized.

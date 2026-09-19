@@ -96,7 +96,7 @@ for name in $expected_files; do
 done
 test "$0" = "$bundle/install-linux.sh" || fail 'installer must run from its exact absolute bundle path'
 
-expected_capsule=$(printf 'schema=owntransit.development-capsule.v1\nversion=1.0.0\nos=linux\narch=%s' "$arch")
+expected_capsule=$(printf 'schema=owntransit.development-capsule.v1\nversion=1.0.1\nos=linux\narch=%s' "$arch")
 test "$(cat "$bundle/CAPSULE")" = "$expected_capsule" || fail 'capsule identity does not match this host'
 
 test "$(wc -l < "$bundle/SHA256SUMS" | tr -d '[:space:]')" = 8 || fail 'SHA256SUMS must contain eight records'
@@ -164,14 +164,15 @@ no_unit_overrides() {
   test -z "$drops" || fail 'target service has overrides; automatic modification refused'
 }
 normalize_previous_unit() {
-  sed -e 's/0\.1\.[1235678]/1.0.0/g' \
-    -e 's/0\.2\.0/1.0.0/g' \
-    -e 's/0\.3\.0/1.0.0/g' \
-    -e 's/0\.4\.0/1.0.0/g' \
-    -e 's/0\.5\.0/1.0.0/g' \
-    -e 's/0\.6\.[01]/1.0.0/g' \
-    -e 's/0\.7\.0/1.0.0/g' \
-    -e 's/0\.8\.0/1.0.0/g' \
+  sed -e 's/0\.1\.[1235678]/1.0.1/g' \
+    -e 's/0\.2\.0/1.0.1/g' \
+    -e 's/0\.3\.0/1.0.1/g' \
+    -e 's/0\.4\.0/1.0.1/g' \
+    -e 's/0\.5\.0/1.0.1/g' \
+    -e 's/0\.6\.[01]/1.0.1/g' \
+    -e 's/0\.7\.0/1.0.1/g' \
+    -e 's/0\.8\.0/1.0.1/g' \
+    -e 's/1\.0\.0/1.0.1/g' \
     -e 's@/opt/owntransit-preview/@/opt/owntransit/@g' \
     -e 's@/connector/owntransit-connector pair serve@/target/owntransit-target serve@g' \
     -e 's@/connector$@/target@' \
@@ -185,7 +186,7 @@ TimeoutStartSec=30s' \
 }
 if test "$role" = target; then named_units=$(collect_named_units); fi
 
-prefix=/opt/owntransit/1.0.0
+prefix=/opt/owntransit/1.0.1
 case "$role" in
   client) binary=owntransit-client; alias=owntransit-client ;;
   target) binary=owntransit-target; alias=owntransit-target ;;
@@ -201,7 +202,7 @@ legacy_alias_owned() {
   old_binary=$binary
   case "$role" in client) old_binary=owntransit ;; target) old_role=connector; old_binary=owntransit-connector ;; esac
   case "$old_target" in
-    /opt/owntransit/0.7.0/"$role/$binary"|/opt/owntransit/0.8.0/"$role/$binary") ;;
+    /opt/owntransit/0.7.0/"$role/$binary"|/opt/owntransit/0.8.0/"$role/$binary"|/opt/owntransit/1.0.0/"$role/$binary") ;;
     /opt/owntransit-preview/0.1.1/"$old_role/$old_binary"|/opt/owntransit-preview/0.1.2/"$old_role/$old_binary"|/opt/owntransit-preview/0.1.3/"$old_role/$old_binary"|/opt/owntransit-preview/0.1.5/"$old_role/$old_binary"|/opt/owntransit-preview/0.1.6/"$old_role/$old_binary"|/opt/owntransit-preview/0.1.7/"$old_role/$old_binary"|/opt/owntransit-preview/0.1.8/"$old_role/$old_binary"|/opt/owntransit-preview/0.2.0/"$old_role/$old_binary"|/opt/owntransit-preview/0.3.0/"$old_role/$old_binary"|/opt/owntransit-preview/0.4.0/"$old_role/$old_binary"|/opt/owntransit-preview/0.5.0/"$old_role/$old_binary"|/opt/owntransit-preview/0.6.0/"$old_role/$old_binary"|/opt/owntransit-preview/0.6.1/"$old_role/$old_binary") ;;
     *) return 1 ;;
   esac
@@ -221,7 +222,7 @@ if test -e "$alias_path" || test -L "$alias_path"; then
   previous_alias=$(readlink "$alias_path")
   case "$previous_alias" in
     "$alias_target") ;;
-    /opt/owntransit-preview/*|/opt/owntransit/0.7.0/*|/opt/owntransit/0.8.0/*)
+    /opt/owntransit-preview/*|/opt/owntransit/0.7.0/*|/opt/owntransit/0.8.0/*|/opt/owntransit/1.0.0/*)
       legacy_alias_owned "$alias_path" || fail 'previous command is not an owned role executable'
       ;;
     *) fail "refusing to overwrite unmanaged alias: $alias_path" ;;
@@ -362,7 +363,7 @@ if test "$role" = target; then
   trap cleanup_unit EXIT HUP INT TERM
   cat > "$unit_stage" <<EOF
 [Unit]
-Description=OwnTransit 1.0.0 Target
+Description=OwnTransit 1.0.1 Target
 After=network-online.target
 Wants=network-online.target
 ConditionPathIsDirectory=/var/lib/owntransit-pair
@@ -488,18 +489,18 @@ EOF
   install_exact "$unit_stage" "$prefix/target/service.template" 644
   cleanup_unit
   trap - EXIT HUP INT TERM
-  printf 'OwnTransit 1.0.0 Target installed for linux/%s.\n' "$arch"
+  printf 'OwnTransit 1.0.1 Target installed for linux/%s.\n' "$arch"
   if test -d /var/lib/owntransit-pair || test -n "$named_units"; then
     printf '%s\n' 'Existing pairing state retained.'
   fi
   printf 'NEXT — on THIS Target machine:\n  sudo %s setup\n' "$public_command"
   printf '%s\n' 'Choose New tunnel or Continue tunnel from the menu.'
 elif test "$role" = client; then
-  printf 'OwnTransit 1.0.0 Client installed for linux/%s.\n' "$arch"
+  printf 'OwnTransit 1.0.1 Client installed for linux/%s.\n' "$arch"
   printf 'NEXT — on THIS Client computer, without sudo:\n  %s setup\n' "$public_command"
   printf '%s\n' 'Choose New tunnel or Continue tunnel from the menu.'
 else
-  printf 'OwnTransit 1.0.0 Relay installed for linux/%s.\n' "$arch"
+  printf 'OwnTransit 1.0.1 Relay installed for linux/%s.\n' "$arch"
   if test "$next" = manual; then
     printf 'NEXT — on THIS VPS:\n  sudo %s setup' "$public_command"
     if test "$instance_set" = yes; then printf ' --instance %s' "$relay_instance"; fi

@@ -1,5 +1,26 @@
 # OwnTransit architecture
 
+## 1.0.1: transient network recovery
+
+Target retry loops retain the same origin, pairing and policy across network
+failure. Each independent loop backs off from one second exponentially to a
+16-second base, with up to 25% scheduling jitter. HTTP 429 imposes a bounded
+5–30-second delay; the combined sleep never exceeds 30 seconds. Successful
+operations and long ordinary pending waits reset accumulated backoff. A failed
+relay-token transport is retried before another runtime connection is attempted.
+No periodic whole-service restart or online trust repair is added.
+
+The existing 45-second pre-READY guard and active authorization leases remain
+independent. Clients retry only while opening a new stream, inside the existing
+30-second opening budget; an individual credential-exchange attempt is bounded
+to ten seconds. Promotion must stop the Client opening timer before returning
+the authenticated stream. If a live SSH stream breaks, it closes: run a new SSH
+command when connectivity returns. No application bytes or old session grants
+are replayed. This is local scheduling, not a wire/state migration; unchanged
+peers still use fresh mTLS and the same authenticated profiles.
+
+These changes require installing 1.0.1; the immutable 1.0.0 downloads are unchanged.
+
 ## 0.8 connection liveness
 
 Before a runtime connection is promoted, the endpoint locally bounds its

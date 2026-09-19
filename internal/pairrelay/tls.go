@@ -270,6 +270,13 @@ func defaultWebSocketDial(ctx context.Context, rawURL string) (net.Conn, error) 
 		Transport: transport, Jar: nil, Timeout: 0,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
+	return websocketUpgrade(ctx, rawURL, httpClient)
+}
+
+// Caller owns canonical public-address and HTTPS validation. Keeping the
+// upgrade separate lets fixtures exercise real HTTP rejection without a live
+// public server or any production address-validation bypass.
+func websocketUpgrade(ctx context.Context, rawURL string, httpClient *http.Client) (net.Conn, error) {
 	handshakeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	ws, response, err := websocket.Dial(handshakeCtx, rawURL, &websocket.DialOptions{
@@ -280,7 +287,7 @@ func defaultWebSocketDial(ctx context.Context, rawURL string) (net.Conn, error) 
 		if response != nil && response.Body != nil {
 			_ = response.Body.Close()
 		}
-		return nil, ErrUnavailable
+		return nil, websocketFailure(response, time.Now())
 	}
 	if ws.Subprotocol() != WebSocketSubprotocol {
 		_ = ws.CloseNow()
