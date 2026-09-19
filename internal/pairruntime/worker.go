@@ -419,6 +419,12 @@ func serveReceiver(ctx context.Context, agent ReceiverAgent, dial pairrelay.Dial
 			if e != nil {
 				return e
 			}
+			// A completed authenticated token exchange is network progress,
+			// not proof of an available Client. Do not carry accumulated outage
+			// backoff across a healthy idle rendezvous being expired by the Relay.
+			// Fast runtime rejection still waits at least one second; HTTP 429
+			// still imposes its independent bounded minimum.
+			runtimeRetry.reset()
 		}
 		select {
 		case semaphore <- struct{}{}:
