@@ -148,7 +148,7 @@ func (client *PublicClient) connect(ctx context.Context) (net.Conn, error) {
 	}
 	connection, err := client.dial(ctx, client.url)
 	if err != nil || connection == nil {
-		return nil, ErrTransport
+		return nil, dialFailure(context.Cause(ctx), err)
 	}
 	return connection, nil
 }
@@ -310,7 +310,7 @@ func (value *endpoint) open(ctx context.Context, kind byte) (net.Conn, error) {
 	}
 	raw, err := value.dial(ctx, value.config.URL)
 	if err != nil || raw == nil {
-		return nil, ErrTransport
+		return nil, dialFailure(context.Cause(ctx), err)
 	}
 	var pending *pendingOpen
 	if kind == kindRuntime {
@@ -324,7 +324,7 @@ func (value *endpoint) open(ctx context.Context, kind byte) (net.Conn, error) {
 	fail := func(err error) (net.Conn, error) {
 		_ = transport.Abort(raw)
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return nil, context.Cause(ctx)
 		}
 		if pending != nil && !time.Now().Before(pending.deadline) {
 			return nil, ErrPendingTimeout

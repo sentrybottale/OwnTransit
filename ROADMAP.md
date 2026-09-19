@@ -1,5 +1,16 @@
 # OwnTransit roadmap
 
+## Unreleased — automatic recovery without identity resets
+
+- Implement bounded, jittered network retry across Target loops and new Client
+  connections; classify HTTP 429 and clamp untrusted Retry-After hints.
+- Retain pairing through repeated disconnection and offline service startup;
+  immediately honor cancellation and terminal alarms during backoff.
+- Bound credential exchanges and safely retire opening timers; never reconnect
+  or replay an already-started SSH stream.
+- Validate real-WebSocket/mTLS/SSH outage/recovery fixtures plus both security
+  profiles before a separately authorized signed patch release/deployment.
+
 ## 1.0 — current feature baseline
 
 - Promote the 0.8 runtime without new transport or enrollment behavior.
@@ -109,8 +120,8 @@ all receiver instances keep the same fixed local SSH destination.
 
 ## Remaining product work
 
-- Add bounded HTTP 429-aware retry backoff and clearer rate-limit diagnostics;
-  avoid reconnect loops competing with legitimate admission traffic.
+- Qualify and release the unreleased HTTP 429-aware retry changes above; broader
+  host-wide/shared-NAT fairness and admission capacity remain additional work.
 
 - Optional P2P with relay fallback to reduce relay bandwidth.
 - apt/Homebrew distribution repositories and packaging expansion.

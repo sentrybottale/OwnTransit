@@ -26,6 +26,8 @@ func failureMessage(operation string, err error) string {
 	switch {
 	case errors.Is(err, pairruntime.ErrRemoved):
 		return "This tunnel was removed locally. Use explicit restore to reuse retained identities; terminal alarms cannot be restored."
+	case errors.Is(err, pairrelay.ErrRateLimited):
+		return "Relay HTTP admission is rate limited (429). Automatic retries backed off; retry shortly. Check reverse-proxy limits if this persists. Keep the existing pairing."
 	case errors.Is(err, context.Canceled):
 		return "Cancelled. Completed local steps remain in effect; check status before retrying."
 	case errors.Is(err, pairruntime.ErrApprovalMissing):

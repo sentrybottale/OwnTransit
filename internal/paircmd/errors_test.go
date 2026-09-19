@@ -21,6 +21,7 @@ func TestFailureMessagesAreActionableAndNeverEchoCauses(t *testing.T) {
 	}{
 		{context.Canceled, "Cancelled"}, {context.DeadlineExceeded, "freshness"},
 		{pairrelay.ErrTransport, "Relay connection failed"}, {pairrelay.ErrUnavailable, "No target path"},
+		{pairrelay.ErrRateLimited, "rate limited (429)"},
 		{pairrelay.ErrUnauthorized, "Peer authentication"}, {pairruntime.ErrPeerAuthorization, "Peer authentication"},
 		{leasewire.ErrLocked, "cannot be unlocked"}, {leasewire.ErrPeerLock, "cannot be unlocked"},
 		{leasewire.ErrPolicy, "Local authorization"}, {os.ErrNotExist, "state is missing"},

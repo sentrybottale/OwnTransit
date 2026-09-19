@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
 	"net"
 	"sync"
 	"time"
@@ -212,7 +211,7 @@ func pause(ctx context.Context, d time.Duration) error {
 	defer t.Stop()
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return context.Cause(ctx)
 	case <-t.C:
 		return nil
 	}
@@ -235,9 +234,11 @@ func serveReceiver(ctx context.Context, agent ReceiverAgent, dial pairrelay.Dial
 	if err != nil {
 		return err
 	}
+	var notice retryNotice
+	var setupRetry networkRetry
 	publish := func(ctx context.Context, snapshot *Snapshot) error {
 		err := publishPendingReceiver(ctx, public, *snapshot)
-		if err == nil || len(snapshot.Offer) == 0 || len(snapshot.Meta.Token) == 0 {
+		if err == nil || errors.Is(err, pairrelay.ErrTransport) || len(snapshot.Offer) == 0 || len(snapshot.Meta.Token) == 0 {
 			return err
 		}
 		// An explicit local re-approval may have replaced the relay-only token.
@@ -280,10 +281,12 @@ func serveReceiver(ctx context.Context, agent ReceiverAgent, dial pairrelay.Dial
 		if err == nil {
 			break
 		}
-		if err := pause(ctx, time.Second); err != nil {
+		notice.report(err)
+		if err := setupRetry.wait(ctx, err); err != nil {
 			return err
 		}
 	}
+	setupRetry.reset()
 	if ready, ok := agent.(interface{ Ready() error }); ok {
 		if err := ready.Ready(); err != nil {
 			return err
@@ -302,7 +305,8 @@ func serveReceiver(ctx context.Context, agent ReceiverAgent, dial pairrelay.Dial
 			}
 			break
 		}
-		if err := pause(ctx, time.Second); err != nil {
+		notice.report(err)
+		if err := setupRetry.wait(ctx, err); err != nil {
 			return err
 		}
 	}
@@ -315,6 +319,7 @@ func serveReceiver(ctx context.Context, agent ReceiverAgent, dial pairrelay.Dial
 	tasks.Add(1)
 	go func() {
 		defer tasks.Done()
+		var retry networkRetry
 		for ctx.Err() == nil {
 			current, e := agent.Snapshot()
 			if e != nil {
@@ -329,22 +334,28 @@ func serveReceiver(ctx context.Context, agent ReceiverAgent, dial pairrelay.Dial
 				e = publish(attempt, &current)
 				stop()
 				if e != nil {
-					if pause(ctx, time.Second) != nil {
+					notice.report(e)
+					if retry.wait(ctx, e) != nil {
 						return
 					}
 					continue
 				}
 			}
+			started := time.Now()
 			wait, c := context.WithTimeout(ctx, 25*time.Second)
-			_ = pairReceiver.AcceptPairing(wait, current.Meta.Token, func(_ context.Context, blob []byte) ([]byte, error) { return agent.Exchange(blob) })
+			e = pairReceiver.AcceptPairing(wait, current.Meta.Token, func(_ context.Context, blob []byte) ([]byte, error) { return agent.Exchange(blob) })
 			c()
-			if pause(ctx, 100*time.Millisecond) != nil {
+			retry.observed(started, e)
+			if e != nil && time.Since(started) < 10*time.Second {
+				notice.report(e)
+			}
+			if retry.wait(ctx, e) != nil {
 				return
 			}
 		}
 	}()
 	semaphore := make(chan struct{}, 4)
-	var lastPendingNotice time.Time
+	var runtimeRetry networkRetry
 	for ctx.Err() == nil {
 		s, err = agent.Snapshot()
 		if err != nil {
@@ -363,7 +374,7 @@ func serveReceiver(ctx context.Context, agent ReceiverAgent, dial pairrelay.Dial
 		}
 		profile, e := ReceiverTLS(a, s.Meta.Leaves, s.Trust)
 		if e != nil {
-			if err := pause(ctx, time.Second); err != nil {
+			if err := runtimeRetry.wait(ctx, e); err != nil {
 				return err
 			}
 			continue
@@ -380,7 +391,7 @@ func serveReceiver(ctx context.Context, agent ReceiverAgent, dial pairrelay.Dial
 		ecfg := pairrelay.EndpointConfig{URL: s.Meta.Origin, Token: s.Meta.Token, Descriptor: pairrelay.Descriptor{ReceiverID: r, RouteID: t, AdmissionCAPEM: ca}, AdmissionCAPEM: ca, PeerID: r, Certificate: outer, RelayCAPEM: s.Meta.ServerInfo.CAPEM, RelayServerName: s.Meta.ServerInfo.ServerName, RelayServerSPKI: s.Trust.RelayServerSPKI, Dial: dial}
 		ep, e := pairrelay.NewReceiver(ecfg)
 		if e != nil {
-			if err := pause(ctx, time.Second); err != nil {
+			if err := runtimeRetry.wait(ctx, e); err != nil {
 				return err
 			}
 			continue
@@ -390,6 +401,15 @@ func serveReceiver(ctx context.Context, agent ReceiverAgent, dial pairrelay.Dial
 		refresh, c := context.WithTimeout(ctx, 10*time.Second)
 		token, e := ep.RenewToken(refresh)
 		c()
+		// A disconnected/rate-limited HTTP path cannot carry data either. Do
+		// not immediately double the admission load with another runtime dial.
+		if errors.Is(e, pairrelay.ErrTransport) {
+			notice.report(e)
+			if err := runtimeRetry.wait(ctx, e); err != nil {
+				return err
+			}
+			continue
+		}
 		if e == nil {
 			if e = agent.SaveToken(token); e != nil {
 				return e
@@ -405,14 +425,15 @@ func serveReceiver(ctx context.Context, agent ReceiverAgent, dial pairrelay.Dial
 		case <-ctx.Done():
 			return ctx.Err()
 		}
+		started := time.Now()
 		raw, e := ep.Accept(ctx)
+		runtimeRetry.observed(started, e)
 		if e != nil {
 			<-semaphore
-			if errors.Is(e, pairrelay.ErrPendingTimeout) && (lastPendingNotice.IsZero() || time.Since(lastPendingNotice) >= time.Minute) {
-				log.Print("OwnTransit Target: pending relay connection timed out; reconnecting with retained pairing.")
-				lastPendingNotice = time.Now()
+			if errors.Is(e, pairrelay.ErrPendingTimeout) || time.Since(started) < 10*time.Second {
+				notice.report(e)
 			}
-			if err := pause(ctx, 200*time.Millisecond); err != nil {
+			if err := runtimeRetry.wait(ctx, e); err != nil {
 				return err
 			}
 			continue
