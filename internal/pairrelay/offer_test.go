@@ -536,6 +536,16 @@ func TestOfferInitialFrameBoundsReleaseWebSocketCapacity(t *testing.T) {
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
+	waitForCapacity := func() {
+		t.Helper()
+		deadline := time.Now().Add(time.Second)
+		for len(f.relay.connections) != 0 && time.Now().Before(deadline) {
+			time.Sleep(time.Millisecond)
+		}
+		if len(f.relay.connections) != 0 {
+			t.Fatal("offer connection kept admission capacity")
+		}
+	}
 	for _, size := range []int{maxOfferPublicationBytes, maxOfferPublicationBytes + 1} {
 		ws, _, err := websocket.Dial(ctx, server.URL+Path, &websocket.DialOptions{Subprotocols: []string{WebSocketSubprotocol}})
 		if err != nil {
@@ -552,13 +562,7 @@ func TestOfferInitialFrameBoundsReleaseWebSocketCapacity(t *testing.T) {
 		// rejection; neither can keep the admission slot.
 		_, _, _ = ws.Read(ctx)
 		_ = ws.CloseNow()
-		deadline := time.Now().Add(time.Second)
-		for len(f.relay.connections) != 0 && time.Now().Before(deadline) {
-			time.Sleep(time.Millisecond)
-		}
-		if len(f.relay.connections) != 0 {
-			t.Fatal("partial/oversized offer kept admission capacity")
-		}
+		waitForCapacity()
 		public, err := NewPublicClient("wss://relay.example/connects", func(ctx context.Context, _ string) (net.Conn, error) {
 			ws, _, err := websocket.Dial(ctx, server.URL+Path, &websocket.DialOptions{Subprotocols: []string{WebSocketSubprotocol}})
 			if err != nil {
@@ -569,5 +573,6 @@ func TestOfferInitialFrameBoundsReleaseWebSocketCapacity(t *testing.T) {
 		if err != nil || public.CheckOfferSupport(ctx) != nil {
 			t.Fatal("released capacity could not serve capability check")
 		}
+		waitForCapacity()
 	}
 }
