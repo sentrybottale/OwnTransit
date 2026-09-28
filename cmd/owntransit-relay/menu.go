@@ -157,6 +157,20 @@ func relayMenu(ctx context.Context, args []string, input io.Reader, out, diag io
 				fmt.Fprintln(out, "This name could not be created. List tunnels or choose another name.")
 				continue
 			}
+			fmt.Fprint(out, "Public Target ID, if you already created it (Enter for Target instructions): ")
+			id, e := readManagedLine(ctx, reader, 128)
+			if e != nil && !errors.Is(e, io.EOF) {
+				return 1
+			}
+			id = strings.TrimSpace(id)
+			if id != "" {
+				parsed, err := protocol.ParseID(id)
+				if err != nil || parsed == (protocol.ID{}) {
+					fmt.Fprintln(out, "That is not a public Target ID. The draft is saved without approval. Choose Continue a tunnel to retry; never paste the private code here.")
+					continue
+				}
+				return finishRelayMenuTunnel(ctx, out, chosen.URL, name, id, true, ops)
+			}
 			fmt.Fprintf(out, "\n%s — UNDER CONSTRUCTION\nNext on the TARGET computer:\n  sudo owntransit-target setup\nChoose New tunnel and use relay URL: %s\nReturn here → Continue a tunnel when the Target gives you its public ID.\n", name, chosen.URL)
 			return 0
 		case 2, 3, 4:
@@ -211,7 +225,8 @@ func relayMenu(ctx context.Context, args []string, input io.Reader, out, diag io
 				fmt.Fprintln(out, "No admission record matches this saved tunnel. On the Target, choose Continue to reconnect, then list here again. Remove can clear this stale local label; it does not reset endpoint keys.")
 				continue
 			}
-			if item.ReceiverID == "" {
+			needsApproval := item.ReceiverID == ""
+			if needsApproval {
 				fmt.Fprint(out, "Public Target ID (not its private code; Enter goes back): ")
 				id, e := readManagedLine(ctx, reader, 128)
 				if e != nil {
@@ -226,23 +241,29 @@ func relayMenu(ctx context.Context, args []string, input io.Reader, out, diag io
 					fmt.Fprintln(out, "That is not a public Target ID. No approval was changed.")
 					continue
 				}
-				if e := ops.approve(ctx, chosen.URL, item.Name, id); e != nil {
-					if errors.Is(e, relaysetup.ErrMenuApprovalSaved) {
-						fmt.Fprintln(out, "Approval is saved, but its local display-name update was not confirmed. List tunnels to find the approved Target; do not replace its keys.")
-					} else {
-						fmt.Fprintln(out, "Approval was not confirmed. On the Target, choose Continue so it reconnects; then check List tunnels before retrying with the same public ID.")
-						return 1
-					}
-				}
 				item.ReceiverID = id
-				fmt.Fprintln(out, "Target approved. The tunnel is still UNDER CONSTRUCTION.")
 			}
-			fmt.Fprintf(out, "Next on the CLIENT computer:\n  owntransit-client setup\nChoose New tunnel (or Continue if already started).\nRelay URL: %s\nUse the private code from the Target—not a code from this relay.\n", chosen.URL)
-			fmt.Fprintf(out, "Lost it? On the TARGET:\n  sudo owntransit-target code --target-id %s\n", item.ReceiverID)
-			return 0
+			return finishRelayMenuTunnel(ctx, out, chosen.URL, item.Name, item.ReceiverID, needsApproval, ops)
 		}
 	}
 	fmt.Fprintln(out, "Menu paused. Run owntransit-relay setup to continue.")
+	return 0
+}
+
+func finishRelayMenuTunnel(ctx context.Context, out io.Writer, url, name, id string, approve bool, ops relayMenuOperations) int {
+	if approve {
+		if err := ops.approve(ctx, url, name, id); err != nil {
+			if errors.Is(err, relaysetup.ErrMenuApprovalSaved) {
+				fmt.Fprintln(out, "Approval is saved, but its local display-name update was not confirmed. List tunnels to find the approved Target; do not replace its keys.")
+			} else {
+				fmt.Fprintln(out, "Approval was not confirmed. On the Target, choose Continue so it reconnects; then check List tunnels before retrying with the same public ID.")
+				return 1
+			}
+		}
+		fmt.Fprintln(out, "Target approved. The tunnel is still UNDER CONSTRUCTION.")
+	}
+	fmt.Fprintf(out, "Next on the CLIENT computer:\n  owntransit-client setup\nChoose New tunnel (or Continue if already started).\nRelay URL: %s\nPaste the private code already shown on the Target into the Client's hidden prompt.\nYou can go straight to the Client; this Relay does not issue another code.\n", url)
+	fmt.Fprintf(out, "Only if you lost the private code, return to the TARGET:\n  sudo owntransit-target code --target-id %s\n", id)
 	return 0
 }
 

@@ -85,8 +85,11 @@ func TestShortReceiverPrintsOnePrivateCodeAndExactPublicHandoff(t *testing.T) {
 	if strings.Count(text, string(code)) != 1 || strings.Count(text, "public-target-id") != 2 || !strings.Contains(text, "public Target ID:") || !strings.Contains(text, "NEXT on the Relay for wss://relay.example/connects") || !strings.Contains(text, "code --target-id public-target-id") {
 		t.Fatal("short target output duplicated a code or omitted the prefilled relay URL")
 	}
-	if strings.Count(text, "\n") > 18 {
+	if strings.Count(text, "\n") > 22 {
 		t.Fatal("short target handoff became a wall of text")
+	}
+	if !strings.Contains(text, "Then go straight to the CLIENT") || !strings.Contains(text, "no second Target visit is needed") || !strings.Contains(text, "Only if you lost the code") {
+		t.Fatal("target handoff requires an unnecessary code-retrieval round trip")
 	}
 }
 
@@ -97,11 +100,11 @@ func TestReplacementHandoffUsesNewRelayDraftWithoutChangingNormalRetry(t *testin
 	if !bytes.Equal(ordinary.Bytes(), retry.Bytes()) || !strings.Contains(retry.String(), "Choose Continue tunnel, select its draft") || strings.Contains(retry.String(), "New tunnel with a new local name") {
 		t.Fatal("normal pending retry stopped using the existing Relay draft")
 	}
-	if !strings.Contains(retry.String(), "If no draft or approved entry matches this ID, choose New tunnel first") {
+	if !strings.Contains(retry.String(), "If no draft or approved entry matches this ID, choose New tunnel and enter this ID when asked") {
 		t.Fatal("retrieved replacement code has no missing-draft recovery")
 	}
 	printReceiverNext(&replacement, "wss://relay.example/connects", "new-public-target-id", "target-local-name", false, true)
-	for _, want := range []string{"NEW Target ID", "sudo owntransit-relay setup", "New tunnel with a new local name", "Continue that new draft", "public Target ID in the new draft:\n  new-public-target-id", "separate explicit action"} {
+	for _, want := range []string{"NEW Target ID", "sudo owntransit-relay setup", "New tunnel with a new local name", "enter its new public Target ID when asked", "public Target ID in the new draft:\n  new-public-target-id", "separate explicit action"} {
 		if !strings.Contains(replacement.String(), want) {
 			t.Fatalf("replacement handoff omitted %q", want)
 		}

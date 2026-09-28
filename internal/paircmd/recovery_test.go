@@ -129,7 +129,7 @@ func TestMissingCodePrintsExplicitReplacementNotSilentReset(t *testing.T) {
 	if err := showReceiverCode(&out, &diag, "/opt/target", base, base, ""); err == nil {
 		t.Fatal("invented a missing code")
 	}
-	if out.Len() != 0 || !strings.Contains(diag.String(), "--replace") || !strings.Contains(diag.String(), "NEW Target ID") || !strings.Contains(diag.String(), "New tunnel with a new local name") || !strings.Contains(diag.String(), "Continue that new draft") || !strings.Contains(diag.String(), "separate explicit action") {
+	if out.Len() != 0 || !strings.Contains(diag.String(), "--replace") || !strings.Contains(diag.String(), "NEW Target ID") || !strings.Contains(diag.String(), "New tunnel with a new local name") || !strings.Contains(diag.String(), "enter its new public Target ID when asked") || !strings.Contains(diag.String(), "separate explicit action") {
 		t.Fatal("missing code led to another dead end")
 	}
 	after, err := os.ReadFile(filepath.Join(base, "authority", "state.json"))

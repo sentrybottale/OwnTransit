@@ -7,6 +7,19 @@ authenticated artifacts of the documented release lane. The legacy 0.1.0 lane
 additionally requires its signed qualification record. Git tags do not publish
 artifacts automatically.
 
+## [1.0.2]
+
+- Let Relay New tunnel approve an already-created public Target ID in the same
+  menu visit. For an existing relay, setup can proceed Target → Relay → Client
+  once each; an empty ID still saves a draft for later continuation.
+- Keep the Target's private code handoff visible and explain that returning to
+  retrieve it is needed only when the code was lost. Update replacement and
+  recovery guidance without rebinding existing approved entries.
+- Reject invalid or private-code input at the public-ID prompt without approval
+  or reflection, and keep readiness dependent on the Client's live check.
+- Preserve canonical 1.0.1 installations, identities and SSH settings during
+  upgrades. Retain the existing signer, platform matrix and wire profiles.
+
 ## [1.0.1]
 
 - Retry transient Target network failures automatically with retained pairing,

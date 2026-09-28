@@ -1,4 +1,4 @@
-# Recover an OwnTransit 1.0.1 tunnel
+# Recover an OwnTransit 1.0.2 tunnel
 
 A new tunnel stays **UNDER CONSTRUCTION** until the Client completes its actual
 authenticated end-to-end check. Relay approval and local pairing state are
@@ -59,10 +59,13 @@ are not replayed through a new connection.
 
 ## When a fresh pairing is deliberate
 
-For an unusable old code or a deliberately new relationship, start with
-**New tunnel** in the Relay menu. Follow its Target and Client steps with
-unused local names. The Target creates a new public ID and private code;
-the Relay must approve that new ID.
+For an unusable old code or a deliberately new relationship using a running
+Relay, create **New tunnel** on the Target with an unused local name. Keep its
+new public ID and private code available. On the Relay, choose **New tunnel**,
+give it an unused name and enter that public ID to approve it in the same visit.
+Then go directly to **New tunnel** on the Client with the private Target code.
+If an unbound Relay draft already exists, use **Continue a tunnel** for that
+draft instead. Never bind an existing approved entry to a different Target.
 
 Keep old state for inspection. Remove an old tunnel separately if you intend
 to stop using it. Do not replace or delete a saved pairing merely because an

@@ -1,5 +1,16 @@
 # OwnTransit v1 shipping plan
 
+## 1.0.2 setup handoff patch
+
+Use the existing signed nine-asset 1.x release lane and signer. Validate the
+Target → Relay → Client path against an already running relay, including
+create-and-approve in one visit, empty-input draft continuation, rejection of
+private input at the public-ID prompt, lost-code recovery and no false READY.
+Preserve recognized 1.0.1 predecessors alongside earlier supported upgrades.
+Run both race/vet profiles, native platform CI, bounded installer/service
+fixtures and exact signed-artifact checks. This patch changes no wire profile,
+identity authorization or SSH ownership and adds no live upgrade requirement.
+
 ## 1.0.1 network recovery patch
 
 Use the existing signer, platform matrix and nine-asset release lane. Require

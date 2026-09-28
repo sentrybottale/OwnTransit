@@ -101,6 +101,57 @@ func TestRelayMenuApprovalHandlesTerminalNewline(t *testing.T) {
 	}
 }
 
+func TestRelayMenuNewTunnelApprovesPreparedTargetInOneVisit(t *testing.T) {
+	for _, ending := range []string{"\n", "\r\n"} {
+		ops := menuTestOperations(t)
+		id := (protocol.ID{7}).String()
+		created, approved := 0, 0
+		ops.newTunnel = func(_ context.Context, url, name string) error {
+			if url != menuTestURL || name != "office" {
+				t.Fatal("wrong draft selected")
+			}
+			created++
+			return nil
+		}
+		ops.approve = func(_ context.Context, url, name, target string) error {
+			if created != 1 || url != menuTestURL || name != "office" || target != id {
+				t.Fatal("approval did not bind the new draft to the supplied public target")
+			}
+			approved++
+			return nil
+		}
+		var out bytes.Buffer
+		input := strings.Join([]string{"1", "office", id, ""}, ending)
+		if got := relayMenu(context.Background(), nil, strings.NewReader(input), &out, &out, ops); got != 0 || created != 1 || approved != 1 {
+			t.Fatalf("exit=%d created=%d approved=%d", got, created, approved)
+		}
+		for _, want := range []string{"Next on the CLIENT computer", "does not issue another code", "Only if you lost", "UNDER CONSTRUCTION"} {
+			if !strings.Contains(out.String(), want) {
+				t.Fatalf("missing handoff guidance %q", want)
+			}
+		}
+		if strings.Contains(out.String(), "Next on the TARGET computer") || strings.Contains(out.String(), "TUNNEL READY") {
+			t.Fatal("prepared target was sent backwards or relay claimed readiness")
+		}
+	}
+}
+
+func TestRelayMenuNewDraftNeverApprovesOrEchoesPrivateInput(t *testing.T) {
+	for _, value := range []string{"", "otpair2.PRIVATE-INPUT", "not-an-id", strings.Repeat("0", 32)} {
+		ops := menuTestOperations(t)
+		created := 0
+		ops.newTunnel = func(context.Context, string, string) error { created++; return nil }
+		var out bytes.Buffer
+		input := "1\noffice\n" + value + "\n0\n"
+		if got := relayMenu(context.Background(), nil, strings.NewReader(input), &out, &out, ops); got != 0 || created != 1 {
+			t.Fatalf("exit=%d created=%d", got, created)
+		}
+		if strings.Contains(out.String(), "PRIVATE-INPUT") || strings.Contains(out.String(), "Target approved") || strings.Contains(out.String(), "TUNNEL READY") {
+			t.Fatal("invalid public input was reflected or approved")
+		}
+	}
+}
+
 func TestRelayMenuRejectsPrivateCodeAtPublicIDPrompt(t *testing.T) {
 	ops := menuTestOperations(t)
 	ops.tunnels = func(context.Context, string) ([]relaysetup.MenuTunnel, error) {
