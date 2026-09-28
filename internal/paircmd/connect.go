@@ -61,16 +61,16 @@ func printReceiverNext(output io.Writer, origin, receiverID, tunnel string, lega
 	} else {
 		printRelayApprovalStep(output, origin, receiverID)
 	}
-	fmt.Fprintf(output, "Keep the private code for the Client. Retrieve the SAME unused code on this Target:\n  sudo owntransit-target code --target-id %s\n", shellQuote(receiverID))
+	fmt.Fprintf(output, "Then go straight to the CLIENT computer:\n  owntransit-client setup\nChoose New tunnel, enter the Relay URL above, and paste the private code from this screen.\nKeep this Target screen available; no second Target visit is needed.\nOnly if you lost the code, retrieve the SAME unused code on this Target:\n  sudo owntransit-target code --target-id %s\n", shellQuote(receiverID))
 }
 
 func printFreshRelayDraftHelp(output io.Writer) {
-	fmt.Fprintln(output, "On the Relay, choose New tunnel with a new local name, then Continue that new draft.\nA bound draft cannot accept a different Target ID. Removing the old Relay entry is a separate explicit action.")
+	fmt.Fprintln(output, "On the Relay, choose New tunnel with a new local name and enter its new public Target ID when asked.\nA bound draft cannot accept a different Target ID. Removing the old Relay entry is a separate explicit action.")
 }
 
 func printRelayApprovalStep(output io.Writer, origin, receiverID string) {
 	fmt.Fprintf(output, "UNDER CONSTRUCTION — relay approval and Client pairing remain.\nNEXT on the Relay for %s:\n  sudo owntransit-relay setup\nChoose Continue tunnel, select its draft, and enter this public Target ID:\n  %s\n", origin, receiverID)
-	fmt.Fprintln(output, "If no draft or approved entry matches this ID, choose New tunnel first; do not overwrite another Target's entry.")
+	fmt.Fprintln(output, "If no draft or approved entry matches this ID, choose New tunnel and enter this ID when asked; do not overwrite another Target's entry.")
 }
 
 func printConnect(w io.Writer, status, executable, state string, tunnel ...string) {

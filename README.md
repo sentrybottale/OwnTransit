@@ -12,14 +12,21 @@ even a compromised Relay from reading the stream or impersonating an endpoint.
 | Relay | A public Linux VPS | Carries encrypted traffic |
 | Target | The private Linux SSH machine | Delivers authenticated traffic to local SSH |
 
-OwnTransit **1.0.1** supports Linux amd64/arm64 and an Apple-silicon Mac Client.
+OwnTransit **1.0.2** supports Linux amd64/arm64 and an Apple-silicon Mac Client.
 SSH must already work on the Target. OwnTransit never configures SSH accounts,
 keys, permissions or forwarding.
+
+**Adding a tunnel to an already running Relay? Visit Target → Relay → Client,
+once each.** Create the Target first and keep its output available. On the Relay,
+choose **New tunnel** and paste the public Target ID when asked; creation and
+approval finish in that visit. Go directly to the Client and paste the private
+code from the Target. The Relay does not issue a second code. Use **Continue a
+tunnel** instead if you already created a Relay draft.
 
 ## 1. Start on the Relay VPS
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.1/install-linux.sh | sudo sh -s -- relay
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.2/install-linux.sh | sudo sh -s -- relay
 ```
 
 The installer opens Relay setup when an interactive terminal is available.
@@ -32,19 +39,23 @@ sudo owntransit-relay setup
 For a new Relay, enter its public URL, such as `wss://relay.example/connects`
 (**example only**). The VPS needs an existing HTTPS site. Choose **New tunnel**
 and give it a name. The entry is **UNDER CONSTRUCTION**; follow its Target step.
+At the public Target ID prompt, press Enter if the Target has not been created.
+If it already exists, enter its public ID to approve it now and continue on the Client.
 
 ## 2. On the Target running SSH
 
 Install the Target, then open its menu:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.1/install-linux.sh | sudo sh -s -- target
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.2/install-linux.sh | sudo sh -s -- target
 sudo owntransit-target setup
 ```
 
 Choose **New tunnel**, an unused local name and the Relay URL.
 The Target starts and enables its service for reboot. It prints a public
 Target ID for the Relay and one private `otpair2.` code for the Client.
+Keep this output available until the Client has accepted its code; retrieving
+the code later is recovery, not a required setup step.
 
 Transfer the private code directly to the intended Client through your existing
 authenticated SSH or console access. **Never give it to the Relay.**
@@ -54,20 +65,23 @@ authenticated SSH or console access. **Never give it to the Relay.**
 Run `sudo owntransit-relay setup`, choose **Continue a tunnel**, select the
 draft and enter the **public Target ID**. Approval is a saved step; the tunnel
 remains **UNDER CONSTRUCTION**. Follow the displayed Client step.
+If you started on the Target and have no draft, choose **New tunnel**, name it,
+and enter the public Target ID in the same visit. Do not create another draft
+for a Target that already has one.
 
 ## 4. On the Client computer
 
 **Linux:** install, then open setup as your ordinary user without sudo:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.1/install-linux.sh | sudo sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.2/install-linux.sh | sudo sh -s -- client
 owntransit-client setup
 ```
 
 **Apple-silicon Mac:** install and open setup without sudo:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.1/install-macos.sh | sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.2/install-macos.sh | sh -s -- client
 "$HOME/.local/bin/owntransit-client" setup
 ```
 
@@ -103,7 +117,7 @@ label is for OpenSSH's independent host verification. [SCP upload/download examp
 
 ## Manage or recover a tunnel
 
-**Upgrading from 0.7, 0.8 or 1.0.0?** Run the new installer for each local role. On the Relay,
+**Upgrading from 0.7, 0.8, 1.0.0 or 1.0.1?** Run the new installer for each local role. On the Relay,
 choose **Start or update this relay**; on each Target, **Continue tunnel** starts
 the installed version. On the Client, **Continue tunnel** verifies the existing
 pairing. Do not choose New or replace keys for a software update.

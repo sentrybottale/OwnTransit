@@ -1,4 +1,4 @@
-# Install and use OwnTransit 1.0.1
+# Install and use OwnTransit 1.0.2
 
 The three roles are **Client**, **Relay** and **Target**. The Client is the
 computer you connect from; the Target is the private computer running SSH.
@@ -8,12 +8,19 @@ Linux amd64/x86_64 and arm64/aarch64 support all three roles. The Mac Client
 supports Apple silicon. Every installer operates only on the local machine and
 selected role. SSH must already be configured by its operator.
 
+For an **existing running Relay**, the shortest path is **Target → Relay →
+Client**. Create the Target and keep its public ID and private code available.
+The Relay's **New tunnel** action can accept that public ID immediately, then
+you proceed directly to the Client with the private Target code. No return to
+the Target is needed unless you lost that code. The first-time Relay installation
+below is needed only when a Relay has not already been set up.
+
 ## Relay: create the tunnel entry
 
 On the public Linux VPS:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.1/install-linux.sh | sudo sh -s -- relay
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.2/install-linux.sh | sudo sh -s -- relay
 ```
 
 The installer opens the Relay menu if it has an interactive terminal. Otherwise,
@@ -31,7 +38,10 @@ sites and routes. Unknown ownership or conflicting configuration is refused.
 
 If several managed Relays exist on this VPS, the menu asks which one to use.
 Choose **New tunnel** and give the draft a short lowercase name. The Relay saves
-that local entry as **UNDER CONSTRUCTION**, then gives you the Target step.
+that local entry as **UNDER CONSTRUCTION**. If you already created the Target,
+paste its public ID at the next prompt to approve it immediately and receive the
+Client step. Otherwise press Enter for the Target step and later use **Continue
+a tunnel** on this same draft.
 
 A Relay entry is planning and admission state. It grants no endpoint identity
 or access to SSH. The Relay does not receive the private pairing code.
@@ -41,7 +51,7 @@ or access to SSH. The Relay does not receive the private pairing code.
 On the private Linux machine running your SSH server:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.1/install-linux.sh | sudo sh -s -- target
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.2/install-linux.sh | sudo sh -s -- target
 ```
 
 After installation:
@@ -54,6 +64,7 @@ Choose **New tunnel**, enter an unused local name and the Relay's public URL.
 The Target creates its own identities, starts its outbound service and enables
 it for reboot. Setup prints its public Target ID and one private, one-use
 `otpair2.` code. The displayed expiry applies to that exact code.
+Keep this screen available while approving on the Relay and pairing on the Client.
 
 Give the Relay only the public Target ID. Transfer the private code directly
 to the intended Client through existing authenticated SSH or console access.
@@ -73,6 +84,8 @@ authentication and authorization. OwnTransit does not edit SSH.
 Return to `sudo owntransit-relay setup`. Choose **Continue a tunnel**, select
 the draft and enter the Target's public ID. The menu saves approval and shows
 the next Client step. It does not generate a Client code.
+When starting with a prepared Target and no Relay draft, choose **New tunnel**
+instead and supply the public ID in that same menu visit.
 
 The entry remains **UNDER CONSTRUCTION**. Approval, a running Relay process and
 local status cannot prove that the Client can reach the Target.
@@ -82,7 +95,7 @@ local status cannot prove that the Client can reach the Target.
 For a Linux Client, install with sudo:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.1/install-linux.sh | sudo sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.2/install-linux.sh | sudo sh -s -- client
 ```
 
 Then run setup as your ordinary user:
@@ -94,7 +107,7 @@ owntransit-client setup
 For an Apple-silicon Mac Client, install without sudo:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.1/install-macos.sh | sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.2/install-macos.sh | sh -s -- client
 ```
 
 Then use the printed path:
@@ -229,7 +242,7 @@ On Linux, select the local role explicitly; replace `client` below with
 `target` or `relay` only on that role's machine:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.1/install-linux.sh | sudo sh -s -- client --uninstall
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.2/install-linux.sh | sudo sh -s -- client --uninstall
 ```
 
 Target uninstall stops its owned services and retains their pairing state.
@@ -240,7 +253,7 @@ It does not remove tunnels from Client or Target machines.
 On Mac, use the installed local uninstaller:
 
 ```sh
-sh "$HOME/Library/Application Support/OwnTransitSoftware/1.0.1/install-macos.sh" --uninstall
+sh "$HOME/Library/Application Support/OwnTransitSoftware/1.0.2/install-macos.sh" --uninstall
 ```
 
 Uninstall keeps private pairing and alarm state. Reinstallation does not clear
@@ -253,7 +266,7 @@ a killswitch or restore an explicitly removed endpoint tunnel automatically.
   to repair a broken tunnel, and software publication does not update installed
   services automatically.
 - Reverse-proxy quotas must allow enrollment, token renewal and runtime
-  connections, not just one WebSocket per SSH login. Version 1.0.1 retries with
+  connections, not just one WebSocket per SSH login. Version 1.0.2 retries with
   bounded exponential backoff and jitter; HTTP 429 imposes a 5–30-second wait.
   Backoff is per loop, not a host-wide quota across tunnels or NAT peers. Keep
   rate and connection protection, size it for the combined workload, and check
@@ -272,7 +285,7 @@ The first installer download trusts GitHub HTTPS. The bootstrap then verifies
 the pinned distribution signer, exact signed inventory and selected archive
 before extraction or execution. Signing keys never belong on the Relay.
 
-Linux software lives under `/opt/owntransit/1.0.1/`; Mac software remains under
+Linux software lives under `/opt/owntransit/1.0.2/`; Mac software remains under
 the user's `Library/Application Support/OwnTransitSoftware`. Existing default
 and named endpoint state locations are retained. No Apple signing subscription
 is needed; the Mac Client is not notarized.

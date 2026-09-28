@@ -181,7 +181,7 @@ func exerciseReceiverRecoveryCommands(t *testing.T) {
 	if err != nil || fresh.ReceiverID == attempt.ReceiverID || bytes.Equal(fresh.Code, attempt.Code) || discoveries != 1 {
 		t.Fatal("explicit replacement did not create fresh identities")
 	}
-	if !strings.Contains(out.String(), "New tunnel with a new local name") || !strings.Contains(out.String(), "Continue that new draft") || !strings.Contains(out.String(), "public Target ID in the new draft:\n  "+fresh.ReceiverID) {
+	if !strings.Contains(out.String(), "New tunnel with a new local name") || !strings.Contains(out.String(), "enter its new public Target ID when asked") || !strings.Contains(out.String(), "public Target ID in the new draft:\n  "+fresh.ReceiverID) {
 		t.Fatal("replacement omitted exact new-ID approval command")
 	}
 	unit, _ := receiverUnit("alpha")
