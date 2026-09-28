@@ -14,10 +14,13 @@ import (
 )
 
 func TestConcurrentQuietSSHSurvivesPendingTimeoutAndReceiverRestart(t *testing.T) {
-	f := newIntegratedWithLimits(t, pairrelay.Limits{HandshakeTimeout: time.Second, PairingTimeout: 2 * time.Second})
+	// Pairing also uses the relay's pending timeout. Give race-instrumented
+	// hosts enough time to establish the fixture before testing live streams.
+	const pendingTimeout = 10 * time.Second
+	f := newIntegratedWithLimits(t, pairrelay.Limits{PairingTimeout: pendingTimeout})
 	stop, done := f.start(t)
 	f.pair(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	type opened struct {
 		carrier *leasewire.Conn
@@ -48,7 +51,7 @@ func TestConcurrentQuietSSHSurvivesPendingTimeoutAndReceiverRestart(t *testing.T
 	}
 	// Cross the pending boundary with TWO quiet live streams; the independent
 	// leasewire tests exercise several shortened renewal/expiry periods.
-	time.Sleep(2200 * time.Millisecond)
+	time.Sleep(pendingTimeout + 200*time.Millisecond)
 	var wg sync.WaitGroup
 	errors := make(chan error, len(clients))
 	for _, client := range clients {

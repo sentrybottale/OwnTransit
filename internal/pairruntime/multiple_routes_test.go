@@ -55,7 +55,10 @@ func TestMultipleClientsReachSameSSHServerWithIndependentAlarms(t *testing.T) {
 }
 
 func testMultipleRoutes(t *testing.T, sharedSSH bool) {
-	first := newIntegratedWithLimits(t, pairrelay.Limits{HandshakeTimeout: time.Second, PairingTimeout: 2 * time.Second})
+	// The same relay pending limit applies during initial pairing. Leave enough
+	// room for two race-instrumented fixture setups before testing live routes.
+	const pendingTimeout = 10 * time.Second
+	first := newIntegratedWithLimits(t, pairrelay.Limits{PairingTimeout: pendingTimeout})
 	_, _ = first.start(t)
 	first.pair(t)
 	firstLive := liveRouteSSH(t, first)
@@ -76,7 +79,7 @@ func testMultipleRoutes(t *testing.T, sharedSSH bool) {
 	secondLive := liveRouteSSH(t, second)
 	// SSH pins the intended fixture key. The shared-host case uses the same
 	// SSH server while OwnTransit still authenticates independent inner peers.
-	time.Sleep(2200 * time.Millisecond)
+	time.Sleep(pendingTimeout + 200*time.Millisecond)
 	var wg sync.WaitGroup
 	results := make(chan error, 2)
 	for _, client := range []*ssh.Client{firstLive, secondLive} {

@@ -91,7 +91,9 @@ func TestAlarmClosesClientWaitingForOperationLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer held.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	// The observation below can wait five seconds on a loaded race runner.
+	// Keep the client context alive long enough to observe the held lock.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
