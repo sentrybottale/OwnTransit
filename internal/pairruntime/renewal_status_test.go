@@ -5,10 +5,13 @@ package pairruntime
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/sentrybottale/owntransit/internal/pairrelay"
 	"github.com/sentrybottale/owntransit/internal/receiverpairing"
 	"github.com/sentrybottale/owntransit/internal/securefs"
 )
@@ -180,5 +183,77 @@ func TestStatusRecoveryHonorsOpeningDeadline(t *testing.T) {
 	after := readStatusClient(t, f.clientPath)
 	if !bytes.Equal(before.PendingRenewal, after.PendingRenewal) || !bytes.Equal(before.Pairing, after.Pairing) {
 		t.Fatal("timeout changed durable pairing")
+	}
+}
+
+// The 1.0.3 authority dispatcher accepts only these two ciphertext schemas.
+// Exercise its wire behavior without teaching it the new status extension.
+type legacyRenewalBackend struct {
+	ReceiverBackend
+	unsupported atomic.Int32
+}
+
+func (b *legacyRenewalBackend) Exchange(encoded []byte) ([]byte, error) {
+	var envelope struct {
+		Schema     string `json:"schema"`
+		Ciphertext string `json:"ciphertext"`
+	}
+	if json.Unmarshal(encoded, &envelope) != nil || (envelope.Schema != "owntransit.receiver-pairing.request-ciphertext.v1" && envelope.Schema != "owntransit.receiver-pairing.renewal-ciphertext.v1") {
+		b.unsupported.Add(1)
+		return nil, ErrState
+	}
+	return b.ReceiverBackend.Exchange(encoded)
+}
+
+func TestNewClientLegacyTargetRetainsOrdinaryRenewalAfterTransportFailure(t *testing.T) {
+	f := newIntegrated(t)
+	backend := &legacyRenewalBackend{ReceiverBackend: ReceiverBackend{Path: f.serverPath}}
+	f.startWithBackend(t, backend)
+	f.pair(t)
+	root, err := securefs.OpenRoot(f.clientPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	s, err := readClient(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pair, err := receiverpairing.ParsePairing(s.Pairing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys LeafKeys
+	req, err := receiverpairing.CreateRenewalWithPayload(pair, s.Origin, time.Now(), time.Hour, func(id receiverpairing.ClientIdentity) ([]byte, error) {
+		payload, k, e := NewCredentialRequest(id)
+		keys = k
+		return payload, e
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := stageClientRenewal(ctx, f.clientPath, root, &s, req, keys); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	dial := func(ctx context.Context, url string) (net.Conn, error) {
+		calls++
+		if calls == 1 {
+			return nil, pairrelay.ErrTransport
+		}
+		return f.dial(ctx, url)
+	}
+	if err := Check(ctx, f.clientPath, dial); err != nil {
+		t.Fatal(err)
+	}
+	if backend.unsupported.Load() != 0 || f.dials.Load() != 1 {
+		t.Fatal("ordinary reconnect depended on new Target extension")
+	}
+	after := readStatusClient(t, f.clientPath)
+	p, err := receiverpairing.ParsePairing(after.Pairing)
+	if err != nil || p.CredentialGeneration() != 2 {
+		t.Fatal("legacy renewal did not activate")
 	}
 }
