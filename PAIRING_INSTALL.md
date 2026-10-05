@@ -1,4 +1,4 @@
-# Install and use OwnTransit 1.0.2
+# Install and use OwnTransit 1.0.3
 
 The three roles are **Client**, **Relay** and **Target**. The Client is the
 computer you connect from; the Target is the private computer running SSH.
@@ -20,7 +20,7 @@ below is needed only when a Relay has not already been set up.
 On the public Linux VPS:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.2/install-linux.sh | sudo sh -s -- relay
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.3/install-linux.sh | sudo sh -s -- relay
 ```
 
 The installer opens the Relay menu if it has an interactive terminal. Otherwise,
@@ -51,7 +51,7 @@ or access to SSH. The Relay does not receive the private pairing code.
 On the private Linux machine running your SSH server:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.2/install-linux.sh | sudo sh -s -- target
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.3/install-linux.sh | sudo sh -s -- target
 ```
 
 After installation:
@@ -95,7 +95,7 @@ local status cannot prove that the Client can reach the Target.
 For a Linux Client, install with sudo:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.2/install-linux.sh | sudo sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.3/install-linux.sh | sudo sh -s -- client
 ```
 
 Then run setup as your ordinary user:
@@ -107,7 +107,7 @@ owntransit-client setup
 For an Apple-silicon Mac Client, install without sudo:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.2/install-macos.sh | sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.3/install-macos.sh | sh -s -- client
 ```
 
 Then use the printed path:
@@ -242,7 +242,7 @@ On Linux, select the local role explicitly; replace `client` below with
 `target` or `relay` only on that role's machine:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.2/install-linux.sh | sudo sh -s -- client --uninstall
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.3/install-linux.sh | sudo sh -s -- client --uninstall
 ```
 
 Target uninstall stops its owned services and retains their pairing state.
@@ -253,7 +253,7 @@ It does not remove tunnels from Client or Target machines.
 On Mac, use the installed local uninstaller:
 
 ```sh
-sh "$HOME/Library/Application Support/OwnTransitSoftware/1.0.2/install-macos.sh" --uninstall
+sh "$HOME/Library/Application Support/OwnTransitSoftware/1.0.3/install-macos.sh" --uninstall
 ```
 
 Uninstall keeps private pairing and alarm state. Reinstallation does not clear
@@ -266,7 +266,7 @@ a killswitch or restore an explicitly removed endpoint tunnel automatically.
   to repair a broken tunnel, and software publication does not update installed
   services automatically.
 - Reverse-proxy quotas must allow enrollment, token renewal and runtime
-  connections, not just one WebSocket per SSH login. Version 1.0.2 retries with
+  connections, not just one WebSocket per SSH login. Version 1.0.3 retries with
   bounded exponential backoff and jitter; HTTP 429 imposes a 5–30-second wait.
   Backoff is per loop, not a host-wide quota across tunnels or NAT peers. Keep
   rate and connection protection, size it for the combined workload, and check
@@ -285,7 +285,7 @@ The first installer download trusts GitHub HTTPS. The bootstrap then verifies
 the pinned distribution signer, exact signed inventory and selected archive
 before extraction or execution. Signing keys never belong on the Relay.
 
-Linux software lives under `/opt/owntransit/1.0.2/`; Mac software remains under
+Linux software lives under `/opt/owntransit/1.0.3/`; Mac software remains under
 the user's `Library/Application Support/OwnTransitSoftware`. Existing default
 and named endpoint state locations are retained. No Apple signing subscription
 is needed; the Mac Client is not notarized.

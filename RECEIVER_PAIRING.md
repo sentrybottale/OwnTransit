@@ -129,6 +129,38 @@ pairs cannot renew. Short-lived operational TLS credentials rotate independently
 of the initial pairing code. A relay error cannot erase pins, create a code,
 replace an identity, select a weaker protocol or authorize new trust roots.
 
+### Lost renewal acknowledgement after expiry
+
+A target commits a renewal before returning its signed, client-encrypted
+response. If the client stops before saving that response and returns after
+the response's validity window, the target still returns the exact cached
+response. Repeating the old request cannot make that authorization fresh.
+
+The client may authenticate this expired response only as a receipt for its
+exact saved pending request. Signature, encryption recipient, schema, bounded
+validity window, request digest, origin, route, receiver, client, pairing key
+and next generation must all match. A receipt returns only a fresh renewal
+request for the following generation, with a new nonce, response recipient
+and operational keys. It never returns expired authorization for activation.
+
+Before sending the fresh request, the client atomically saves its material and
+new private keys in the existing pending fields. The last activated pairing,
+keys, authorization and trust remain unchanged. A restart therefore resumes
+that exact pending request. Only an ordinary, currently valid renewal response
+may replace the active credentials, and fresh runtime mTLS and authorization
+still precede any SSH dial. One receipt recovery is allowed per connection
+opening, within the existing opening deadline. Local alarms, target locks and
+revocation continue to deny admission or issuance.
+
+This is client-side recovery using the existing wire and private-state schemas;
+the target and relay require no change. Older clients can parse and resume the
+fresh pending request while it remains valid, or use the completed credentials.
+Rolling back the client before recovery leaves the original expiry failure;
+rolling back after another lost response has expired can also restore that
+failure. No state downgrade, trust reset or re-enrollment is performed.
+An expired request that the target never committed has no authenticated receipt
+and is outside this recovery path. Initial pairing expiry remains unchanged.
+
 ## Automatic authorization and emergency shutdown
 
 Connection permission is the conjunction of committed pairing, fresh runtime

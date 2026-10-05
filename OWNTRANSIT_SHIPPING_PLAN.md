@@ -1,5 +1,16 @@
 # OwnTransit v1 shipping plan
 
+## 1.0.3 expired renewal hotfix
+
+Use the existing signed nine-asset 1.x release lane and signer. Validate exact
+expired renewal receipts, fresh authorization, restart at both commit boundaries,
+unchanged pairing/trust, and rejection of malformed, revoked or locked recovery.
+Retain the authenticated wire and private-state schemas. Recognize canonical
+1.0.2 package predecessors without changing endpoint or SSH state. Run both
+race/vet profiles, security/publication checks and existing platform/installer
+CI. Document the execution scope of exact-artifact verification; a release does
+not claim recovery of a particular live installation.
+
 ## 1.0.2 setup handoff patch
 
 Use the existing signed nine-asset 1.x release lane and signer. Validate the

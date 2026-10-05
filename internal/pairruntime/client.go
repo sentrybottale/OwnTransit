@@ -246,7 +246,45 @@ func renewClient(ctx context.Context, path string, root *securefs.Root, s *clien
 	}
 	result, err := receiverpairing.OpenRenewalResponse(response, material, s.Origin, time.Now())
 	if err != nil {
-		return ErrState
+		// The target may have committed this exact request before its response
+		// was lost. An expired signed receipt can prepare one fresh renewal, but
+		// must never install its expired authorization or open a carrier.
+		var keys LeafKeys
+		next, err := receiverpairing.RecoverExpiredRenewal(response, material, s.Origin, time.Now(), receiverpairing.MaxMessageValidity, func(id receiverpairing.ClientIdentity) ([]byte, error) {
+			payload, generated, err := NewCredentialRequest(id)
+			keys = generated
+			return payload, err
+		})
+		if err != nil {
+			return ErrState
+		}
+		pending, err := next.Material.MarshalPrivate()
+		if err != nil {
+			return err
+		}
+		policy, err := ReadPolicy(path)
+		if err != nil || policy.Locked || ctx.Err() != nil {
+			return ErrState
+		}
+		// Keep the last activated pairing/keys/authorization together. Only the
+		// pending request embeds the proven newer generation. One atomic write
+		// makes every restart (including older clients) finish fresh renewal.
+		staged := *s
+		staged.PendingRenewal, staged.PendingKeys = pending, keys
+		if err := writeRecord(root, "client.json", staged, false); err != nil {
+			return err
+		}
+		*s = staged
+		response, err = exchangeRetry(ctx, public, s.Token, next.Encrypted)
+		if err != nil {
+			return err
+		}
+		// At most one receipt recovery per opening attempt, within its existing
+		// deadline. Replays cannot recursively advance or activate stale grants.
+		result, err = receiverpairing.OpenRenewalResponse(response, next.Material, s.Origin, time.Now())
+		if err != nil {
+			return ErrState
+		}
 	}
 	return commitClient(path, root, s, result)
 }
