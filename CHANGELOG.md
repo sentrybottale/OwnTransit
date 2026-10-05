@@ -7,6 +7,24 @@ authenticated artifacts of the documented release lane. The legacy 0.1.0 lane
 additionally requires its signed qualification record. Git tags do not publish
 artifacts automatically.
 
+## [1.0.4]
+
+- Recover expired uncommitted and ambiguous pending renewals through the
+  separately versioned, signed/encrypted `owntransit-renewal-status/1` query.
+  The Target returns only its authenticated current generation; fresh ordinary
+  renewal, current credentials and runtime authorization still gate SSH.
+- Preserve the original pending request until an authenticated answer is
+  verified. Atomically stage fresh request/keys without changing active
+  credentials, pairing identity or trust. Bound recovery by the opening deadline
+  and retain alarm, revocation and rate-limit behavior.
+- Cover repeated expiry, delayed competing commits, interrupted recovery,
+  forged/crossed/stale replies, generation rollback and unchanged legacy state.
+  Both Target and Client require 1.0.4 for the new recovery; Relay upgrade is
+  unnecessary. Ordinary older-peer renewal remains supported.
+- Ship signed 1.0.4 capsules and installers with exact 1.0.3 upgrade recognition.
+  Initial pairing expiry, expired roots and rolled-back/cloned authority remain
+  outside automatic recovery. See RENEWAL_RECOVERY.md for protocol and rollback.
+
 ## [1.0.3]
 
 - Recover a committed credential renewal whose acknowledgement expired before

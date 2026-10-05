@@ -1,4 +1,4 @@
-# Recover an OwnTransit 1.0.3 tunnel
+# Recover an OwnTransit 1.0.4 tunnel
 
 A new tunnel stays **UNDER CONSTRUCTION** until the Client completes its actual
 authenticated end-to-end check. Relay approval and local pairing state are
@@ -20,15 +20,18 @@ A normal retry never needs a new identity.
 
 ## A paired Client fails after a long interruption
 
-Version 1.0.3 fixes a lost renewal acknowledgement that expired after the Target
-committed it. Upgrade the **Client**, then choose **Continue tunnel** for the
-existing tunnel or retry your existing SSH command. The Client authenticates
-the saved renewal receipt and obtains fresh credentials automatically, retaining
-its pairing and trust. The Target and Relay need no upgrade for this fix.
+Version 1.0.4 recovers a pending credential renewal that expired before the
+Target committed it, as well as a committed renewal whose response was lost.
+Upgrade **both Target and Client to 1.0.4**, preferably Target first. On the
+Target, Continue the selected existing tunnel so its service runs the upgraded
+binary. On the Client, Continue its existing tunnel or retry your SSH command.
+The Relay needs no upgrade for this recovery.
 
-Do not choose New or delete pairing state to recover this condition. An initial
-pairing that expired, or a renewal the Target never committed, is outside this
-specific recovery path. A local alarm or revocation still blocks the pairing.
+The Client authenticates the Target's current renewal generation before saving
+a fresh request. Pairing keys, trust and SSH settings remain intact. Do not
+choose New or delete pairing state. Initial pairing-code expiry, expired issuer
+roots and deliberate alarms/revocation are separate conditions; the hotfix
+does not bypass them. [Recovery protocol and rollback](RENEWAL_RECOVERY.md).
 
 ## Lost the private code
 

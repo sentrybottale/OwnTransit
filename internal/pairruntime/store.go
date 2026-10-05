@@ -445,7 +445,13 @@ func (b ReceiverBackend) Exchange(encoded []byte) ([]byte, error) {
 		result, err = r.Renew(encoded, now, issue)
 	}
 	if err != nil {
-		return nil, ErrState
+		// This separately versioned, signed query returns a read-only snapshot;
+		// it cannot issue credentials or change the pairing/authorization state.
+		status, statusErr := r.RenewalStatus(encoded, now)
+		if statusErr != nil {
+			return nil, ErrState
+		}
+		return status, nil
 	}
 	return result.Response, nil
 }

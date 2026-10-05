@@ -18,6 +18,10 @@ import (
 // unchanged target has committed a renewal, while the client retains its exact
 // pending request. Both the cached response and its TLS leaves have expired.
 func expiredRenewalFixture(t *testing.T) (*integrated, clientRecord) {
+	return pendingRenewalFixture(t, true)
+}
+
+func pendingRenewalFixture(t *testing.T, committed bool) (*integrated, clientRecord) {
 	t.Helper()
 	f := newIntegrated(t)
 	f.start(t)
@@ -51,6 +55,9 @@ func expiredRenewalFixture(t *testing.T) (*integrated, clientRecord) {
 	if err := writeRecord(root, "client.json", s, false); err != nil {
 		t.Fatal(err)
 	}
+	if !committed {
+		return f, s
+	}
 	receiver, err := receiverpairing.Open(filepath.Join(f.serverPath, "authority"))
 	if err != nil {
 		t.Fatal(err)
@@ -63,16 +70,16 @@ func expiredRenewalFixture(t *testing.T) (*integrated, clientRecord) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	committed, err := receiver.Renew(request.Encrypted, past, func(peer receiverpairing.PeerRequest) ([]byte, error) {
+	receipt, err := receiver.Renew(request.Encrypted, past, func(peer receiverpairing.PeerRequest) ([]byte, error) {
 		return IssueCredentials(peer, authority, snapshot.Meta.Leaves, time.Now().Add(-48*time.Hour))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := receiverpairing.OpenRenewalResponse(committed.Response, request.Material, s.Origin, time.Now()); err == nil {
+	if _, err := receiverpairing.OpenRenewalResponse(receipt.Response, request.Material, s.Origin, time.Now()); err == nil {
 		t.Fatal("old client accepted expired response")
 	}
-	old, err := receiverpairing.OpenRenewalResponse(committed.Response, request.Material, s.Origin, past)
+	old, err := receiverpairing.OpenRenewalResponse(receipt.Response, request.Material, s.Origin, past)
 	if err != nil {
 		t.Fatal(err)
 	}

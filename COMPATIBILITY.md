@@ -25,6 +25,16 @@ authority. Older tools are not a supported way to operate these new local
 lifecycle records. The historical profile descriptions below remain distinct
 from current command compatibility.
 
+## Renewal-status extension (1.0.4)
+
+The explicitly versioned `owntransit-renewal-status/1` signed/encrypted query
+adds authenticated read-only generation reconciliation for already paired
+endpoints. It has distinct request/response schemas and signature domains;
+existing carrier and ordinary renewal formats stay unchanged. Both Client and
+Target must support it for uncommitted-expiry recovery. Older peers reject the
+extension without replacing trust. No private-state schema migration is needed.
+See [protocol, mixed versions, downgrade analysis and rollback](RENEWAL_RECOVERY.md).
+
 ## Relay management in 0.6.0
 
 The local `owntransit.relay-instance.v2` binding adds a validated derived legacy

@@ -1,5 +1,17 @@
 # OwnTransit architecture
 
+## 1.0.4: renewal reconciliation
+
+A separately versioned signed/encrypted generation query recovers already
+paired Clients whose pending renewal expired without committing, or whose
+response was lost. The Target authenticates the retained pairing key and
+returns only a read-only snapshot under its authority lock. The Client saves
+a fresh ordinary request and operational keys atomically, then requires current
+credentials and normal runtime authorization. Snapshot races remain governed
+by the existing next-generation commit check. No issuer, trust, state-schema,
+carrier, TLS or SSH-target change is introduced. Both endpoints need 1.0.4 for
+this extension; the Relay is unchanged. [Protocol and rollback](RENEWAL_RECOVERY.md).
+
 ## 1.0.1: transient network recovery
 
 Target retry loops retain the same origin, pairing and policy across network
