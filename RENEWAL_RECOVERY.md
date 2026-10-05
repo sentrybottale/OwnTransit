@@ -45,8 +45,9 @@ and the fixed local Target dial still precede READY and SSH bytes.
 ## Loss, delay, restart and repeated expiry
 
 Each opening first tries the exact retained ordinary request, for at most ten
-seconds. Transient dialing failures retry that same request with bounded backoff
-so older Targets retain ordinary reconnect behavior. A valid response or the 1.0.3 expired committed receipt takes the
+seconds. Ordinary failures, including a Target whose outbound pairing leg is not
+yet queued, retry that same request with bounded backoff so older Targets retain
+ordinary reconnect behavior. A valid response or the 1.0.3 expired committed receipt takes the
 existing path. If the exchange fails, the remaining part of the existing
 30-second opening budget may perform one status reconciliation and fresh
 renewal. HTTP 429 does not start another immediate status operation. Status and

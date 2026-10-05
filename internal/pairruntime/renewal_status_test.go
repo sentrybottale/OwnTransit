@@ -78,34 +78,53 @@ func TestUncommittedExpiredRenewalReconcilesThroughSSHAndRestarts(t *testing.T) 
 			if err != nil {
 				t.Fatal(err)
 			}
-			if p.CredentialGeneration() != 2 || len(after.PendingRenewal) != 0 || p.ClientID() != old.ClientID() || p.ReceiverID() != old.ReceiverID() || p.RouteID() != old.RouteID() || !bytes.Equal(p.PairingPrivateKeyPEM(), old.PairingPrivateKeyPEM()) || after.Trust != before.Trust || after.Origin != before.Origin {
+			snapshot, err := (ReceiverBackend{Path: f.serverPath}).Snapshot()
+			if err != nil || p.CredentialGeneration() != snapshot.Status.CredentialGeneration {
+				t.Fatal("client/Target generations differ", err)
+			}
+			if p.CredentialGeneration() < 2 || len(after.PendingRenewal) != 0 || p.ClientID() != old.ClientID() || p.ReceiverID() != old.ReceiverID() || p.RouteID() != old.RouteID() || !bytes.Equal(p.PairingPrivateKeyPEM(), old.PairingPrivateKeyPEM()) || after.Trust != before.Trust || after.Origin != before.Origin {
 				t.Fatal("reconciliation changed persistent identity/trust or wrong generation")
 			}
 		})
 	}
 }
 
-func TestUnavailableStatusDoesNotReplacePendingOrResetTrust(t *testing.T) {
-	f, before := pendingRenewalFixture(t, false)
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	calls := 0
-	dial := func(ctx context.Context, url string) (net.Conn, error) {
-		calls++
-		if calls == 2 {
-			cancel()
-			return nil, context.Canceled
-		}
-		return f.dial(ctx, url)
+type lostStatusBackend struct {
+	ReceiverBackend
+	onStatus func()
+	seen     atomic.Bool
+}
+
+func (b *lostStatusBackend) Exchange(encoded []byte) ([]byte, error) {
+	var envelope struct {
+		Schema string `json:"schema"`
 	}
-	if c, release, err := OpenClient(ctx, f.clientPath, dial); err == nil {
+	_ = json.Unmarshal(encoded, &envelope)
+	response, err := b.ReceiverBackend.Exchange(encoded)
+	if err == nil && envelope.Schema == "owntransit.renewal-status.request-ciphertext.v1" {
+		b.seen.Store(true)
+		b.onStatus()
+		return nil, ErrState
+	}
+	return response, err
+}
+
+func TestUnavailableStatusDoesNotReplacePendingOrResetTrust(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	var backend *lostStatusBackend
+	f, before := pendingRenewalFixtureWithBackend(t, false, func(path string) ReceiverAgent {
+		backend = &lostStatusBackend{ReceiverBackend: ReceiverBackend{Path: path}, onStatus: cancel}
+		return backend
+	})
+	if c, release, err := OpenClient(ctx, f.clientPath, f.dial); err == nil {
 		c.Close()
 		release()
-		t.Fatal("missing status opened SSH")
+		t.Fatal("lost status opened SSH")
 	}
 	after := readStatusClient(t, f.clientPath)
-	if calls != 2 || f.dials.Load() != 0 || !bytes.Equal(after.PendingRenewal, before.PendingRenewal) || !bytes.Equal(after.PendingKeys.Inner, before.PendingKeys.Inner) || !bytes.Equal(after.Pairing, before.Pairing) || after.Trust != before.Trust {
-		t.Fatal("silence replaced pending authority")
+	if !backend.seen.Load() || f.dials.Load() != 0 || !bytes.Equal(after.PendingRenewal, before.PendingRenewal) || !bytes.Equal(after.PendingKeys.Inner, before.PendingKeys.Inner) || !bytes.Equal(after.Pairing, before.Pairing) || after.Trust != before.Trust {
+		t.Fatal("lost status changed pending authority")
 	}
 }
 
@@ -160,7 +179,7 @@ func TestRenewalStatusStagingHonorsCancellationAndAlarm(t *testing.T) {
 	}
 }
 
-func TestStatusRecoveryHonorsOpeningDeadline(t *testing.T) {
+func TestUnresponsiveRenewalHonorsOpeningDeadline(t *testing.T) {
 	f, before := pendingRenewalFixture(t, false)
 	calls := 0
 	dial := func(ctx context.Context, _ string) (net.Conn, error) {
@@ -177,7 +196,7 @@ func TestStatusRecoveryHonorsOpeningDeadline(t *testing.T) {
 		release()
 		t.Fatal("offline status opened carrier")
 	}
-	if time.Since(start) > 4*time.Second || calls != 2 || f.dials.Load() != 0 {
+	if time.Since(start) > 4*time.Second || calls < 1 || f.dials.Load() != 0 {
 		t.Fatal("status escaped opening budget", calls)
 	}
 	after := readStatusClient(t, f.clientPath)

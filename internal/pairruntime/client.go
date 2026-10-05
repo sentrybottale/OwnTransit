@@ -243,21 +243,9 @@ func renewClient(ctx context.Context, path string, root *securefs.Root, s *clien
 	// Reserve part of the opening budget for authenticated reconciliation. A
 	// missing legacy response proves nothing about whether the Target committed.
 	attempt, cancel := context.WithTimeout(ctx, 10*time.Second)
-	var response []byte
-	var initialRetry networkRetry
-	for {
-		response, err = public.ExchangePairing(attempt, s.Token, material.RequestBytes())
-		// Retry transient dialing failures with the same legacy request so
-		// older Targets retain ordinary reconnect behavior. A peer rejection
-		// or lost response can instead require authenticated reconciliation.
-		if err == nil || !errors.Is(err, pairrelay.ErrTransport) || errors.Is(err, pairrelay.ErrRateLimited) {
-			break
-		}
-		if e := initialRetry.wait(attempt, err); e != nil {
-			err = errors.Join(err, e)
-			break
-		}
-	}
+	// Retry ordinary failures (including a Target whose outbound pairing leg
+	// is not queued yet) before using the optional status extension.
+	response, err := exchangeRetry(attempt, public, s.Token, material.RequestBytes())
 	cancel()
 	if err != nil {
 		if ctx.Err() != nil || errors.Is(err, pairrelay.ErrRateLimited) {
