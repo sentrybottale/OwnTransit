@@ -1,5 +1,16 @@
 # OwnTransit v1 shipping plan
 
+## 1.0.4 renewal reconciliation hotfix
+
+Review the complete ordinary renewal, expiry, ambiguous commit, restart,
+concurrency, policy/alarm, strict-parsing and software-upgrade paths. Require
+negative tests before accepting the explicitly versioned renewal-status query,
+mixed-version behavior and a rollback design preserving existing private state.
+Run both race/vet profiles and security/publication gates on the native supported
+Linux test hosts and platform CI. Verify exact signed artifacts before publishing
+through the existing nine-asset lane. No live deployment, trust reset, SSH change
+or recovery of a particular operator tunnel is implied.
+
 ## 1.0.3 expired renewal hotfix
 
 Use the existing signed nine-asset 1.x release lane and signer. Validate exact

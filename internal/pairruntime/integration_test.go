@@ -152,6 +152,10 @@ func newRouteOnRelay(t *testing.T, r *pairrelay.Relay, dial pairrelay.DialFunc) 
 }
 
 func (f *integrated) start(t *testing.T) (context.CancelFunc, <-chan error) {
+	return f.startWithBackend(t, ReceiverBackend{Path: f.serverPath})
+}
+
+func (f *integrated) startWithBackend(t *testing.T, backend ReceiverAgent) (context.CancelFunc, <-chan error) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	a, b := net.Pipe()
@@ -163,7 +167,12 @@ func (f *integrated) start(t *testing.T) (context.CancelFunc, <-chan error) {
 	go func() {
 		defer close(agentExited)
 		defer a.Close()
-		err := ServeAgent(a, a, ReceiverBackend{Path: f.serverPath})
+		var err error
+		if ordinary, ok := backend.(ReceiverBackend); ok {
+			err = ServeAgent(a, a, ordinary)
+		} else {
+			err = serveAgent(a, a, backend, nil)
+		}
 		if err != nil && ctx.Err() == nil {
 			t.Logf("agent ended: %v", err)
 		}

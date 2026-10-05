@@ -84,11 +84,17 @@ func writeRPC(output io.Writer, v rpcMessage) error {
 // unknown method, malformed message or pipe error terminates the worker.
 func ServeAgent(input io.Reader, output io.Writer, backend ReceiverBackend) error {
 	var err error
-	snapshotSent, announced := false, false
 	backend.receiver, err = backend.openReceiver()
 	if err != nil {
 		return err
 	}
+	return serveAgent(input, output, backend, backend.OnReady)
+}
+
+// Keep one bounded RPC dispatcher for the real authority and isolated protocol
+// compatibility fixtures. Production always enters through ServeAgent above.
+func serveAgent(input io.Reader, output io.Writer, backend ReceiverAgent, onReady func() error) error {
+	snapshotSent, announced := false, false
 	for {
 		req, err := readRPC(input)
 		if err != nil {
@@ -104,8 +110,8 @@ func ServeAgent(input io.Reader, output io.Writer, backend ReceiverBackend) erro
 				return ErrState
 			}
 			announced = true
-			if backend.OnReady != nil {
-				err = backend.OnReady()
+			if onReady != nil {
+				err = onReady()
 			} else {
 				err = nil
 			}

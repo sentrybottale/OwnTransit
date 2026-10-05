@@ -240,9 +240,46 @@ func renewClient(ctx context.Context, path string, root *securefs.Root, s *clien
 			return err
 		}
 	}
-	response, err := exchangeRetry(ctx, public, s.Token, material.RequestBytes())
+	// Reserve part of the opening budget for authenticated reconciliation. A
+	// missing legacy response proves nothing about whether the Target committed.
+	attempt, cancel := context.WithTimeout(ctx, 10*time.Second)
+	// Retry ordinary failures (including a Target whose outbound pairing leg
+	// is not queued yet) before using the optional status extension.
+	response, err := exchangeRetry(attempt, public, s.Token, material.RequestBytes())
+	cancel()
 	if err != nil {
-		return err
+		if ctx.Err() != nil || errors.Is(err, pairrelay.ErrRateLimited) {
+			return err
+		}
+		query, queryErr := receiverpairing.CreateRenewalStatus(material, s.Origin, time.Now())
+		if queryErr != nil {
+			return ErrState
+		}
+		answer, queryErr := exchangeRetry(ctx, public, s.Token, query.Encrypted)
+		if queryErr != nil {
+			return errors.Join(err, queryErr)
+		}
+		var keys LeafKeys
+		next, queryErr := receiverpairing.RecoverRenewalStatus(answer, query, s.Origin, time.Now(), func(id receiverpairing.ClientIdentity) ([]byte, error) {
+			payload, generated, e := NewCredentialRequest(id)
+			keys = generated
+			return payload, e
+		})
+		if queryErr != nil {
+			return ErrState
+		}
+		if err := stageClientRenewal(ctx, path, root, s, next, keys); err != nil {
+			return err
+		}
+		response, err = exchangeRetry(ctx, public, s.Token, next.Encrypted)
+		if err != nil {
+			return err
+		}
+		result, err := receiverpairing.OpenRenewalResponse(response, next.Material, s.Origin, time.Now())
+		if err != nil {
+			return ErrState
+		}
+		return commitClient(path, root, s, result)
 	}
 	result, err := receiverpairing.OpenRenewalResponse(response, material, s.Origin, time.Now())
 	if err != nil {
@@ -258,23 +295,9 @@ func renewClient(ctx context.Context, path string, root *securefs.Root, s *clien
 		if err != nil {
 			return ErrState
 		}
-		pending, err := next.Material.MarshalPrivate()
-		if err != nil {
+		if err := stageClientRenewal(ctx, path, root, s, next, keys); err != nil {
 			return err
 		}
-		policy, err := ReadPolicy(path)
-		if err != nil || policy.Locked || ctx.Err() != nil {
-			return ErrState
-		}
-		// Keep the last activated pairing/keys/authorization together. Only the
-		// pending request embeds the proven newer generation. One atomic write
-		// makes every restart (including older clients) finish fresh renewal.
-		staged := *s
-		staged.PendingRenewal, staged.PendingKeys = pending, keys
-		if err := writeRecord(root, "client.json", staged, false); err != nil {
-			return err
-		}
-		*s = staged
 		response, err = exchangeRetry(ctx, public, s.Token, next.Encrypted)
 		if err != nil {
 			return err
@@ -287,6 +310,26 @@ func renewClient(ctx context.Context, path string, root *securefs.Root, s *clien
 		}
 	}
 	return commitClient(path, root, s, result)
+}
+
+// Stage only after an authenticated receipt/status. The old active credentials
+// remain coherent, and the pending keys/request replace each other atomically.
+func stageClientRenewal(ctx context.Context, path string, root *securefs.Root, s *clientRecord, next receiverpairing.RenewalRequest, keys LeafKeys) error {
+	pending, err := next.Material.MarshalPrivate()
+	if err != nil {
+		return err
+	}
+	policy, err := ReadPolicy(path)
+	if err != nil || policy.Locked || ctx.Err() != nil {
+		return ErrState
+	}
+	staged := *s
+	staged.PendingRenewal, staged.PendingKeys = pending, keys
+	if err := writeRecord(root, "client.json", staged, false); err != nil {
+		return err
+	}
+	*s = staged
+	return nil
 }
 
 func endpointConfig(s clientRecord, a Authorization, dial pairrelay.DialFunc) (pairrelay.EndpointConfig, error) {

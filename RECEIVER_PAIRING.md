@@ -159,7 +159,10 @@ Rolling back the client before recovery leaves the original expiry failure;
 rolling back after another lost response has expired can also restore that
 failure. No state downgrade, trust reset or re-enrollment is performed.
 An expired request that the target never committed has no authenticated receipt
-and is outside this recovery path. Initial pairing expiry remains unchanged.
+and is outside this receipt-only path. Version 1.0.4 handles it through the
+separately versioned [authenticated renewal-status query](RENEWAL_RECOVERY.md).
+That read-only snapshot can prepare a fresh ordinary renewal, never activate an
+expired grant. Initial pairing expiry remains unchanged.
 
 ## Automatic authorization and emergency shutdown
 

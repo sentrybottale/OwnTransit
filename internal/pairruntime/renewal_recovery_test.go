@@ -18,9 +18,21 @@ import (
 // unchanged target has committed a renewal, while the client retains its exact
 // pending request. Both the cached response and its TLS leaves have expired.
 func expiredRenewalFixture(t *testing.T) (*integrated, clientRecord) {
+	return pendingRenewalFixture(t, true)
+}
+
+func pendingRenewalFixture(t *testing.T, committed bool) (*integrated, clientRecord) {
+	return pendingRenewalFixtureWithBackend(t, committed, nil)
+}
+
+func pendingRenewalFixtureWithBackend(t *testing.T, committed bool, backend func(string) ReceiverAgent) (*integrated, clientRecord) {
 	t.Helper()
 	f := newIntegrated(t)
-	f.start(t)
+	if backend == nil {
+		f.start(t)
+	} else {
+		f.startWithBackend(t, backend(f.serverPath))
+	}
 	f.pair(t)
 	root, err := securefs.OpenRoot(f.clientPath)
 	if err != nil {
@@ -51,6 +63,9 @@ func expiredRenewalFixture(t *testing.T) (*integrated, clientRecord) {
 	if err := writeRecord(root, "client.json", s, false); err != nil {
 		t.Fatal(err)
 	}
+	if !committed {
+		return f, s
+	}
 	receiver, err := receiverpairing.Open(filepath.Join(f.serverPath, "authority"))
 	if err != nil {
 		t.Fatal(err)
@@ -63,16 +78,16 @@ func expiredRenewalFixture(t *testing.T) (*integrated, clientRecord) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	committed, err := receiver.Renew(request.Encrypted, past, func(peer receiverpairing.PeerRequest) ([]byte, error) {
+	receipt, err := receiver.Renew(request.Encrypted, past, func(peer receiverpairing.PeerRequest) ([]byte, error) {
 		return IssueCredentials(peer, authority, snapshot.Meta.Leaves, time.Now().Add(-48*time.Hour))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := receiverpairing.OpenRenewalResponse(committed.Response, request.Material, s.Origin, time.Now()); err == nil {
+	if _, err := receiverpairing.OpenRenewalResponse(receipt.Response, request.Material, s.Origin, time.Now()); err == nil {
 		t.Fatal("old client accepted expired response")
 	}
-	old, err := receiverpairing.OpenRenewalResponse(committed.Response, request.Material, s.Origin, past)
+	old, err := receiverpairing.OpenRenewalResponse(receipt.Response, request.Material, s.Origin, past)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,12 +106,13 @@ func TestExpiredCommittedRenewalRecoversThroughSSH(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f, before := expiredRenewalFixture(t)
 			if name != "uninterrupted" {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 				defer cancel()
-				calls := 0
+				interrupted := false
 				dial := func(ctx context.Context, url string) (net.Conn, error) {
-					calls++
-					if calls == 2 {
+					staged := readStatusClient(t, f.clientPath)
+					if !bytes.Equal(staged.PendingRenewal, before.PendingRenewal) {
+						interrupted = true
 						if name == "restart-after-fresh-target-commit" {
 							root, err := securefs.OpenRoot(f.clientPath)
 							if err != nil {
@@ -125,7 +141,7 @@ func TestExpiredCommittedRenewalRecoversThroughSSH(t *testing.T) {
 					c.Close()
 					t.Fatal("interrupted recovery opened a carrier")
 				}
-				if calls != 2 || f.dials.Load() != 0 {
+				if !interrupted || f.dials.Load() != 0 {
 					t.Fatal("recovery dialed SSH before fresh authorization")
 				}
 				root, err := securefs.OpenRoot(f.clientPath)
@@ -155,8 +171,12 @@ func TestExpiredCommittedRenewalRecoversThroughSSH(t *testing.T) {
 				t.Fatal(err)
 			}
 			pair, err := receiverpairing.ParsePairing(after.Pairing)
-			if err != nil || pair.CredentialGeneration() != 3 || len(after.PendingRenewal) != 0 {
+			if err != nil || pair.CredentialGeneration() < 3 || len(after.PendingRenewal) != 0 {
 				t.Fatal("fresh generation was not activated")
+			}
+			snapshot, err := (ReceiverBackend{Path: f.serverPath}).Snapshot()
+			if err != nil || pair.CredentialGeneration() != snapshot.Status.CredentialGeneration {
+				t.Fatal("client/Target generations differ", err)
 			}
 			original, err := receiverpairing.ParsePairing(before.Pairing)
 			if err != nil {

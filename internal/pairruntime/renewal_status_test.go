@@ -1,0 +1,278 @@
+//go:build darwin || linux
+
+package pairruntime
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"net"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/sentrybottale/owntransit/internal/pairrelay"
+	"github.com/sentrybottale/owntransit/internal/receiverpairing"
+	"github.com/sentrybottale/owntransit/internal/securefs"
+)
+
+func readStatusClient(t *testing.T, path string) clientRecord {
+	t.Helper()
+	root, err := securefs.OpenRoot(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	s, err := readClient(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func TestUncommittedExpiredRenewalReconcilesThroughSSHAndRestarts(t *testing.T) {
+	for _, cut := range []string{"none", "before-fresh-exchange", "after-fresh-commit"} {
+		t.Run(cut, func(t *testing.T) {
+			f, before := pendingRenewalFixture(t, false)
+			if cut != "none" {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				interrupted := false
+				dial := func(ctx context.Context, url string) (net.Conn, error) {
+					staged := readStatusClient(t, f.clientPath)
+					if !bytes.Equal(staged.PendingRenewal, before.PendingRenewal) {
+						interrupted = true
+						if !bytes.Equal(staged.Pairing, before.Pairing) || !bytes.Equal(staged.Authorization, before.Authorization) || !bytes.Equal(staged.Keys.Inner, before.Keys.Inner) || !bytes.Equal(staged.Keys.Outer, before.Keys.Outer) {
+							t.Fatal("status replaced active state or did not save fresh request")
+						}
+						if cut == "after-fresh-commit" {
+							pending, err := receiverpairing.ParseRenewalMaterial(staged.PendingRenewal)
+							if err != nil {
+								t.Fatal(err)
+							}
+							if _, err := (ReceiverBackend{Path: f.serverPath}).Exchange(pending.RequestBytes()); err != nil {
+								t.Fatal(err)
+							}
+						}
+						cancel()
+						return nil, context.Canceled
+					}
+					return f.dial(ctx, url)
+				}
+				if c, release, err := OpenClient(ctx, f.clientPath, dial); err == nil {
+					c.Close()
+					release()
+					t.Fatal("interruption opened SSH")
+				}
+				if !interrupted || f.dials.Load() != 0 {
+					t.Fatal("recovery failed to reach fresh exchange without SSH")
+				}
+			}
+			f.assertSSH(t)
+			after := readStatusClient(t, f.clientPath)
+			old, err := receiverpairing.ParsePairing(before.Pairing)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p, err := receiverpairing.ParsePairing(after.Pairing)
+			if err != nil {
+				t.Fatal(err)
+			}
+			snapshot, err := (ReceiverBackend{Path: f.serverPath}).Snapshot()
+			if err != nil || p.CredentialGeneration() != snapshot.Status.CredentialGeneration {
+				t.Fatal("client/Target generations differ", err)
+			}
+			if p.CredentialGeneration() < 2 || len(after.PendingRenewal) != 0 || p.ClientID() != old.ClientID() || p.ReceiverID() != old.ReceiverID() || p.RouteID() != old.RouteID() || !bytes.Equal(p.PairingPrivateKeyPEM(), old.PairingPrivateKeyPEM()) || after.Trust != before.Trust || after.Origin != before.Origin {
+				t.Fatal("reconciliation changed persistent identity/trust or wrong generation")
+			}
+		})
+	}
+}
+
+type lostStatusBackend struct {
+	ReceiverBackend
+	onStatus func()
+	seen     atomic.Bool
+}
+
+func (b *lostStatusBackend) Exchange(encoded []byte) ([]byte, error) {
+	var envelope struct {
+		Schema string `json:"schema"`
+	}
+	_ = json.Unmarshal(encoded, &envelope)
+	response, err := b.ReceiverBackend.Exchange(encoded)
+	if err == nil && envelope.Schema == "owntransit.renewal-status.request-ciphertext.v1" {
+		b.seen.Store(true)
+		b.onStatus()
+		return nil, ErrState
+	}
+	return response, err
+}
+
+func TestUnavailableStatusDoesNotReplacePendingOrResetTrust(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	var backend *lostStatusBackend
+	f, before := pendingRenewalFixtureWithBackend(t, false, func(path string) ReceiverAgent {
+		backend = &lostStatusBackend{ReceiverBackend: ReceiverBackend{Path: path}, onStatus: cancel}
+		return backend
+	})
+	if c, release, err := OpenClient(ctx, f.clientPath, f.dial); err == nil {
+		c.Close()
+		release()
+		t.Fatal("lost status opened SSH")
+	}
+	after := readStatusClient(t, f.clientPath)
+	if !backend.seen.Load() || f.dials.Load() != 0 || !bytes.Equal(after.PendingRenewal, before.PendingRenewal) || !bytes.Equal(after.PendingKeys.Inner, before.PendingKeys.Inner) || !bytes.Equal(after.Pairing, before.Pairing) || after.Trust != before.Trust {
+		t.Fatal("lost status changed pending authority")
+	}
+}
+
+func TestRenewalStatusStagingHonorsCancellationAndAlarm(t *testing.T) {
+	for _, alarm := range []bool{false, true} {
+		t.Run(map[bool]string{false: "cancel", true: "alarm"}[alarm], func(t *testing.T) {
+			f, before := pendingRenewalFixture(t, false)
+			pending, err := receiverpairing.ParseRenewalMaterial(before.PendingRenewal)
+			if err != nil {
+				t.Fatal(err)
+			}
+			q, err := receiverpairing.CreateRenewalStatus(pending, before.Origin, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			answer, err := (ReceiverBackend{Path: f.serverPath}).Exchange(q.Encrypted)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var keys LeafKeys
+			next, err := receiverpairing.RecoverRenewalStatus(answer, q, before.Origin, time.Now(), func(id receiverpairing.ClientIdentity) ([]byte, error) {
+				p, k, e := NewCredentialRequest(id)
+				keys = k
+				return p, e
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if alarm {
+				if err := SetLocked(ctx, f.clientPath, false, true); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				cancel()
+			}
+			root, err := securefs.OpenRoot(f.clientPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer root.Close()
+			staged := before
+			if err := stageClientRenewal(ctx, f.clientPath, root, &staged, next, keys); err == nil {
+				t.Fatal("cancel/alarm allowed status staging")
+			}
+			after := readStatusClient(t, f.clientPath)
+			if !bytes.Equal(after.PendingRenewal, before.PendingRenewal) || f.dials.Load() != 0 {
+				t.Fatal("status staging changed denied state")
+			}
+		})
+	}
+}
+
+func TestUnresponsiveRenewalHonorsOpeningDeadline(t *testing.T) {
+	f, before := pendingRenewalFixture(t, false)
+	calls := 0
+	dial := func(ctx context.Context, _ string) (net.Conn, error) {
+		calls++
+		if calls == 1 {
+			return nil, ErrState
+		}
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	start := time.Now()
+	if c, release, err := openClient(context.Background(), f.clientPath, dial, 2*time.Second); err == nil {
+		c.Close()
+		release()
+		t.Fatal("offline status opened carrier")
+	}
+	if time.Since(start) > 4*time.Second || calls < 1 || f.dials.Load() != 0 {
+		t.Fatal("status escaped opening budget", calls)
+	}
+	after := readStatusClient(t, f.clientPath)
+	if !bytes.Equal(before.PendingRenewal, after.PendingRenewal) || !bytes.Equal(before.Pairing, after.Pairing) {
+		t.Fatal("timeout changed durable pairing")
+	}
+}
+
+// The 1.0.3 authority dispatcher accepts only these two ciphertext schemas.
+// Exercise its wire behavior without teaching it the new status extension.
+type legacyRenewalBackend struct {
+	ReceiverBackend
+	unsupported atomic.Int32
+}
+
+func (b *legacyRenewalBackend) Exchange(encoded []byte) ([]byte, error) {
+	var envelope struct {
+		Schema     string `json:"schema"`
+		Ciphertext string `json:"ciphertext"`
+	}
+	if json.Unmarshal(encoded, &envelope) != nil || (envelope.Schema != "owntransit.receiver-pairing.request-ciphertext.v1" && envelope.Schema != "owntransit.receiver-pairing.renewal-ciphertext.v1") {
+		b.unsupported.Add(1)
+		return nil, ErrState
+	}
+	return b.ReceiverBackend.Exchange(encoded)
+}
+
+func TestNewClientLegacyTargetRetainsOrdinaryRenewalAfterTransportFailure(t *testing.T) {
+	f := newIntegrated(t)
+	backend := &legacyRenewalBackend{ReceiverBackend: ReceiverBackend{Path: f.serverPath}}
+	f.startWithBackend(t, backend)
+	f.pair(t)
+	root, err := securefs.OpenRoot(f.clientPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	s, err := readClient(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pair, err := receiverpairing.ParsePairing(s.Pairing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys LeafKeys
+	req, err := receiverpairing.CreateRenewalWithPayload(pair, s.Origin, time.Now(), time.Hour, func(id receiverpairing.ClientIdentity) ([]byte, error) {
+		payload, k, e := NewCredentialRequest(id)
+		keys = k
+		return payload, e
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := stageClientRenewal(ctx, f.clientPath, root, &s, req, keys); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	dial := func(ctx context.Context, url string) (net.Conn, error) {
+		calls++
+		if calls == 1 {
+			return nil, pairrelay.ErrTransport
+		}
+		return f.dial(ctx, url)
+	}
+	if err := Check(ctx, f.clientPath, dial); err != nil {
+		t.Fatal(err)
+	}
+	if backend.unsupported.Load() != 0 || f.dials.Load() != 1 {
+		t.Fatal("ordinary reconnect depended on new Target extension")
+	}
+	after := readStatusClient(t, f.clientPath)
+	p, err := receiverpairing.ParsePairing(after.Pairing)
+	if err != nil || p.CredentialGeneration() != 2 {
+		t.Fatal("legacy renewal did not activate")
+	}
+}
