@@ -374,6 +374,23 @@ func (receiver *Receiver) Renew(encoded []byte, now time.Time, issue IssueFunc) 
 }
 
 func OpenRenewalResponse(response []byte, material RenewalMaterial, expectedOrigin string, now time.Time) (OpenResponseResult, error) {
+	return openRenewalResponse(response, material, expectedOrigin, now, false)
+}
+
+// RecoverExpiredRenewal authenticates a receipt for the exact saved renewal and
+// prepares a fresh request for the following generation. It returns no usable
+// authorization: the caller must durably save this request and its new private
+// keys before sending it, then require an ordinary fresh OpenRenewalResponse.
+// Neither persistent pairing keys nor receiver trust are replaced.
+func RecoverExpiredRenewal(response []byte, material RenewalMaterial, expectedOrigin string, now time.Time, validity time.Duration, build PayloadBuilder) (RenewalRequest, error) {
+	committed, err := openRenewalResponse(response, material, expectedOrigin, now, true)
+	if err != nil {
+		return RenewalRequest{}, err
+	}
+	return CreateRenewalWithPayload(committed.Pairing, expectedOrigin, now, validity, build)
+}
+
+func openRenewalResponse(response []byte, material RenewalMaterial, expectedOrigin string, now time.Time, expiredReceipt bool) (OpenResponseResult, error) {
 	now = now.UTC().Truncate(time.Second)
 	if err := validateRenewalMaterial(material); err != nil {
 		return OpenResponseResult{}, errors.New("receiverpairing: renewal material is invalid")
@@ -382,7 +399,7 @@ func OpenRenewalResponse(response []byte, material RenewalMaterial, expectedOrig
 	if err != nil {
 		return OpenResponseResult{}, err
 	}
-	payload, authorization, err := openPairResponse(response, material.responseIdentity, receiverPublic, now)
+	payload, authorization, err := openPairResponseMode(response, material.responseIdentity, receiverPublic, now, expiredReceipt)
 	if err != nil {
 		return OpenResponseResult{}, err
 	}
@@ -484,6 +501,10 @@ func makeResponse(payload responsePayload, recipient string, private ed25519.Pri
 }
 
 func openPairResponse(encoded []byte, responseIdentity string, receiverPublic ed25519.PublicKey, now time.Time) (responsePayload, []byte, error) {
+	return openPairResponseMode(encoded, responseIdentity, receiverPublic, now, false)
+}
+
+func openPairResponseMode(encoded []byte, responseIdentity string, receiverPublic ed25519.PublicKey, now time.Time, expiredReceipt bool) (responsePayload, []byte, error) {
 	plaintext, err := openAge(encoded, responseCipherSchema, responseIdentity, MaxResponseSize)
 	if err != nil {
 		return responsePayload{}, nil, err
@@ -492,10 +513,20 @@ func openPairResponse(encoded []byte, responseIdentity string, receiverPublic ed
 	if err := openSigned(plaintext, responseEnvelopeSchema, responseDomain, receiverPublic, MaxResponseSize, &response); err != nil {
 		return responsePayload{}, nil, err
 	}
+	validationTime := now
+	if expiredReceipt {
+		// This branch proves a past commit only. Still validate the signed window's
+		// shape and maximum duration, and reject live/future responses. Normal
+		// pairing, activation and runtime TLS always use the current clock.
+		if now.IsZero() || now.Before(time.Unix(response.ExpiresUnix, 0)) {
+			return responsePayload{}, nil, errors.New("receiverpairing: receipt is not expired")
+		}
+		validationTime = time.Unix(response.IssuedUnix, 0)
+	}
 	if response.Schema != responseSchema || response.Profile != Profile || (response.Kind != "pair" && response.Kind != "renew") ||
 		validateID(response.ReceiverID) != nil || validateRoute(response.RouteID) != nil || validateRelayOrigin(response.RelayOrigin) != nil ||
 		validateID(response.ClientID) != nil || !validDigest(response.RequestSHA256) || response.CredentialGeneration == 0 ||
-		validateWindow(response.IssuedUnix, response.ExpiresUnix, now, MaxMessageValidity) != nil {
+		validateWindow(response.IssuedUnix, response.ExpiresUnix, validationTime, MaxMessageValidity) != nil {
 		return responsePayload{}, nil, errors.New("receiverpairing: response fields are invalid")
 	}
 	if response.Kind == "pair" {
