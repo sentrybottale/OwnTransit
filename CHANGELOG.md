@@ -7,6 +7,21 @@ authenticated artifacts of the documented release lane. The legacy 0.1.0 lane
 additionally requires its signed qualification record. Git tags do not publish
 artifacts automatically.
 
+## [1.0.3]
+
+- Recover a committed credential renewal whose acknowledgement expired before
+  the Client saved it. Authenticate that exact response as a receipt, save a
+  fresh request and operational keys atomically, then require current
+  authorization before opening a carrier.
+- Preserve pairing identities, pinned trust, origin and active credentials
+  during recovery. Restart resumes the saved request; alarms and revocation
+  still deny access. Target and Relay wire behavior is unchanged.
+- Publish versioned 1.0.3 installers and capsules with recognized 1.0.2
+  upgrades, using the existing distribution signer and signature namespace.
+  Upgrade the Client and continue the existing tunnel; no new pairing is needed
+  for this recovery. Initial pairing expiry and uncommitted expired requests
+  remain outside this fix.
+
 ## [1.0.2]
 
 - Let Relay New tunnel approve an already-created public Target ID in the same
