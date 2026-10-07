@@ -62,6 +62,7 @@ type migrationIntent struct {
 	NextBinding                   instanceBinding
 	PreviousPending, PreviousUnit []byte
 	Next                          savedConfig
+	Route                         *routeRecovery `json:"route,omitempty"`
 }
 
 func planDigest(value any) string {
@@ -84,7 +85,7 @@ func validateMigration(j migrationIntent) error {
 	p, pe := instanceFromBinding(j.PreviousBinding)
 	n, ne := instanceFromBinding(j.NextBinding)
 	s := j.Source
-	if pe != nil || ne != nil || !p.named() || p.name != n.name || p.url != n.url || p.legacyDataLabel != "" || n.legacyDataLabel != s.Label || n.port != s.Port || !validLegacyLabel(s.Label) || !validEngine(s.Engine) || !validImage(s.Image) || !validImage("sha256:"+s.ContainerID) || !n.validSaved(j.Next) || j.Next.Engine != s.Engine || (j.Schema != "owntransit.relay-migration.v1" && j.Schema != "owntransit.relay-migration.v2") || (j.Phase != "prepared" && j.Phase != "committed") {
+	if pe != nil || ne != nil || !p.named() || p.name != n.name || p.url != n.url || p.legacyDataLabel != "" || n.legacyDataLabel != s.Label || n.port != s.Port || !validLegacyLabel(s.Label) || !validEngine(s.Engine) || !validImage(s.Image) || !validImage("sha256:"+s.ContainerID) || !n.validSaved(j.Next) || j.Next.Engine != s.Engine || (j.Schema != "owntransit.relay-migration.v1" && j.Schema != "owntransit.relay-migration.v2" && j.Schema != "owntransit.relay-migration.v3") || (j.Phase != "prepared" && j.Phase != "committed") {
 		return errors.New("migration journal ownership mismatch")
 	}
 	if j.Schema == "owntransit.relay-migration.v1" {
@@ -93,6 +94,9 @@ func validateMigration(j migrationIntent) error {
 		}
 	} else if !n.validVerificationEvidence(s.evidence(n.url)) {
 		return errors.New("invalid migration verification evidence")
+	}
+	if j.Route != nil && (j.Schema != "owntransit.relay-migration.v3" || !validRouteRecovery(j.Route) || j.Route.BeforeDigest != s.RouteDigest) {
+		return errors.New("invalid migration website route recovery")
 	}
 	if !knownManualUnit(s.Unit, legacySpec(s.Label, n.url, s.Port), s.Engine, s.Image) || len(s.Digests) != 5 {
 		return errors.New("invalid retained legacy ownership")
@@ -441,7 +445,7 @@ func discoverManual(ctx context.Context, u string, specs []instanceSpec) (*migra
 			if route == nil {
 				return nil, ErrRoute
 			}
-			if !route.edit.Reused {
+			if !route.edit.Exists {
 				continue
 			}
 			s := legacySpec(label, u, port)

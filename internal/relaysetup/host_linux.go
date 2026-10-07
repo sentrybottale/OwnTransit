@@ -5,7 +5,6 @@ package relaysetup
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -807,8 +806,7 @@ func (r *routeChange) apply(ctx context.Context, root *securefs.Root) error {
 	if err != nil || !bytes.Equal(current, r.edit.Before) {
 		return errors.New("site configuration changed during setup")
 	}
-	hash := sha256.Sum256(append([]byte(r.path+"\x00"), r.edit.Before...))
-	backup := "site-" + hex.EncodeToString(hash[:8]) + ".backup"
+	backup := routeBackupName(r.path, r.edit.Before)
 	if err := root.EnsureFile(backup, r.edit.Before, 0600); err != nil {
 		return err
 	}
@@ -824,12 +822,14 @@ func (r *routeChange) apply(ctx context.Context, root *securefs.Root) error {
 	return nil
 }
 func (r *routeChange) rollback(ctx context.Context) error {
-	current, _, err := protectedFile(r.path)
-	if err != nil || !bytes.Equal(current, r.edit.After) {
+	current, mode, err := protectedFile(r.path)
+	if err != nil || mode != r.mode || !bytes.Equal(current, r.edit.After) && !bytes.Equal(current, r.edit.Before) {
 		return errors.New("site changed outside setup; refusing to overwrite it during rollback")
 	}
-	if err := writeAtomic(r.path, r.edit.Before, r.mode); err != nil {
-		return err
+	if !bytes.Equal(current, r.edit.Before) {
+		if err := writeAtomic(r.path, r.edit.Before, r.mode); err != nil {
+			return err
+		}
 	}
 	if err := r.validate(ctx); err != nil {
 		return err

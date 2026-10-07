@@ -154,7 +154,7 @@ func (relay *Relay) publishOffer(encoded, token []byte) error {
 	}
 	now := relay.now()
 	descriptor, err := relay.config.VerifyAdvertisement(append([]byte(nil), offer.Advertisement...), now)
-	if err != nil {
+	if err != nil || descriptor.Expires.IsZero() || !now.Before(descriptor.Expires) {
 		return ErrUnavailable
 	}
 	_, _, admissionHash, err := parseAdmissionCA(descriptor.AdmissionCAPEM, now)
@@ -189,38 +189,21 @@ func (relay *Relay) publishOffer(encoded, token []byte) error {
 		return ErrUnauthorized
 	}
 	relay.expireAdvertisementsLocked(now)
-	previous, exists := relay.advertisements[key]
-	if exists {
-		if !bytes.Equal(previous.encoded, offer.Advertisement) || previous.admissionHash != admissionHash ||
-			(previous.hasOffer && (previous.offerLocator != offer.Locator || previous.offerProof != offer.Proof)) {
-			return ErrUnavailable
-		}
-	} else if len(relay.advertisements) >= relay.limits.Advertisements {
-		return ErrCapacity
-	}
-	// This scan is bounded by the existing advertisement limit. It introduces
-	// no independently growable map, and prevents cross-route locator reuse.
-	for otherKey, record := range relay.advertisements {
-		if otherKey != key && record.hasOffer && record.offerLocator == offer.Locator {
-			return ErrUnavailable
-		}
-	}
 	if len(token) != 0 {
 		if current, ok := relay.registrations[key]; ok {
 			if !bytes.Equal(current.token, token) || current.advertisementSHA256 != restored.advertisementSHA256 || !current.expires.Equal(restored.expires) {
 				return ErrUnavailable
 			}
-		} else if len(relay.registrations) >= relay.limits.Advertisements {
+		} else if len(relay.registrations) >= relay.registrationLimit() {
 			return ErrCapacity
 		}
 	}
-	if !exists {
-		previous.encoded = offer.Advertisement
-		previous.admissionHash = admissionHash
+	if err := relay.cacheAdvertisementLocked(key, advertisementRecord{
+		encoded: append([]byte(nil), offer.Advertisement...), admissionHash: admissionHash,
+		signedExpires: descriptor.Expires, hasOffer: true, offerLocator: offer.Locator, offerProof: offer.Proof,
+	}, now); err != nil {
+		return err
 	}
-	previous.hasOffer, previous.offerLocator, previous.offerProof = true, offer.Locator, offer.Proof
-	previous.expires = now.Add(relay.limits.AdvertisementTTL)
-	relay.advertisements[key] = previous
 	if len(token) != 0 {
 		relay.registrations[key] = restored
 	}
@@ -237,11 +220,13 @@ func (relay *Relay) fetchOffer(locator [32]byte) ([]byte, error) {
 		return nil, ErrAlreadyClosed
 	}
 	relay.expireAdvertisementsLocked(relay.now())
-	for _, record := range relay.advertisements {
-		if record.hasOffer && record.offerLocator == locator {
-			return pairoffer.Encode(pairoffer.Offer{
-				Locator: record.offerLocator, Advertisement: record.encoded, Proof: record.offerProof,
-			})
+	for _, pool := range relay.advertisementPools() {
+		for _, record := range pool {
+			if record.hasOffer && record.offerLocator == locator {
+				return pairoffer.Encode(pairoffer.Offer{
+					Locator: record.offerLocator, Advertisement: record.encoded, Proof: record.offerProof,
+				})
+			}
 		}
 	}
 	return nil, ErrUnavailable

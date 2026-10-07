@@ -296,7 +296,7 @@ func newRelayFixture(t *testing.T) relayFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	descriptor := Descriptor{ReceiverID: receiverID, RouteID: routeID, AdmissionCAPEM: admissionCA.CertPEM}
+	descriptor := Descriptor{ReceiverID: receiverID, RouteID: routeID, AdmissionCAPEM: admissionCA.CertPEM, Expires: now.Add(24 * time.Hour)}
 	advertisement := []byte("signed-public-advertisement")
 	tokenKey := bytes.Repeat([]byte{0x33}, tokenKeySize)
 	relay, err := NewRelay(RelayConfig{

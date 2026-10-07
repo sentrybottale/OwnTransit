@@ -32,8 +32,9 @@ func refill(p *admissionPeer, now time.Time, rate, burst float64) {
 	p.updated = now
 }
 
-// Only the actual TCP peer is used. Behind a reverse proxy/NAT its clients
-// share a bucket; spoofable forwarding headers never create quota identities.
+// The caller supplies the actual TCP peer or the strictly validated original
+// peer from the locally selected private proxy hop. Ordinary forwarding headers
+// never create quota identities; clients behind the same NAT still share one.
 func (a *admissionGuard) acquire(remote string, now time.Time) (func(), bool) {
 	host, _, err := net.SplitHostPort(remote)
 	if err != nil {

@@ -91,7 +91,12 @@ func (relay *Relay) saveAdmissionLocked(key routeKey, next AdmissionRecord) erro
 	if !exists && len(relay.admissions) >= MaxAdmissionRecords {
 		return ErrCapacity
 	}
+	if advertisement, ok := relay.advertisementLocked(key); ok && (next.Status == "approved" || next.Status == "observed") &&
+		next.AdmissionRootSHA256 == hex.EncodeToString(advertisement.admissionHash[:]) && !relay.protectedAdvertisementCapacityLocked(key) {
+		return ErrCapacity
+	}
 	if exists && previous == next && next.Status != "removed" {
+		relay.promoteAdvertisementLocked(key, relay.now())
 		return nil
 	}
 	relay.admissions[key] = next
@@ -107,6 +112,7 @@ func (relay *Relay) saveAdmissionLocked(key routeKey, next AdmissionRecord) erro
 			return ErrUnavailable
 		}
 	}
+	relay.promoteAdvertisementLocked(key, relay.now())
 	return nil
 }
 
@@ -177,11 +183,16 @@ func (relay *Relay) RemoveAdmission(receiver protocol.ID, route protocol.RouteID
 	record.RejectIssuedThrough = max(record.RejectIssuedThrough, record.LastIssuedUnix, relay.now().Unix())
 	err := relay.saveAdmissionLocked(key, record)
 	delete(relay.registrations, key)
-	// Keep the bounded signed advertisement for explicit local reapproval;
-	// remove offer lookup so the removed admission is no longer advertised.
-	if advertisement, ok := relay.advertisements[key]; ok {
+	// Keep the existing exact copy only for explicit local reapproval, under
+	// its unchanged expiry and the shared managed-advertisement cap. Public
+	// publications cannot refresh it, and offer lookup stays disabled.
+	if advertisement, ok := relay.advertisementLocked(key); ok {
 		advertisement.hasOffer = false
-		relay.advertisements[key] = advertisement
+		if relay.protectedAdvertisementCapacityLocked(key) {
+			relay.retainedAdvertisements[key] = advertisement
+		}
+		delete(relay.advertisements, key)
+		delete(relay.pendingAdvertisements, key)
 	}
 	for connection := range relay.routeConnections[key] {
 		_ = transport.Abort(connection)

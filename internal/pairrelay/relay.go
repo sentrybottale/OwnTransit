@@ -29,6 +29,7 @@ type advertisementRecord struct {
 	encoded       []byte
 	admissionHash [sha256.Size]byte
 	expires       time.Time
+	signedExpires time.Time
 	// Offer metadata shares this bounded advertisement slot; the encoded
 	// advertisement has one retained copy and no independent offer registry.
 	offerLocator [sha256.Size]byte
@@ -63,24 +64,26 @@ type Relay struct {
 	connections chan struct{}
 	admission   admissionGuard
 
-	mu               sync.Mutex
-	closed           bool
-	advertisements   map[routeKey]advertisementRecord
-	registrations    map[routeKey]registrationRecord
-	pairing          map[routeKey][]*waitingLeg
-	runtime          map[routeKey][]*waitingLeg
-	pairingPending   int
-	runtimePending   int
-	active           int
-	pairingPerRoute  map[routeKey]int
-	runtimePerRoute  map[routeKey]int
-	activePerRoute   map[routeKey]int
-	admissions       map[routeKey]AdmissionRecord
-	routeConnections map[routeKey]map[net.Conn]struct{}
+	mu                     sync.Mutex
+	closed                 bool
+	advertisements         map[routeKey]advertisementRecord
+	retainedAdvertisements map[routeKey]advertisementRecord
+	pendingAdvertisements  map[routeKey]advertisementRecord
+	registrations          map[routeKey]registrationRecord
+	pairing                map[routeKey][]*waitingLeg
+	runtime                map[routeKey][]*waitingLeg
+	pairingPending         int
+	runtimePending         int
+	active                 int
+	pairingPerRoute        map[routeKey]int
+	runtimePerRoute        map[routeKey]int
+	activePerRoute         map[routeKey]int
+	admissions             map[routeKey]AdmissionRecord
+	routeConnections       map[routeKey]map[net.Conn]struct{}
 }
 
 func NewRelay(config RelayConfig) (*Relay, error) {
-	if len(config.TokenKey) != tokenKeySize || config.VerifyAdvertisement == nil {
+	if len(config.TokenKey) != tokenKeySize || config.VerifyAdvertisement == nil || config.Ingress > IngressPrivateProxy {
 		return nil, ErrProtocol
 	}
 	if err := ValidateAdmissionRecords(config.Admissions); err != nil {
@@ -109,10 +112,12 @@ func NewRelay(config RelayConfig) (*Relay, error) {
 	root, cancel := context.WithCancel(context.Background())
 	return &Relay{
 		config: config, limits: limits, now: now, ctx: root, cancel: cancel,
-		connections:    make(chan struct{}, limits.Connections),
-		advertisements: make(map[routeKey]advertisementRecord),
-		registrations:  make(map[routeKey]registrationRecord),
-		pairing:        make(map[routeKey][]*waitingLeg), runtime: make(map[routeKey][]*waitingLeg),
+		connections:            make(chan struct{}, limits.Connections),
+		advertisements:         make(map[routeKey]advertisementRecord),
+		retainedAdvertisements: make(map[routeKey]advertisementRecord),
+		pendingAdvertisements:  make(map[routeKey]advertisementRecord),
+		registrations:          make(map[routeKey]registrationRecord),
+		pairing:                make(map[routeKey][]*waitingLeg), runtime: make(map[routeKey][]*waitingLeg),
 		pairingPerRoute: make(map[routeKey]int), runtimePerRoute: make(map[routeKey]int),
 		activePerRoute: make(map[routeKey]int),
 		admissions:     admissions, routeConnections: make(map[routeKey]map[net.Conn]struct{}),
@@ -122,16 +127,16 @@ func NewRelay(config RelayConfig) (*Relay, error) {
 func normalizeLimits(value Limits) (Limits, error) {
 	defaults := defaultLimits()
 	values := []*int{
-		&value.Connections, &value.Advertisements, &value.PendingPairings, &value.PendingCarriers,
+		&value.Connections, &value.Advertisements, &value.PendingAdvertisements, &value.PendingPairings, &value.PendingCarriers,
 		&value.ActiveCarriers, &value.PerRoutePending, &value.PerRouteActive,
 		&value.AdvertisementBytes, &value.PairingBytes,
 	}
 	defaultValues := []int{
-		defaults.Connections, defaults.Advertisements, defaults.PendingPairings, defaults.PendingCarriers,
+		defaults.Connections, defaults.Advertisements, defaults.PendingAdvertisements, defaults.PendingPairings, defaults.PendingCarriers,
 		defaults.ActiveCarriers, defaults.PerRoutePending, defaults.PerRouteActive,
 		defaults.AdvertisementBytes, defaults.PairingBytes,
 	}
-	maxima := []int{4096, 4096, 1024, 1024, 1024, 64, 64, MaxAdvertisementBytes, MaxPairingBytes}
+	maxima := []int{4096, 4096, MaxAdmissionRecords, 1024, 1024, 1024, 64, 64, MaxAdvertisementBytes, MaxPairingBytes}
 	for index, item := range values {
 		if *item == 0 {
 			*item = defaultValues[index]
@@ -140,9 +145,9 @@ func normalizeLimits(value Limits) (Limits, error) {
 			return Limits{}, ErrProtocol
 		}
 	}
-	durations := []*time.Duration{&value.AdvertisementTTL, &value.PairingTimeout, &value.HandshakeTimeout, &value.SessionLifetime}
-	defaultDurations := []time.Duration{defaults.AdvertisementTTL, defaults.PairingTimeout, defaults.HandshakeTimeout, defaults.SessionLifetime}
-	maxDurations := []time.Duration{7 * 24 * time.Hour, time.Minute, time.Minute, MaxTokenValidity}
+	durations := []*time.Duration{&value.AdvertisementTTL, &value.PendingAdvertisementTTL, &value.PairingTimeout, &value.HandshakeTimeout, &value.SessionLifetime}
+	defaultDurations := []time.Duration{defaults.AdvertisementTTL, defaults.PendingAdvertisementTTL, defaults.PairingTimeout, defaults.HandshakeTimeout, defaults.SessionLifetime}
+	maxDurations := []time.Duration{7 * 24 * time.Hour, 2 * time.Minute, time.Minute, time.Minute, MaxTokenValidity}
 	for index, item := range durations {
 		if *item == 0 {
 			*item = defaultDurations[index]
@@ -191,6 +196,8 @@ func (relay *Relay) Close() error {
 		}
 	}
 	relay.advertisements = make(map[routeKey]advertisementRecord)
+	relay.retainedAdvertisements = make(map[routeKey]advertisementRecord)
+	relay.pendingAdvertisements = make(map[routeKey]advertisementRecord)
 	relay.registrations = make(map[routeKey]registrationRecord)
 	relay.pairing = make(map[routeKey][]*waitingLeg)
 	relay.runtime = make(map[routeKey][]*waitingLeg)
@@ -210,7 +217,12 @@ func (relay *Relay) ServeHTTP(output http.ResponseWriter, request *http.Request)
 		http.Error(output, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
-	release, admitted := relay.admission.acquire(request.RemoteAddr, time.Now())
+	peer, ok := relay.admissionPeer(request)
+	if !ok {
+		http.Error(output, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	release, admitted := relay.admission.acquire(peer, time.Now())
 	if !admitted {
 		http.Error(output, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
 		return
@@ -386,20 +398,26 @@ func (relay *Relay) RegisterReceiver(
 	var selectedKey routeKey
 	var selected advertisementRecord
 	matches := 0
-	for key, advertisement := range relay.advertisements {
-		if key.receiver == receiverID {
-			selectedKey, selected = key, advertisement
-			matches++
+	for _, pool := range relay.advertisementPools() {
+		for key, advertisement := range pool {
+			if key.receiver == receiverID {
+				selectedKey, selected = key, advertisement
+				matches++
+			}
 		}
 	}
 	if matches != 1 {
 		return Registration{}, ErrUnavailable
 	}
-	if _, exists := relay.registrations[selectedKey]; !exists && len(relay.registrations) >= relay.limits.Advertisements {
+	if _, exists := relay.registrations[selectedKey]; !exists && len(relay.registrations) >= relay.registrationLimit() {
+		return Registration{}, ErrCapacity
+	}
+	if !relay.protectedAdvertisementCapacityLocked(selectedKey) {
 		return Registration{}, ErrCapacity
 	}
 	descriptor, err := relay.config.VerifyAdvertisement(append([]byte(nil), selected.encoded...), now)
-	if err != nil || descriptor.ReceiverID != selectedKey.receiver || descriptor.RouteID != selectedKey.route {
+	if err != nil || descriptor.ReceiverID != selectedKey.receiver || descriptor.RouteID != selectedKey.route ||
+		descriptor.Expires.IsZero() || !now.Before(descriptor.Expires) || !descriptor.Expires.Equal(selected.signedExpires) {
 		return Registration{}, ErrUnavailable
 	}
 	_, _, currentAdmissionHash, err := parseAdmissionCA(descriptor.AdmissionCAPEM, now)
@@ -472,16 +490,16 @@ func (relay *Relay) fetchRegistration(advertisement []byte) ([]byte, error) {
 	if len(advertisement) == 0 || len(advertisement) > relay.limits.AdvertisementBytes {
 		return nil, ErrProtocol
 	}
-	descriptor, err := relay.config.VerifyAdvertisement(append([]byte(nil), advertisement...), relay.now())
-	if err != nil {
+	now := relay.now()
+	descriptor, err := relay.config.VerifyAdvertisement(append([]byte(nil), advertisement...), now)
+	if err != nil || descriptor.Expires.IsZero() || !now.Before(descriptor.Expires) {
 		return nil, ErrUnauthorized
 	}
-	_, _, admissionHash, err := parseAdmissionCA(descriptor.AdmissionCAPEM, relay.now())
+	_, _, admissionHash, err := parseAdmissionCA(descriptor.AdmissionCAPEM, now)
 	if err != nil {
 		return nil, ErrUnauthorized
 	}
 	key := routeKey{receiver: descriptor.ReceiverID, route: descriptor.RouteID}
-	now := relay.now()
 	relay.mu.Lock()
 	defer relay.mu.Unlock()
 	if relay.closed {
@@ -503,11 +521,12 @@ func (relay *Relay) publishAdvertisement(encoded []byte) error {
 	if len(encoded) == 0 || len(encoded) > relay.limits.AdvertisementBytes {
 		return ErrProtocol
 	}
-	descriptor, err := relay.config.VerifyAdvertisement(append([]byte(nil), encoded...), relay.now())
-	if err != nil {
+	now := relay.now()
+	descriptor, err := relay.config.VerifyAdvertisement(append([]byte(nil), encoded...), now)
+	if err != nil || descriptor.Expires.IsZero() || !now.Before(descriptor.Expires) {
 		return ErrUnauthorized
 	}
-	_, _, digest, err := parseAdmissionCA(descriptor.AdmissionCAPEM, relay.now())
+	_, _, digest, err := parseAdmissionCA(descriptor.AdmissionCAPEM, now)
 	if err != nil || zeroID(descriptor.ReceiverID) || zeroRoute(descriptor.RouteID) {
 		return ErrUnauthorized
 	}
@@ -517,23 +536,11 @@ func (relay *Relay) publishAdvertisement(encoded []byte) error {
 	if relay.closed {
 		return ErrAlreadyClosed
 	}
-	relay.expireAdvertisementsLocked(relay.now())
-	if previous, exists := relay.advertisements[key]; exists && previous.hasOffer {
-		if !bytes.Equal(previous.encoded, encoded) || previous.admissionHash != digest {
-			return ErrUnavailable
-		}
-		previous.expires = relay.now().Add(relay.limits.AdvertisementTTL)
-		relay.advertisements[key] = previous
-		return nil
-	}
-	if _, exists := relay.advertisements[key]; !exists && len(relay.advertisements) >= relay.limits.Advertisements {
-		return ErrCapacity
-	}
-	relay.advertisements[key] = advertisementRecord{
+	relay.expireAdvertisementsLocked(now)
+	return relay.cacheAdvertisementLocked(key, advertisementRecord{
 		encoded: append([]byte(nil), encoded...), admissionHash: digest,
-		expires: relay.now().Add(relay.limits.AdvertisementTTL),
-	}
-	return nil
+		signedExpires: descriptor.Expires,
+	}, now)
 }
 
 func (relay *Relay) fetchAdvertisement(token []byte) ([]byte, error) {
@@ -548,7 +555,7 @@ func (relay *Relay) fetchAdvertisement(token []byte) ([]byte, error) {
 		return nil, err
 	}
 	relay.expireAdvertisementsLocked(relay.now())
-	record, ok := relay.advertisements[key]
+	record, ok := relay.advertisementLocked(key)
 	if !ok || !bytes.Equal(record.admissionHash[:], claims.AdmissionRootSHA256[:]) {
 		return nil, ErrUnavailable
 	}
@@ -556,9 +563,11 @@ func (relay *Relay) fetchAdvertisement(token []byte) ([]byte, error) {
 }
 
 func (relay *Relay) expireAdvertisementsLocked(now time.Time) {
-	for key, record := range relay.advertisements {
-		if !now.Before(record.expires) {
-			delete(relay.advertisements, key)
+	for _, pool := range relay.advertisementPools() {
+		for key, record := range pool {
+			if !now.Before(record.expires) {
+				delete(pool, key)
+			}
 		}
 	}
 	for key, record := range relay.registrations {

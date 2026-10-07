@@ -60,7 +60,8 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 			if err := os.WriteFile("/usr/sbin/nginx", []byte("disposable fixture"), 0755); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(site, []byte("server { listen 443 ssl; server_name relay.example; location = /connects { proxy_pass http://127.0.0.1:9087/connects; } }\n"), 0644); err != nil {
+			siteBefore := []byte("server { listen 443 ssl; server_name relay.example; location = /connects { proxy_pass http://127.0.0.1:9087/connects; } }\n")
+			if err := os.WriteFile(site, siteBefore, 0644); err != nil {
 				t.Fatal(err)
 			}
 			keyPath := managedRoot + "/data/relay/relay-key.pem"
@@ -98,7 +99,7 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 					if len(args) == 1 && args[0] == "-T" {
 						return []byte("# configuration file " + site + ":\n"), nil
 					}
-					return nil, errors.New("website mutation forbidden")
+					return nil, nil
 				}
 				if filepath.Base(program) == "systemctl" {
 					switch args[0] {
@@ -215,7 +216,7 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 				}
 			}
 			if scenario == "interrupted" {
-				journal, _ := json.Marshal(upgradeIntent{"owntransit.relay-upgrade.v1", prev, next, true, true, nil, nil})
+				journal, _ := json.Marshal(upgradeIntent{Schema: "owntransit.relay-upgrade.v1", Previous: prev, Next: next, Enabled: true, Running: true})
 				if err := root.CreateExclusive("upgrade.json", journal, 0600); err != nil {
 					t.Fatal(err)
 				}
@@ -271,10 +272,17 @@ func TestManagedUpgradeLifecycle(t *testing.T) {
 			if _, err := root.ReadFile("upgrade.json", 8192); !errors.Is(err, os.ErrNotExist) {
 				t.Fatal("completed rollback/upgrade retained active journal")
 			}
-			for _, call := range calls {
-				if (strings.Contains(call, "nginx") && call != "/usr/sbin/nginx -T") || strings.Contains(call, "apache") || strings.Contains(call, "caddy") {
-					t.Fatal("managed upgrade touched website routing")
+			siteAfter, err := os.ReadFile(site)
+			expectedSite := siteBefore
+			if scenario == "success" || scenario == "uninstall-reinstall" {
+				edited, editErr := NginxRoute(siteBefore, "relay.example")
+				if editErr != nil {
+					t.Fatal(editErr)
 				}
+				expectedSite = edited.After
+			}
+			if err != nil || !bytes.Equal(siteAfter, expectedSite) {
+				t.Fatal("upgrade did not harden the selected route or restore its previous bytes", err)
 			}
 		})
 	}

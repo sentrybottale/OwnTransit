@@ -81,6 +81,7 @@ server {
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
+    proxy_set_header OwnTransit-Peer-IP $realip_remote_addr;
     proxy_set_header Cookie "";
     proxy_set_header Authorization "";
     proxy_pass_request_body off;
@@ -144,7 +145,7 @@ func TestNginxFragmentDetectionSeparatesQuotedDelimitersFromGrammar(t *testing.T
 		if edit, err := NginxRouteForPort([]byte(fragment), "relay.example", 19088); !errors.Is(err, ErrNoSite) || len(edit.After) != 0 {
 			t.Fatalf("quoted/comment text became server grammar: %v", err)
 		}
-		withSite := []byte(fragment + ` server { listen 443 ssl; server_name relay.example; set $brace "{"; set $semicolon ";"; location = /connects { proxy_pass http://127.0.0.1:19088/connects; } }`)
+		withSite := []byte(fragment + ` server { listen 443 ssl; server_name relay.example; set $brace "{"; set $semicolon ";"; location = /connects { proxy_pass http://127.0.0.1:19088/connects; proxy_set_header OwnTransit-Peer-IP $realip_remote_addr; } }`)
 		edit, err := NginxRouteForPort(withSite, "relay.example", 19088)
 		if err != nil || !edit.Reused || !bytes.Equal(edit.After, withSite) {
 			t.Fatalf("quoted delimiters changed selected site ownership: %v", err)

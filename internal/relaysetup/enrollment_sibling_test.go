@@ -10,7 +10,7 @@ func TestExactLegacyEnrollmentSiblingDoesNotBlockCarrierReuse(t *testing.T) {
 	config := []byte(`server {
  listen 443 ssl;
  server_name relay.example;
- location = /connects { proxy_pass http://127.0.0.1:9087/connects; }
+ location = /connects { proxy_pass http://127.0.0.1:9087/connects; proxy_set_header OwnTransit-Peer-IP $realip_remote_addr; }
  location = /connects/enrollment { proxy_pass http://127.0.0.1:9087/connects/enrollment; }
 }`)
 	edit, err := NginxRouteForPort(config, "relay.example", 9087)

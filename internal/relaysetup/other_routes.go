@@ -90,27 +90,55 @@ func CaddyRouteForPort(data []byte, hostname string, port int) (RouteEdit, error
 		}
 	}
 	if existing != nil {
-		if len(existing.children) != 0 || len(existing.directives) != 1 {
+		if len(existing.children) == 0 && len(existing.directives) == 1 {
+			d := existing.directives[0]
+			if len(d) != 2 || d[0].text != "reverse_proxy" {
+				return RouteEdit{}, ErrRoute
+			}
+			if d[1].text == upstream {
+				after := insertConfig(data, d[1].end, []byte(" {\n      "+caddyPeerHeader+"\n    }"))
+				return RouteEdit{Before: append([]byte(nil), data...), After: after, Exists: true}, nil
+			}
+			if literalRouteLoopback(d[1].text) {
+				return RouteEdit{}, ErrRoutePortConflict
+			}
 			return RouteEdit{}, ErrRoute
 		}
-		d := existing.directives[0]
-		if len(d) != 2 || d[0].text != "reverse_proxy" {
+		if len(existing.children) != 1 || len(existing.directives) != 0 {
 			return RouteEdit{}, ErrRoute
 		}
-		if d[1].text == upstream {
-			return RouteEdit{data, data, true}, nil
+		proxy := existing.children[0]
+		if len(proxy.words) != 2 || proxy.words[0].text != "reverse_proxy" || len(proxy.children) != 0 || len(proxy.directives) > 1 {
+			return RouteEdit{}, ErrRoute
 		}
-		if literalRouteLoopback(d[1].text) {
+		peerHeader := false
+		if len(proxy.directives) == 1 {
+			d := proxy.directives[0]
+			if len(d) != 3 || d[0].text != "header_up" || !strings.EqualFold(d[1].text, proxyPeerHeader) || d[2].text != "{remote_host}" {
+				return RouteEdit{}, ErrRoute
+			}
+			peerHeader = true
+		}
+		if proxy.words[1].text == upstream {
+			if peerHeader {
+				return RouteEdit{Before: data, After: data, Reused: true, Exists: true}, nil
+			}
+			after := insertConfig(data, proxy.close, []byte("\n      "+caddyPeerHeader+"\n    "))
+			return RouteEdit{Before: append([]byte(nil), data...), After: after, Exists: true}, nil
+		}
+		if literalRouteLoopback(proxy.words[1].text) {
 			return RouteEdit{}, ErrRoutePortConflict
 		}
 		return RouteEdit{}, ErrRoute
 	}
-	addition := []byte("\n  # OwnTransit: selected-site WebSocket route\n  handle /connects {\n    reverse_proxy " + upstream + "\n  }\n")
+	addition := []byte("\n  # OwnTransit: selected-site WebSocket route\n  handle /connects {\n    reverse_proxy " + upstream + " {\n      " + caddyPeerHeader + "\n    }\n  }\n")
 	after := append([]byte(nil), data[:site.open+1]...)
 	after = append(after, addition...)
 	after = append(after, data[site.open+1:]...)
-	return RouteEdit{append([]byte(nil), data...), after, false}, nil
+	return RouteEdit{Before: append([]byte(nil), data...), After: after}, nil
 }
+
+const caddyPeerHeader = "header_up " + proxyPeerHeader + " {remote_host}"
 
 // Unknown matchers/handlers may compete with the recognized exact route.
 // The parser has already bounded tree depth and token count; do not interpret
@@ -192,10 +220,43 @@ func ApacheRouteForPort(data []byte, hostname string, port int) (RouteEdit, erro
 	directive := `ProxyPassMatch "^/connects$" "ws://` + upstream + `/connects"`
 	existing := ""
 	depth := 0
+	peerBlock, peerComplete := false, false
+	peerDirectives := 0
 	for _, line := range strings.Split(string(data[s.begin:s.end]), "\n") {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "#") {
+		if line == "" || strings.HasPrefix(line, "#") {
 			continue
+		}
+		if line == `<LocationMatch "^/connects$">` {
+			if depth != 0 || peerBlock || peerComplete {
+				return RouteEdit{}, ErrRoute
+			}
+			peerBlock = true
+			depth++
+			continue
+		}
+		if peerBlock {
+			if line == "</LocationMatch>" && peerDirectives == 3 {
+				peerBlock, peerComplete = false, true
+				depth--
+				continue
+			}
+			fields := strings.Fields(line)
+			if peerDirectives == 0 && len(fields) == 3 && fields[0] == "RequestHeader" && fields[1] == "unset" && strings.EqualFold(fields[2], proxyPeerHeader) || peerDirectives == 1 && len(fields) == 4 && fields[0] == "RequestHeader" && fields[1] == "set" && strings.EqualFold(fields[2], proxyPeerHeader) && fields[3] == `"expr=%{CONN_REMOTE_ADDR}"` || peerDirectives == 2 && len(fields) == 4 && fields[0] == "RequestHeader" && fields[1] == "set" && strings.EqualFold(fields[2], "Connection") && fields[3] == `"upgrade"` {
+				peerDirectives++
+				continue
+			}
+			return RouteEdit{}, ErrRoute
+		}
+		// A selected site's independent writer of this private-hop header
+		// cannot be treated as a verified overwrite, even when its spelling
+		// differs only by HTTP header case.
+		if strings.Contains(strings.ToLower(line), strings.ToLower(proxyPeerHeader)) {
+			return RouteEdit{}, ErrRoute
+		}
+		fields := strings.Fields(line)
+		if len(fields) >= 3 && strings.EqualFold(fields[0], "RequestHeader") && strings.EqualFold(fields[2], "Connection") {
+			return RouteEdit{}, ErrRoute
 		}
 		if strings.HasPrefix(line, "<") {
 			if strings.HasPrefix(line, "</") {
@@ -216,18 +277,30 @@ func ApacheRouteForPort(data []byte, hostname string, port int) (RouteEdit, erro
 			existing = line
 		}
 	}
-	if depth != 0 {
+	if depth != 0 || peerBlock {
 		return RouteEdit{}, ErrRoute
 	}
 	if existing == directive {
-		return RouteEdit{data, data, true}, nil
+		if peerComplete {
+			return RouteEdit{Before: data, After: data, Reused: true, Exists: true}, nil
+		}
+		after := insertConfig(data, s.begin, []byte(apachePeerBlock))
+		return RouteEdit{Before: append([]byte(nil), data...), After: after, Exists: true}, nil
 	}
 	if existing != "" {
 		return RouteEdit{}, ErrRoutePortConflict
 	}
-	addition := []byte("\n  # OwnTransit: selected-site WebSocket route\n  " + directive + "\n")
+	if peerComplete {
+		return RouteEdit{}, ErrRoute
+	}
+	addition := []byte("\n  # OwnTransit: selected-site WebSocket route\n  " + directive + "\n" + apachePeerBlock)
 	after := append([]byte(nil), data[:s.begin]...)
 	after = append(after, addition...)
 	after = append(after, data[s.begin:]...)
-	return RouteEdit{append([]byte(nil), data...), after, false}, nil
+	return RouteEdit{Before: append([]byte(nil), data...), After: after}, nil
 }
+
+// A client must not nominate the freshly overwritten peer field as a hop-by-hop
+// header: mod_proxy would remove it after mod_headers has set it. This location
+// carries only WebSocket upgrades, so replace Connection with its fixed value.
+const apachePeerBlock = "\n  <LocationMatch \"^/connects$\">\n    RequestHeader unset " + proxyPeerHeader + "\n    RequestHeader set " + proxyPeerHeader + " \"expr=%{CONN_REMOTE_ADDR}\"\n    RequestHeader set Connection \"upgrade\"\n  </LocationMatch>\n"

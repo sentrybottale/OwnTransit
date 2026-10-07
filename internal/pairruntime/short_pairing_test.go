@@ -64,7 +64,7 @@ func shortRelayFixture(t *testing.T) (*atomic.Pointer[pairrelay.Relay], pairrela
 				return pairrelay.Descriptor{}, err
 			}
 			route, err := protocol.ParseRouteID(ad.RouteID)
-			return pairrelay.Descriptor{ReceiverID: receiver, RouteID: route, AdmissionCAPEM: []byte(ad.Trust.OuterEndpointCAPEM)}, err
+			return pairrelay.Descriptor{ReceiverID: receiver, RouteID: route, AdmissionCAPEM: []byte(ad.Trust.OuterEndpointCAPEM), Expires: ad.Expires}, err
 		},
 	}
 	current := &atomic.Pointer[pairrelay.Relay]{}
