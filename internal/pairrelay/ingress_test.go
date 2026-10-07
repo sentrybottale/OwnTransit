@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
@@ -89,7 +90,7 @@ func TestProxyStalledPeerCannotBlockAnotherPeer(t *testing.T) {
 				t.Fatal(err)
 			}
 			proxy := httputil.NewSingleHostReverseProxy(upstream)
-			front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			front := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				host, _, err := net.SplitHostPort(r.RemoteAddr)
 				if err != nil {
 					http.Error(w, "bad peer", http.StatusBadRequest)
@@ -99,27 +100,39 @@ func TestProxyStalledPeerCannotBlockAnotherPeer(t *testing.T) {
 				r.Header.Set(ProxyPeerHeader, host)
 				proxy.ServeHTTP(w, r)
 			}))
+			listener, err := net.Listen("tcp", "[::]:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = front.Listener.Close()
+			front.Listener = listener
+			front.Start()
 			defer front.Close()
 			client := func(ip string) *http.Client {
 				transport := &http.Transport{DialContext: (&net.Dialer{LocalAddr: &net.TCPAddr{IP: net.ParseIP(ip)}}).DialContext}
 				t.Cleanup(transport.CloseIdleConnections)
 				return &http.Client{Transport: transport}
 			}
-			attacker := client("127.0.0.2")
-			legitimate := client("127.0.0.3")
+			// Both addresses exist on macOS and Linux without adding aliases.
+			// The shared backend still receives both through IPv4 loopback.
+			attacker := client("127.0.0.1")
+			legitimate := client("::1")
+			port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
+			attackerURL := "http://" + net.JoinHostPort("127.0.0.1", port)
+			legitimateURL := "http://" + net.JoinHostPort("::1", port)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			dial := func(client *http.Client) (*websocket.Conn, *http.Response, error) {
-				return websocket.Dial(ctx, front.URL+Path, &websocket.DialOptions{HTTPClient: client, Subprotocols: []string{WebSocketSubprotocol}, HTTPHeader: http.Header{ProxyPeerHeader: {"127.0.0.3"}, "X-Forwarded-For": {"127.0.0.3"}}})
+			dial := func(client *http.Client, base string) (*websocket.Conn, *http.Response, error) {
+				return websocket.Dial(ctx, base+Path, &websocket.DialOptions{HTTPClient: client, Subprotocols: []string{WebSocketSubprotocol}, HTTPHeader: http.Header{ProxyPeerHeader: {"::1"}, "X-Forwarded-For": {"::1"}}})
 			}
 			for range 8 {
-				ws, _, err := dial(attacker)
+				ws, _, err := dial(attacker, attackerURL)
 				if err != nil {
 					t.Fatal(err)
 				}
 				defer ws.CloseNow()
 			}
-			ws, response, err := dial(attacker)
+			ws, response, err := dial(attacker, attackerURL)
 			if err == nil {
 				ws.CloseNow()
 				t.Fatal("source exceeded eight stalled connections")
@@ -127,7 +140,7 @@ func TestProxyStalledPeerCannotBlockAnotherPeer(t *testing.T) {
 			if response == nil || response.StatusCode != http.StatusTooManyRequests {
 				t.Fatal("wrong source quota rejection")
 			}
-			ws, response, err = dial(legitimate)
+			ws, response, err = dial(legitimate, legitimateURL)
 			if mode == IngressDirect {
 				if err == nil {
 					ws.CloseNow()

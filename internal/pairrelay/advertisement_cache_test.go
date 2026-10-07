@@ -40,7 +40,10 @@ func verifyCacheAdvertisement(encoded []byte, now time.Time) (Descriptor, error)
 // and the private one-use codes are discarded before publication.
 func signedCachePublications(t *testing.T, f relayFixture, count int) []signedPublication {
 	t.Helper()
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	result := make([]signedPublication, count)
 	for index := range result {
 		path := filepath.Join(root, fmt.Sprintf("receiver-%03d", index))
