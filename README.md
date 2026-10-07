@@ -12,7 +12,7 @@ even a compromised Relay from reading the stream or impersonating an endpoint.
 | Relay | A public Linux VPS | Carries encrypted traffic |
 | Target | The private Linux SSH machine | Delivers authenticated traffic to local SSH |
 
-OwnTransit **1.0.4** supports Linux amd64/arm64 and an Apple-silicon Mac Client.
+OwnTransit **1.0.5** supports Linux amd64/arm64 and an Apple-silicon Mac Client.
 SSH must already work on the Target. OwnTransit never configures SSH accounts,
 keys, permissions or forwarding.
 
@@ -26,7 +26,7 @@ tunnel** instead if you already created a Relay draft.
 ## 1. Start on the Relay VPS
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.4/install-linux.sh | sudo sh -s -- relay
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.5/install-linux.sh | sudo sh -s -- relay
 ```
 
 The installer opens Relay setup when an interactive terminal is available.
@@ -47,7 +47,7 @@ If it already exists, enter its public ID to approve it now and continue on the 
 Install the Target, then open its menu:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.4/install-linux.sh | sudo sh -s -- target
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.5/install-linux.sh | sudo sh -s -- target
 sudo owntransit-target setup
 ```
 
@@ -74,14 +74,14 @@ for a Target that already has one.
 **Linux:** install, then open setup as your ordinary user without sudo:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.4/install-linux.sh | sudo sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.5/install-linux.sh | sudo sh -s -- client
 owntransit-client setup
 ```
 
 **Apple-silicon Mac:** install and open setup without sudo:
 
 ```sh
-curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.4/install-macos.sh | sh -s -- client
+curl -fsSL https://github.com/sentrybottale/OwnTransit/releases/download/v1.0.5/install-macos.sh | sh -s -- client
 "$HOME/.local/bin/owntransit-client" setup
 ```
 
@@ -122,8 +122,10 @@ choose **Start or update this relay**; on each Target, **Continue tunnel** start
 the installed version. On the Client, **Continue tunnel** verifies the existing
 pairing. Do not choose New or replace keys for a software update.
 
+**Relay admission hardening:** install 1.0.5 on the Relay and choose **Start or update this relay** for its existing URL. This also reconciles its selected reverse-proxy route. Existing Client/Target pairings remain valid. [Upgrade details](RELAY_ADMISSION.md).
+
 **Recovering an expired pending renewal:** upgrade both Target and Client to
-1.0.4, then Continue their existing tunnel. The Relay needs no upgrade for this
+1.0.4 or later, then Continue their existing tunnel. The Relay needs no upgrade for this
 fix. [Recovery and mixed-version details](RENEWAL_RECOVERY.md).
 
 Open the local role's `setup` menu again.

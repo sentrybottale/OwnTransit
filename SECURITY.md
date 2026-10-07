@@ -1,6 +1,6 @@
 # OwnTransit security policy
 
-## Relay admission and publication hardening (unreleased)
+## 1.0.5: relay admission and publication hardening
 
 Managed routes overwrite `OwnTransit-Peer-IP` with the original TCP peer on the
 private proxy-to-relay HTTP hop. The locally selected relay ingress admits that

@@ -1,5 +1,17 @@
 # OwnTransit v1 shipping plan
 
+## 1.0.5 relay availability patch
+
+Use the existing signed nine-asset lane, distribution key and platform matrix.
+Require original-peer admission, malformed/spoofed/hop-header rejection, both
+publication APIs under saturation, signed expiry, approved restart restoration,
+removal/reapproval and existing-route upgrade/migration recovery tests. Preserve
+both TLS boundaries, the fixed SSH target and existing pairing state. Recognize
+exact canonical 1.0.4 package predecessors, run both race/vet profiles and the
+security/publication gates, then verify the exact signed assets before publication.
+Local role updates remain separate operator actions; no live deployment or
+universal availability claim follows from this release.
+
 ## 1.0.4 renewal reconciliation hotfix
 
 Review the complete ordinary renewal, expiry, ambiguous commit, restart,

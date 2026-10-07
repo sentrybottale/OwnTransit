@@ -1,5 +1,15 @@
 # OwnTransit architecture
 
+## 1.0.5: relay admission and publication containment
+
+Managed proxy routes supply one overwritten original TCP-peer value only for
+availability accounting on the private HTTP hop. Global bounds, independent TLS
+and endpoint authorization remain unchanged. Pending public advertisements use
+short-lived evictable storage; exact saved local approvals retain separate bounded
+capacity. Signed expiry, token recovery and explicit local reapproval remain
+authoritative. Route reconciliation participates in protected update/migration
+rollback. [Admission and upgrade details](RELAY_ADMISSION.md).
+
 ## 1.0.4: renewal reconciliation
 
 A separately versioned signed/encrypted generation query recovers already

@@ -1,6 +1,6 @@
 # Relay admission and publication hardening
 
-This unreleased patch addresses two public-client availability failures in the
+OwnTransit 1.0.5 addresses two public-client availability failures in the
 current receiver-owned Relay. It keeps the existing public WebSocket, framing,
 pairing, TLS and private endpoint-state formats.
 
@@ -82,4 +82,4 @@ The conditional raw-command issue in the separately shipped historical 0.1.0
 administrator-led profile is not changed here. Removing its raw approval commands
 would also remove its only fresh issuance path. A future change must supply
 ceremony-gated issuance and activation before claiming that workflow remains
-usable. Current 1.0.4 Client/Target setup does not ship those commands.
+usable. Current 1.x Client/Target setup does not ship those commands.

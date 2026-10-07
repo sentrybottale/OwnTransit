@@ -164,18 +164,18 @@ jobs:
           docker run --rm --cpus=2 --memory=512m \
             --volume="$RUNNER_TEMP:/fixture:ro" \
             docker.io/library/golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514 \
-            sh -ceu 'apt-get -qq update; DEBIAN_FRONTEND=noninteractive apt-get -qq -y --no-install-recommends install nginx apache2 caddy openssl; a2enmod ssl proxy proxy_http proxy_wstunnel >/dev/null; touch /owntransit-provider-fixture; /fixture/relay-setup.test -test.run "^TestRealProviderConfigurationSyntax$" -test.v'
+            sh -ceu 'apt-get -qq update; DEBIAN_FRONTEND=noninteractive apt-get -qq -y --no-install-recommends install nginx apache2 caddy openssl; a2enmod ssl headers proxy proxy_http proxy_wstunnel >/dev/null; touch /owntransit-provider-fixture; /fixture/relay-setup.test -test.run "^TestReal(ProviderConfigurationSyntax|NginxPeerHeaderOverwrite|ApacheAndCaddyPeerHeaderConnectionNomination)$" -test.v'
       - name: Build native pairing self-test executables
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/owntransit-selftest"
           for role in owntransit-client owntransit-target owntransit-relay; do
-            go build -mod=readonly -trimpath -ldflags "-X github.com/sentrybottale/owntransit/internal/buildinfo.Version=1.0.4-dev -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA" -o "$RUNNER_TEMP/owntransit-selftest/$role" "./cmd/$role"
+            go build -mod=readonly -trimpath -ldflags "-X github.com/sentrybottale/owntransit/internal/buildinfo.Version=1.0.5-dev -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA" -o "$RUNNER_TEMP/owntransit-selftest/$role" "./cmd/$role"
           done
           cp PAIRING_INSTALL.md LICENSE THIRD_PARTY_NOTICES.md "$RUNNER_TEMP/owntransit-selftest/"
-          CGO_ENABLED=0 go build -mod=readonly -trimpath -tags=owntransit_relay_container -ldflags "-X github.com/sentrybottale/owntransit/internal/buildinfo.Version=1.0.4-dev -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA" -o "$RUNNER_TEMP/owntransit-selftest/owntransit-relay-container" ./cmd/owntransit-relay
-          docker build --network=none -f deploy/pairing/Containerfile -t owntransit-relay:1.0.4-dev "$RUNNER_TEMP/owntransit-selftest"
-          docker save -o "$RUNNER_TEMP/owntransit-selftest/owntransit-relay-image.tar" owntransit-relay:1.0.4-dev
+          CGO_ENABLED=0 go build -mod=readonly -trimpath -tags=owntransit_relay_container -ldflags "-X github.com/sentrybottale/owntransit/internal/buildinfo.Version=1.0.5-dev -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA" -o "$RUNNER_TEMP/owntransit-selftest/owntransit-relay-container" ./cmd/owntransit-relay
+          docker build --network=none -f deploy/pairing/Containerfile -t owntransit-relay:1.0.5-dev "$RUNNER_TEMP/owntransit-selftest"
+          docker save -o "$RUNNER_TEMP/owntransit-selftest/owntransit-relay-image.tar" owntransit-relay:1.0.5-dev
       - name: Upload explicitly unreleased Linux self-test binaries
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -238,8 +238,28 @@ jobs:
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/owntransit-selftest"
-          go build -mod=readonly -trimpath -ldflags "-X github.com/sentrybottale/owntransit/internal/buildinfo.Version=1.0.4-dev -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA" -o "$RUNNER_TEMP/owntransit-selftest/owntransit-client" ./cmd/owntransit-client
+          go build -mod=readonly -trimpath -ldflags "-X github.com/sentrybottale/owntransit/internal/buildinfo.Version=1.0.5-dev -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA" -o "$RUNNER_TEMP/owntransit-selftest/owntransit-client" ./cmd/owntransit-client
           cp PAIRING_INSTALL.md LICENSE THIRD_PARTY_NOTICES.md "$RUNNER_TEMP/owntransit-selftest/"
+      - name: Build and smoke the unsigned distribution client
+        env:
+          GOTOOLCHAIN: local
+          GOWORK: "off"
+          GOENV: "off"
+          GOFLAGS: ""
+          GOMAXPROCS: "2"
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/owntransit-native-smoke"
+          flags="-buildid= -X github.com/sentrybottale/owntransit/internal/buildinfo.Version=1.0.5 -X github.com/sentrybottale/owntransit/internal/buildinfo.Release=owntransit-1.0.5 -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA -X github.com/sentrybottale/owntransit/internal/buildinfo.Dirty=false"
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -mod=readonly -trimpath -buildvcs=false -ldflags "$flags" -o "$RUNNER_TEMP/owntransit-native-smoke/owntransit-client" ./cmd/owntransit-client
+          "$RUNNER_TEMP/owntransit-native-smoke/owntransit-client" version > "$RUNNER_TEMP/owntransit-native-smoke/version.json"
+      - name: Upload the unsigned native distribution smoke result
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: owntransit-native-smoke-darwin-arm64
+          path: ${{ runner.temp }}/owntransit-native-smoke/
+          retention-days: 3
+          if-no-files-found: error
       - name: Upload explicitly unreleased Apple-silicon self-test client
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

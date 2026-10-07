@@ -1,5 +1,14 @@
 # OwnTransit roadmap
 
+## 1.0.5 — relay availability containment
+
+- Keep one public source's stalled upgrades in its own bounded admission bucket
+  through verified original-peer overwrites in every supported managed provider.
+- Isolate pending publication pressure from exact approved receiver capacity;
+  preserve signed expiry, restart recovery and explicit removal/reapproval.
+- Exercise actual providers, malformed/hop-header input and protected selected-site
+  upgrade/migration rollback before signed release through the existing lane.
+
 ## 1.0.1 — automatic recovery without identity resets
 
 - Implement bounded, jittered network retry across Target loops and new Client
