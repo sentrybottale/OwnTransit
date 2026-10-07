@@ -39,6 +39,21 @@ type migrationFixture struct {
 func newMigrationFixture(t *testing.T) *migrationFixture {
 	t.Helper()
 	requireNamedRelayFixture(t)
+	// Later named-instance fixtures deliberately reject unbound service units.
+	// Remove this fixture's files as well as its registry, including when an
+	// interrupted migration leaves a unit behind for its recovery assertion.
+	t.Cleanup(func() {
+		for _, path := range []string{managedRoot, legacyRoot("alpha")} {
+			if err := os.RemoveAll(path); err != nil {
+				t.Error(err)
+			}
+		}
+		for _, name := range []string{managedUnit, "owntransit-relay-alpha.service", managedContainer + "-work.service"} {
+			_ = os.Remove("/etc/systemd/system/" + name)
+			_ = os.RemoveAll("/etc/systemd/system/" + name + ".d")
+		}
+		_ = os.Remove("/etc/nginx/sites-enabled/migration.conf")
+	})
 	for _, path := range []string{managedRoot, legacyRoot("alpha")} {
 		if err := os.RemoveAll(path); err != nil {
 			t.Fatal(err)
