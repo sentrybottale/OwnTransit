@@ -7,6 +7,21 @@ authenticated artifacts of the documented release lane. The legacy 0.1.0 lane
 additionally requires its signed qualification record. Git tags do not publish
 artifacts automatically.
 
+## [1.0.5]
+
+- Prevent one stalled public source from exhausting the shared reverse-proxy
+  admission bucket. Managed Nginx, Caddy and Apache routes overwrite private-hop
+  original-peer metadata; global bounds and endpoint authentication remain intact.
+- Separate short-lived, evictable pending advertisements/offers from exact locally
+  approved receiver capacity. Bound retention by signed expiry and preserve token
+  recovery, removal and explicit reapproval during publication pressure.
+- Reconcile existing Relay routes during update/migration, with protected backups
+  and crash-safe rollback. Normalize Apache hop headers to prevent client-directed
+  removal of the quota field, and preserve inherited Nginx carrier headers.
+- Ship signed 1.0.5 capsules with exact 1.0.4 upgrade recognition. Update the Relay
+  and choose Start or update this relay for its existing URL. Pairings, SSH settings
+  and authenticated wire profiles are unchanged. See RELAY_ADMISSION.md.
+
 ## [1.0.4]
 
 - Recover expired uncommitted and ambiguous pending renewals through the

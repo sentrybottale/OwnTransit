@@ -28,6 +28,7 @@ type verificationEvidence struct {
 	Port                                               int
 	Identity                                           pairrelay.ServerInfo
 	Digests                                            map[string]string
+	PeerHeader                                         bool `json:"peer_header,omitempty"`
 }
 type verificationEvidenceKey struct{}
 
@@ -50,7 +51,7 @@ func routeDigest(route *routeChange, after bool) string {
 }
 func (s instanceSpec) captureVerificationEvidence(ctx context.Context, engine string, route *routeChange) (verificationEvidence, error) {
 	plannedRoute := route != nil
-	e := verificationEvidence{URL: s.url, Engine: engine, Port: s.port, DataRootDigest: planDigest(s.dataRoot()), Required: VerificationPublic}
+	e := verificationEvidence{URL: s.url, Engine: engine, Port: s.port, DataRootDigest: planDigest(s.dataRoot()), Required: VerificationPublic, PeerHeader: plannedRoute}
 	var err error
 	e.Digests, err = identityDigests(s)
 	if err != nil {
@@ -76,7 +77,7 @@ func (s instanceSpec) captureVerificationEvidence(ctx context.Context, engine st
 	e.RouteDigest = routeDigest(route, plannedRoute)
 	remote, probeErr := probeServer(ctx, s.url)
 	if errors.Is(probeErr, errProbeForbidden) {
-		if !plannedRoute && !route.edit.Reused {
+		if !plannedRoute && !route.edit.Exists {
 			return e, errors.New("HTTP 403 cannot authorize upgrade without an existing exact local route")
 		}
 		e.Required = VerificationLocal403
@@ -110,18 +111,25 @@ func (s instanceSpec) checkVerificationEvidence(ctx context.Context, e verificat
 		if e.Required != VerificationLocal403 {
 			return errors.New("public verification changed to HTTP 403 after preparation")
 		}
-		parsed, _ := url.Parse(s.url)
-		route, err := prepareRouteForPort(ctx, parsed.Hostname(), s.port)
-		if err != nil {
+		if err := s.checkVerificationRoute(ctx, e); err != nil {
 			return err
-		}
-		if route == nil || !route.edit.Reused || routeDigest(route, false) != e.RouteDigest {
-			return errors.New("HTTP 403 cannot verify an absent or changed local website route")
 		}
 		c, err := inspect(ctx, engine, s.container)
 		if err != nil || !c.State.Running || !confined(c) {
 			return errors.New("local relay confinement could not be verified")
 		}
+	}
+	return nil
+}
+
+func (s instanceSpec) checkVerificationRoute(ctx context.Context, e verificationEvidence) error {
+	parsed, _ := url.Parse(s.url)
+	route, err := prepareRouteForPort(ctx, parsed.Hostname(), s.port)
+	if err != nil {
+		return err
+	}
+	if route == nil || !route.edit.Exists || e.PeerHeader && !route.edit.Reused || routeDigest(route, false) != e.RouteDigest {
+		return errors.New("cannot verify an absent, changed or unhardened local website route")
 	}
 	return nil
 }

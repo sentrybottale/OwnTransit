@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -196,7 +197,16 @@ func (s instanceSpec) migrate(ctx context.Context, manager *securefs.Root, sourc
 	if err != nil {
 		return err
 	}
-	j := migrationIntent{Schema: "owntransit.relay-migration.v2", Phase: "prepared", Source: source, PreviousBinding: s.binding(), NextBinding: nextBinding, PreviousPending: pending, PreviousUnit: oldUnit, Next: next.config(s.url, source.Engine, image)}
+	parsed, _ := url.Parse(s.url)
+	route, err := prepareRouteForPort(ctx, parsed.Hostname(), source.Port)
+	if err != nil || route == nil || !route.edit.Exists || routeDigest(route, false) != source.RouteDigest {
+		return errors.Join(errors.New("selected website route changed before migration"), err)
+	}
+	routeJournal, err := route.recovery(manager)
+	if err != nil {
+		return err
+	}
+	j := migrationIntent{Schema: "owntransit.relay-migration.v3", Phase: "prepared", Source: source, PreviousBinding: s.binding(), NextBinding: nextBinding, PreviousPending: pending, PreviousUnit: oldUnit, Next: next.config(s.url, source.Engine, image), Route: routeJournal}
 	// Inspect once more after image loading; the prepared public identity and
 	// exact source ID/unit/state must still be the current deployment.
 	specs, err := scanInstances(manager)
@@ -226,6 +236,9 @@ func (s instanceSpec) migrate(ctx context.Context, manager *securefs.Root, sourc
 			}
 		}
 	}()
+	if err := route.apply(ctx, manager); err != nil {
+		return err
+	}
 	old := legacySpec(source.Label, s.url, source.Port)
 	if err := writeAtomic(old.unitPath, migrationGuard(j), 0644); err != nil {
 		return err
@@ -283,7 +296,7 @@ func (s instanceSpec) migrate(ctx context.Context, manager *securefs.Root, sourc
 		return err
 	}
 	reportVerification(out, currentVerification(ctx))
-	fmt.Fprintf(out, "Local relay migration completed for %s. The old unit and container were retired; the existing relay keys and website route are retained.\n", s.url)
+	fmt.Fprintf(out, "Local relay migration completed for %s. The old unit and container were retired; relay keys are retained and the selected website route is hardened.\n", s.url)
 	return nil
 }
 func checkIdentityDigests(s instanceSpec, want map[string]string) error {
@@ -297,8 +310,15 @@ func checkIdentityDigests(s instanceSpec, want map[string]string) error {
 	return nil
 }
 func verifyMigration(ctx context.Context, s instanceSpec, j migrationIntent) error {
-	if j.Schema == "owntransit.relay-migration.v2" {
-		ctx = withVerificationEvidence(ctx, j.Source.evidence(s.url))
+	if j.Schema == "owntransit.relay-migration.v2" || j.Schema == "owntransit.relay-migration.v3" {
+		e := j.Source.evidence(s.url)
+		if j.Schema == "owntransit.relay-migration.v3" {
+			e.PeerHeader = true
+			if j.Route != nil {
+				e.RouteDigest = j.Route.AfterDigest
+			}
+		}
+		ctx = withVerificationEvidence(ctx, e)
 	}
 	if err := s.verifyRunningRelay(ctx, j.Next, routeProbeTimeout); err != nil {
 		return err
@@ -321,11 +341,16 @@ func verifyMigration(ctx context.Context, s instanceSpec, j migrationIntent) err
 
 // validateMigrationState accepts only the two recorded metadata generations.
 // It runs before any recovery stop, unlink, or ownership publication.
-func validateMigrationState(ctx context.Context, j migrationIntent) (instanceSpec, *securefs.Root, error) {
+func validateMigrationState(ctx context.Context, manager *securefs.Root, j migrationIntent) (instanceSpec, *securefs.Root, error) {
 	if err := validateMigration(j); err != nil {
 		return instanceSpec{}, nil, err
 	}
 	next, _ := instanceFromBinding(j.NextBinding)
+	if j.Route != nil {
+		if _, err := next.recordedRoute(manager, j.Route); err != nil {
+			return next, nil, err
+		}
+	}
 	previous, _ := instanceFromBinding(j.PreviousBinding)
 	r, err := next.openRoot()
 	if err != nil {
@@ -411,11 +436,20 @@ func restoreMigration(ctx context.Context, manager *securefs.Root, j migrationIn
 	if j.Phase != "prepared" {
 		return errors.New("committed relay migration must finish cleanup")
 	}
-	next, r, err := validateMigrationState(ctx, j)
+	next, r, err := validateMigrationState(ctx, manager, j)
 	if err != nil {
 		return err
 	}
 	defer r.Close()
+	if j.Route != nil {
+		route, err := next.recordedRoute(manager, j.Route)
+		if err != nil {
+			return err
+		}
+		if err := restoreRecordedRoute(ctx, route); err != nil {
+			return err
+		}
+	}
 	old := legacySpec(j.Source.Label, next.url, j.Source.Port)
 	u, _, ue := protectedFile(next.unitPath)
 	if ue == nil && bytes.Equal(u, next.unit(j.Next.Image, j.Next.Engine)) {
@@ -462,7 +496,7 @@ func restoreMigration(ctx context.Context, manager *securefs.Root, j migrationIn
 		return err
 	}
 	verifyCtx := ctx
-	if j.Schema == "owntransit.relay-migration.v2" {
+	if j.Schema == "owntransit.relay-migration.v2" || j.Schema == "owntransit.relay-migration.v3" {
 		verifyCtx = withVerificationEvidence(ctx, j.Source.evidence(old.url))
 	}
 	if err := old.verifyRunningRelay(verifyCtx, old.config(old.url, j.Source.Engine, j.Source.Image), routeProbeTimeout); err != nil {
@@ -504,7 +538,7 @@ func finishMigration(ctx context.Context, manager *securefs.Root, j migrationInt
 	if j.Phase != "committed" {
 		return errors.New("migration is not verified")
 	}
-	next, r, err := validateMigrationState(ctx, j)
+	next, r, err := validateMigrationState(ctx, manager, j)
 	if err != nil {
 		return err
 	}

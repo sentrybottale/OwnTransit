@@ -80,11 +80,13 @@ func Serve(ctx context.Context, statePath string, diagnostics io.Writer) error {
 		return pairrelay.Descriptor{
 			ReceiverID: receiverID, RouteID: routeID,
 			AdmissionCAPEM: append([]byte(nil), []byte(info.Trust.OuterEndpointCAPEM)...),
+			Expires:        info.Expires,
 		}, nil
 	}
 	relay, err := pairrelay.NewRelay(pairrelay.RelayConfig{
 		TokenKey: material.tokenKey, RelayTLS: material.tls, VerifyAdvertisement: verification,
 		Admissions: admissions, SaveAdmissions: func(records []pairrelay.AdmissionRecord) error { return saveAdmissions(stateRoot, records) },
+		Ingress: ingressMode(),
 	})
 	if err != nil {
 		return err

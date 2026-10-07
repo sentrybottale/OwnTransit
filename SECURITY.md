@@ -1,5 +1,31 @@
 # OwnTransit security policy
 
+## 1.0.5: relay admission and publication hardening
+
+Managed routes overwrite `OwnTransit-Peer-IP` with the original TCP peer on the
+private proxy-to-relay HTTP hop. The locally selected relay ingress admits that
+metadata only from loopback, or the packaged container's private bridge. One
+bounded canonical IP selects an availability bucket; duplicate values, address
+lists, ports and zones are rejected. Ordinary forwarding headers remain ignored.
+The header supplies no TLS, route, endpoint, enrollment or SSH authority. A
+malicious proxy can still lie or deny service, as the endpoint threat model allows.
+
+Existing routes without the new metadata retain the old shared TCP-peer bucket
+until local Relay setup reconciles the selected route. That reconciliation must
+validate the provider configuration and retain protected rollback material. No
+endpoint state or authenticated carrier input changes. See
+[relay upgrade and cache behavior](RELAY_ADMISSION.md).
+
+Unapproved advertisements and offers share a bounded, evictable pending cache
+with a two-minute default lifetime. Approved or observed receivers with the exact
+persisted admission root use separate protected capacity. Public self-signatures
+cannot claim that capacity. Cached advertisements are never retained past their
+signed expiry. Public floods may disrupt pending setup, but cannot leave the
+publication cache full for a day or evict an approved receiver's entry.
+
+These are defenses for an honestly operated Relay. They do not certify universal
+availability or change either independent TLS boundary or the fixed SSH target.
+
 ## 1.0.1: network retry policy
 
 Network loss, DNS/connect failure and HTTP admission throttling remain transient

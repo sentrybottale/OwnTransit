@@ -17,7 +17,20 @@ var ErrRoutePortConflict = fmt.Errorf("%w: the exact route belongs to another ho
 type RouteEdit struct {
 	Before, After []byte
 	Reused        bool
+	// Exists distinguishes a recognized existing route needing its private-hop
+	// header added from a missing route. Reused means no bytes need changing.
+	Exists bool
 }
+
+const proxyPeerHeader = "OwnTransit-Peer-IP"
+
+const nginxPeerHeader = "proxy_set_header " + proxyPeerHeader + " $realip_remote_addr;"
+
+// Nginx inherits proxy_set_header only when the current level has none. A
+// previously simple location can therefore inherit its WebSocket headers.
+// Adding its first local setter must retain the ordinary carrier header set.
+const nginxCarrierHeaders = "proxy_set_header Upgrade $http_upgrade;\n    proxy_set_header Connection \"upgrade\";\n    proxy_set_header Host $host;\n    proxy_set_header Origin $http_origin;\n    proxy_set_header Cookie \"\";\n    proxy_set_header Authorization \"\";\n    proxy_set_header Sec-WebSocket-Extensions \"\";"
+
 type token struct {
 	text       string
 	start, end int
@@ -75,7 +88,7 @@ func scanConfigTokens(data []byte, emit func(token) error) error {
 			continue
 		}
 		start := i
-		if strings.ContainsRune("{};", rune(data[i])) {
+		if strings.ContainsRune("{};", rune(data[i])) && configPlaceholderEnd(data, i) == i {
 			if err := emit(token{string(data[i]), i, i + 1, true}); err != nil {
 				return err
 			}
@@ -118,6 +131,14 @@ func scanConfigTokens(data []byte, emit func(token) error) error {
 				i = end
 				continue
 			}
+			// Caddy placeholders are directive arguments, not configuration
+			// blocks. Keep their grammar narrow so ordinary braces still delimit
+			// the selected site's tree.
+			if end := configPlaceholderEnd(data, i); end != i {
+				word = append(word, data[i:end]...)
+				i = end
+				continue
+			}
 			if strings.ContainsRune(" \t\r\n{};#", rune(c)) {
 				break
 			}
@@ -132,6 +153,20 @@ func scanConfigTokens(data []byte, emit func(token) error) error {
 		}
 	}
 	return nil
+}
+
+func configPlaceholderEnd(data []byte, start int) int {
+	if data[start] != '{' {
+		return start
+	}
+	end := start + 1
+	for end < len(data) && ((data[end] >= 'a' && data[end] <= 'z') || (data[end] >= 'A' && data[end] <= 'Z') || (data[end] >= '0' && data[end] <= '9') || data[end] == '_' || data[end] == '.') {
+		end++
+	}
+	if end > start+1 && end < len(data) && data[end] == '}' {
+		return end + 1
+	}
+	return start
 }
 
 // Every nginx -T include is inspected. A large, valid non-server fragment is
@@ -231,7 +266,8 @@ func parseBlocks(tokens []token, position *int, depth int) (block, error) {
 }
 
 // NginxRoute adds only an exact /connects location to one explicitly named TLS
-// server. Existing matching routing is reused byte-for-byte. Ambiguous sites,
+// server. Existing matching routing receives a verified private-hop header.
+// Already hardened routing is reused byte-for-byte. Ambiguous sites,
 // server-level rewrites/returns and existing conflicting routes are rejected.
 func NginxRoute(data []byte, hostname string) (RouteEdit, error) {
 	return NginxRouteForPort(data, hostname, 9087)
@@ -326,10 +362,19 @@ func NginxRouteForPort(data []byte, hostname string, port int) (RouteEdit, error
 		}
 		proxy := ""
 		proxySet := false
+		peerHeader := false
+		localHeaders := false
 		for _, d := range existing.directives {
-			if d[0].text == "return" || d[0].text == "rewrite" {
+			if d[0].text == "return" || d[0].text == "rewrite" || d[0].text == "include" {
 				return RouteEdit{}, ErrRoute
 			}
+			if d[0].text == "proxy_set_header" && len(d) > 1 && strings.EqualFold(d[1].text, proxyPeerHeader) {
+				if peerHeader || len(d) != 3 || d[2].text != "$realip_remote_addr" {
+					return RouteEdit{}, ErrRoute
+				}
+				peerHeader = true
+			}
+			localHeaders = localHeaders || d[0].text == "proxy_set_header"
 			if d[0].text == "proxy_pass" {
 				if len(d) != 2 || proxySet {
 					return RouteEdit{}, ErrRoute
@@ -339,18 +384,32 @@ func NginxRouteForPort(data []byte, hostname string, port int) (RouteEdit, error
 			}
 		}
 		if proxy == "http://"+upstream+"/connects" || proxy == "http://"+upstream {
-			return RouteEdit{Before: data, After: data, Reused: true}, nil
+			if peerHeader {
+				return RouteEdit{Before: data, After: data, Reused: true, Exists: true}, nil
+			}
+			addition := "\n    " + nginxPeerHeader + "\n  "
+			if !localHeaders {
+				addition = "\n    " + nginxCarrierHeaders + addition
+			}
+			after := insertConfig(data, existing.close, []byte(addition))
+			return RouteEdit{Before: append([]byte(nil), data...), After: after, Exists: true}, nil
 		}
 		if nginxLiteralLoopbackProxy(proxy) {
 			return RouteEdit{}, ErrRoutePortConflict
 		}
 		return RouteEdit{}, ErrRoute
 	}
-	addition := []byte("\n  # OwnTransit: selected-site WebSocket route\n  location = /connects {\n    proxy_pass http://" + upstream + "/connects;\n    proxy_http_version 1.1;\n    proxy_set_header Upgrade $http_upgrade;\n    proxy_set_header Connection \"upgrade\";\n    proxy_set_header Host $host;\n    proxy_set_header Origin $http_origin;\n    proxy_set_header Cookie \"\";\n    proxy_set_header Authorization \"\";\n    proxy_set_header Sec-WebSocket-Extensions \"\";\n    proxy_buffering off;\n    proxy_read_timeout 1d;\n    proxy_send_timeout 1d;\n    access_log off;\n  }\n")
+	addition := []byte("\n  # OwnTransit: selected-site WebSocket route\n  location = /connects {\n    proxy_pass http://" + upstream + "/connects;\n    proxy_http_version 1.1;\n    proxy_set_header Upgrade $http_upgrade;\n    proxy_set_header Connection \"upgrade\";\n    proxy_set_header Host $host;\n    proxy_set_header Origin $http_origin;\n    proxy_set_header Cookie \"\";\n    proxy_set_header Authorization \"\";\n    proxy_set_header Sec-WebSocket-Extensions \"\";\n    " + nginxPeerHeader + "\n    proxy_buffering off;\n    proxy_read_timeout 1d;\n    proxy_send_timeout 1d;\n    access_log off;\n  }\n")
 	after := append([]byte(nil), data[:site.close]...)
 	after = append(after, addition...)
 	after = append(after, data[site.close:]...)
 	return RouteEdit{Before: append([]byte(nil), data...), After: after}, nil
+}
+
+func insertConfig(data []byte, offset int, addition []byte) []byte {
+	after := append([]byte(nil), data[:offset]...)
+	after = append(after, addition...)
+	return append(after, data[offset:]...)
 }
 
 func nginxLiteralLoopbackProxy(proxy string) bool {

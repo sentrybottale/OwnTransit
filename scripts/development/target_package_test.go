@@ -29,9 +29,9 @@ func TestTargetPackageTemplateMigrationPreservesConfinement(t *testing.T) {
 	if start < 0 || end < 0 {
 		t.Fatal("target unit missing")
 	}
-	current := strings.ReplaceAll(s[start:start+end+1], "$prefix", "/opt/owntransit/1.0.4")
+	current := strings.ReplaceAll(s[start:start+end+1], "$prefix", "/opt/owntransit/1.0.5")
 	legacy := strings.NewReplacer(
-		"1.0.4", "0.6.1",
+		"1.0.5", "0.6.1",
 		"/opt/owntransit/", "/opt/owntransit-preview/",
 		"/target/owntransit-target serve", "/connector/owntransit-connector pair serve",
 		"/target\n", "/connector\n",
@@ -43,13 +43,14 @@ func TestTargetPackageTemplateMigrationPreservesConfinement(t *testing.T) {
 	}{
 		{"current", current, true},
 		{"previous", legacy, true},
-		{"previous-canonical", strings.ReplaceAll(current, "1.0.4", "0.7.0"), true},
-		{"previous-080", strings.ReplaceAll(current, "1.0.4", "0.8.0"), true},
-		{"previous-100", strings.ReplaceAll(current, "1.0.4", "1.0.0"), true},
-		{"previous-101", strings.ReplaceAll(current, "1.0.4", "1.0.1"), true},
-		{"previous-102", strings.ReplaceAll(current, "1.0.4", "1.0.2"), true},
-		{"previous-103", strings.ReplaceAll(current, "1.0.4", "1.0.3"), true},
-		{"unknown-canonical", strings.ReplaceAll(current, "1.0.4", "0.7.9"), false},
+		{"previous-canonical", strings.ReplaceAll(current, "1.0.5", "0.7.0"), true},
+		{"previous-080", strings.ReplaceAll(current, "1.0.5", "0.8.0"), true},
+		{"previous-100", strings.ReplaceAll(current, "1.0.5", "1.0.0"), true},
+		{"previous-101", strings.ReplaceAll(current, "1.0.5", "1.0.1"), true},
+		{"previous-102", strings.ReplaceAll(current, "1.0.5", "1.0.2"), true},
+		{"previous-103", strings.ReplaceAll(current, "1.0.5", "1.0.3"), true},
+		{"previous-104", strings.ReplaceAll(current, "1.0.5", "1.0.4"), true},
+		{"unknown-canonical", strings.ReplaceAll(current, "1.0.5", "0.7.9"), false},
 		{"changed-confinement", strings.Replace(legacy, "ProtectSystem=strict", "ProtectSystem=no", 1), false},
 		{"changed-state", strings.ReplaceAll(legacy, "/var/lib/owntransit-pair", "/var/lib/other"), false},
 		{"extra-environment", legacy + "Environment=UNMANAGED=yes\n", false},

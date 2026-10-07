@@ -92,7 +92,7 @@ func newIntegratedWithLimits(t *testing.T, limits pairrelay.Limits) *integrated 
 			return pairrelay.Descriptor{}, e
 		}
 		route, e := protocol.ParseRouteID(i.RouteID)
-		return pairrelay.Descriptor{ReceiverID: r, RouteID: route, AdmissionCAPEM: []byte(i.Trust.OuterEndpointCAPEM)}, e
+		return pairrelay.Descriptor{ReceiverID: r, RouteID: route, AdmissionCAPEM: []byte(i.Trust.OuterEndpointCAPEM), Expires: i.Expires}, e
 	}})
 	if err != nil {
 		t.Fatal(err)

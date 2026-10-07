@@ -53,7 +53,7 @@ func TestOfferRequiresVerifiedAdvertisementAndDoesNotMintRegistration(t *testing
 	if err := f.public.PublishOffer(ctx, invalid, nil); err == nil {
 		t.Fatal("offer bypassed mandatory advertisement verifier")
 	}
-	if len(f.relay.advertisements) != 0 || len(f.relay.registrations) != 0 {
+	if len(f.relay.advertisements) != 0 || len(f.relay.pendingAdvertisements) != 0 || len(f.relay.registrations) != 0 {
 		t.Fatal("failed offer left cache state")
 	}
 	offer, encoded := publicOfferFixture(t, f.advertisement)
@@ -85,11 +85,12 @@ func TestOfferRequiresVerifiedAdvertisementAndDoesNotMintRegistration(t *testing
 	}
 }
 
-func TestOfferBindingsAreImmutableAndShareAdvertisementQuota(t *testing.T) {
+func TestOfferBindingsAreImmutableAndSharePendingAdvertisementQuota(t *testing.T) {
 	f := newRelayFixture(t)
 	defer f.relay.Close()
 	f.relay.limits.Advertisements = 1
-	f.relay.limits.AdvertisementTTL = time.Minute
+	f.relay.limits.PendingAdvertisements = 1
+	f.relay.limits.PendingAdvertisementTTL = time.Minute
 	now := f.now
 	f.relay.now = func() time.Time { return now }
 	secondAd := []byte("another-verified-advertisement")
@@ -135,23 +136,29 @@ func TestOfferBindingsAreImmutableAndShareAdvertisementQuota(t *testing.T) {
 		t.Fatal("ordinary publication cleared offer proof")
 	}
 	secondOffer, secondEncoded := publicOfferFixture(t, secondAd)
-	if err := f.relay.publishOffer(secondEncoded, nil); !errors.Is(err, ErrCapacity) {
-		t.Fatalf("offer bypassed advertisement quota: %v", err)
+	if err := f.relay.publishOffer(secondEncoded, nil); err != nil {
+		t.Fatalf("new pending offer could not replace old pending slot: %v", err)
 	}
-	now = now.Add(f.relay.limits.AdvertisementTTL)
 	if _, err := f.relay.fetchOffer(offer.Locator); !errors.Is(err, ErrUnavailable) {
+		t.Fatal("evicted pending offer remained visible")
+	}
+	if len(f.relay.advertisements) != 0 || len(f.relay.pendingAdvertisements) != 1 {
+		t.Fatal("public offer gained protected capacity")
+	}
+	now = now.Add(f.relay.limits.PendingAdvertisementTTL)
+	if _, err := f.relay.fetchOffer(secondOffer.Locator); !errors.Is(err, ErrUnavailable) {
 		t.Fatal("expired offer remained visible")
 	}
 	if err := f.relay.publishOffer(secondEncoded, nil); err != nil {
 		t.Fatalf("expired slot was not reusable: %v", err)
 	}
-	if len(f.relay.advertisements) != 1 {
+	if len(f.relay.advertisements) != 0 || len(f.relay.pendingAdvertisements) != 1 {
 		t.Fatal("offer created independent cache state")
 	}
 	if err := f.relay.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.relay.fetchOffer(secondOffer.Locator); err == nil || len(f.relay.advertisements) != 0 {
+	if _, err := f.relay.fetchOffer(secondOffer.Locator); err == nil || len(f.relay.advertisements) != 0 || len(f.relay.pendingAdvertisements) != 0 {
 		t.Fatal("closed relay retained offer")
 	}
 }
@@ -267,7 +274,7 @@ func TestOfferRestoreRejectsInvalidTokensWithoutCaching(t *testing.T) {
 			if err := restarted.publishOffer(encoded, token); err == nil {
 				t.Fatal("invalid restore accepted")
 			}
-			if len(restarted.advertisements) != 0 || len(restarted.registrations) != 0 {
+			if len(restarted.advertisements) != 0 || len(restarted.pendingAdvertisements) != 0 || len(restarted.registrations) != 0 {
 				t.Fatal("failed restoration cached offer or registration")
 			}
 		})
@@ -294,12 +301,15 @@ func TestOfferLocatorCollisionDoesNotConsumeAnotherSlot(t *testing.T) {
 	if err := f.relay.publishOffer(encoded, nil); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := f.relay.RegisterReceiver(f.descriptor.ReceiverID, offerRouteLimits(), time.Hour); err != nil {
+		t.Fatal(err)
+	}
 	collision := offer
 	collision.Advertisement = otherAd
 	if err := f.relay.publishOffer(encodePublicOffer(t, collision), nil); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("cross-route locator collision accepted: %v", err)
 	}
-	if len(f.relay.advertisements) != 1 {
+	if len(f.relay.advertisements) != 1 || len(f.relay.pendingAdvertisements) != 0 {
 		t.Fatal("failed collision consumed capacity")
 	}
 	collision.Locator[0] ^= 1
@@ -349,7 +359,7 @@ func TestOfferRegistrationRestorationHasBoundedDeliveryState(t *testing.T) {
 	if err := f.relay.publishOffer(secondOffer, secondToken); !errors.Is(err, ErrCapacity) {
 		t.Fatalf("restoration bypassed registration delivery capacity: %v", err)
 	}
-	if len(f.relay.advertisements) != 0 || len(f.relay.registrations) != 1 {
+	if len(f.relay.advertisements) != 0 || len(f.relay.pendingAdvertisements) != 0 || len(f.relay.registrations) != 1 {
 		t.Fatal("failed restoration partially published offer")
 	}
 	if err := f.relay.publishAdvertisement(otherAd); err != nil {
@@ -362,7 +372,7 @@ func TestOfferRegistrationRestorationHasBoundedDeliveryState(t *testing.T) {
 	if err := f.relay.publishOffer(secondOffer, secondToken); err != nil {
 		t.Fatalf("expired registration capacity not reusable: %v", err)
 	}
-	if len(f.relay.advertisements) != 1 || len(f.relay.registrations) != 1 {
+	if len(f.relay.advertisements) != 0 || len(f.relay.pendingAdvertisements) != 1 || len(f.relay.registrations) != 1 {
 		t.Fatal("restoration grew bounded delivery state")
 	}
 }

@@ -145,6 +145,32 @@ func TestAdmissionInventoryLearnsOnlyAuthenticatedLegacyRuntime(t *testing.T) {
 	if err := restarted.publishOffer(offer, registration.Token); err != nil {
 		t.Fatal(err)
 	}
+	// A pre-inventory relay token restores delivery without claiming a saved
+	// approval. Pending eviction cannot remove that separate delivery copy or
+	// prevent the authenticated runtime from recording its existing route.
+	restarted.limits.PendingAdvertisements = 1
+	otherAd := []byte("tokenless-pending-route")
+	other := f.descriptor
+	other.ReceiverID, other.RouteID = mustID(t), mustRouteID(t)
+	restarted.config.VerifyAdvertisement = func(encoded []byte, _ time.Time) (Descriptor, error) {
+		if bytes.Equal(encoded, f.advertisement) {
+			return f.descriptor, nil
+		}
+		if bytes.Equal(encoded, otherAd) {
+			return other, nil
+		}
+		return Descriptor{}, ErrUnauthorized
+	}
+	if err := restarted.publishAdvertisement(otherAd); err != nil {
+		t.Fatal(err)
+	}
+	if len(restarted.advertisements) != 0 || len(restarted.pendingAdvertisements) != 1 {
+		t.Fatal("restored token granted public protected-cache entitlement")
+	}
+	restored, err := restarted.fetchRegistration(f.advertisement)
+	if err != nil || !bytes.Equal(restored, registration.Token) {
+		t.Fatal("pending eviction removed restored token delivery", err)
+	}
 	entries, _ := restarted.ListAdmissions()
 	if len(entries) != 0 {
 		t.Fatal("public token restoration claimed authenticated runtime")
@@ -159,6 +185,12 @@ func TestAdmissionInventoryLearnsOnlyAuthenticatedLegacyRuntime(t *testing.T) {
 	entries, err = restarted.ListAdmissions()
 	if err != nil || len(entries) != 1 || entries[0].Status != "observed" || len(saved) != 1 {
 		t.Fatal("authenticated route was not retained", entries, err)
+	}
+	if err := restarted.publishOffer(offer, registration.Token); err != nil {
+		t.Fatal("authenticated observed policy could not protect republished route", err)
+	}
+	if len(restarted.advertisements) != 1 || len(restarted.pendingAdvertisements) != 1 {
+		t.Fatal("observed route continued to share tokenless pending capacity")
 	}
 	config.Admissions = saved
 	again, err := NewRelay(config)

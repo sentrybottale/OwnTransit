@@ -39,6 +39,21 @@ type migrationFixture struct {
 func newMigrationFixture(t *testing.T) *migrationFixture {
 	t.Helper()
 	requireNamedRelayFixture(t)
+	// Later named-instance fixtures deliberately reject unbound service units.
+	// Remove this fixture's files as well as its registry, including when an
+	// interrupted migration leaves a unit behind for its recovery assertion.
+	t.Cleanup(func() {
+		for _, path := range []string{managedRoot, legacyRoot("alpha")} {
+			if err := os.RemoveAll(path); err != nil {
+				t.Error(err)
+			}
+		}
+		for _, name := range []string{managedUnit, "owntransit-relay-alpha.service", managedContainer + "-work.service"} {
+			_ = os.Remove("/etc/systemd/system/" + name)
+			_ = os.RemoveAll("/etc/systemd/system/" + name + ".d")
+		}
+		_ = os.Remove("/etc/nginx/sites-enabled/migration.conf")
+	})
 	for _, path := range []string{managedRoot, legacyRoot("alpha")} {
 		if err := os.RemoveAll(path); err != nil {
 			t.Fatal(err)
@@ -115,7 +130,7 @@ func newMigrationFixture(t *testing.T) *migrationFixture {
 	if err := writeAtomic(f.old.unitPath, manual, 0644); err != nil {
 		t.Fatal(err)
 	}
-	site := []byte("server { listen 443 ssl; server_name work.example; location = /connects { proxy_pass http://127.0.0.1:9088/connects; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection \"upgrade\"; } }\n")
+	site := []byte("server { listen 443 ssl; server_name work.example; location = /connects { proxy_pass http://127.0.0.1:9088/connects; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection \"upgrade\"; proxy_set_header OwnTransit-Peer-IP $realip_remote_addr; } }\n")
 	if err := os.WriteFile("/etc/nginx/sites-enabled/migration.conf", site, 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +206,14 @@ func (f *migrationFixture) command(_ context.Context, program string, args ...st
 		if len(args) == 1 && args[0] == "-T" {
 			return []byte(f.extraNginxDump + "# configuration file /etc/nginx/sites-enabled/migration.conf:\n"), nil
 		}
-		return nil, errors.New("website mutation forbidden")
+		if len(args) == 1 && args[0] == "-t" {
+			return nil, nil
+		}
+		if len(args) == 2 && args[0] == "-s" && args[1] == "reload" {
+			f.interrupt("route")
+			return nil, nil
+		}
+		return nil, errors.New("unexpected website operation")
 	}
 	if program == "/usr/bin/systemctl" {
 		op := args[0]

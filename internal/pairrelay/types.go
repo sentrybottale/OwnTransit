@@ -72,6 +72,9 @@ type Descriptor struct {
 	ReceiverID     protocol.ID
 	RouteID        protocol.RouteID
 	AdmissionCAPEM []byte
+	// Expires is the authenticated signed advertisement expiry. Publications
+	// never retain an advertisement beyond this instant.
+	Expires time.Time
 }
 
 // AdvertisementVerifier is implemented by the receiver-owned cryptographic
@@ -92,27 +95,31 @@ type RouteLimits struct {
 // Limits are process-wide memory, connection, and timeout ceilings. A token
 // can only select stricter per-route bounds.
 type Limits struct {
-	Connections        int
-	Advertisements     int
-	PendingPairings    int
-	PendingCarriers    int
-	ActiveCarriers     int
-	PerRoutePending    int
-	PerRouteActive     int
-	AdvertisementBytes int
-	PairingBytes       int
-	AdvertisementTTL   time.Duration
-	PairingTimeout     time.Duration
-	HandshakeTimeout   time.Duration
-	SessionLifetime    time.Duration
+	Connections int
+	// Advertisements bounds protected slots and token-delivery copies. Public
+	// unapproved publications use only the evictable pending pool.
+	Advertisements          int
+	PendingAdvertisements   int
+	PendingPairings         int
+	PendingCarriers         int
+	ActiveCarriers          int
+	PerRoutePending         int
+	PerRouteActive          int
+	AdvertisementBytes      int
+	PairingBytes            int
+	AdvertisementTTL        time.Duration
+	PendingAdvertisementTTL time.Duration
+	PairingTimeout          time.Duration
+	HandshakeTimeout        time.Duration
+	SessionLifetime         time.Duration
 }
 
 func defaultLimits() Limits {
 	return Limits{
-		Connections: 128, Advertisements: 256, PendingPairings: 64,
+		Connections: 128, Advertisements: 256, PendingAdvertisements: 64, PendingPairings: 64,
 		PendingCarriers: 64, ActiveCarriers: 64, PerRoutePending: 4,
 		PerRouteActive: 4, AdvertisementBytes: MaxAdvertisementBytes,
-		PairingBytes: MaxPairingBytes, AdvertisementTTL: 24 * time.Hour,
+		PairingBytes: MaxPairingBytes, AdvertisementTTL: 24 * time.Hour, PendingAdvertisementTTL: 2 * time.Minute,
 		PairingTimeout: 30 * time.Second, HandshakeTimeout: 10 * time.Second,
 		SessionLifetime: 24 * time.Hour,
 	}
@@ -179,6 +186,7 @@ type RelayConfig struct {
 	Now                 func() time.Time
 	Admissions          []AdmissionRecord
 	SaveAdmissions      func([]AdmissionRecord) error
+	Ingress             IngressMode
 }
 
 // DialFunc supplies an already upgraded byte-stream WebSocket using the exact

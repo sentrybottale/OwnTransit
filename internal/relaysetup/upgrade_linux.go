@@ -12,6 +12,7 @@ import (
 	"github.com/sentrybottale/owntransit/internal/securefs"
 	"github.com/sentrybottale/owntransit/internal/strictjson"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -25,15 +26,22 @@ type upgradeIntent struct {
 	Running      bool                  `json:"running"`
 	PreviousUnit []byte                `json:"previous_unit,omitempty"`
 	Verification *verificationEvidence `json:"verification,omitempty"`
+	Route        *routeRecovery        `json:"route,omitempty"`
 }
 
 const upgradeJournalLimit = 64 << 10
 
 func (s instanceSpec) validUpgradeVerification(j upgradeIntent) bool {
-	if j.Schema == "owntransit.relay-upgrade.v4" {
-		return j.Verification != nil && s.validVerificationEvidence(*j.Verification) && j.Verification.Engine == j.Previous.Engine
+	if j.Schema == "owntransit.relay-upgrade.v4" || j.Schema == "owntransit.relay-upgrade.v5" {
+		if j.Verification == nil || !s.validVerificationEvidence(*j.Verification) || j.Verification.Engine != j.Previous.Engine {
+			return false
+		}
+		if j.Schema == "owntransit.relay-upgrade.v5" {
+			return j.Verification.PeerHeader && (j.Route == nil || validRouteRecovery(j.Route) && j.Route.AfterDigest == j.Verification.RouteDigest)
+		}
+		return j.Route == nil && !j.Verification.PeerHeader
 	}
-	return j.Verification == nil
+	return j.Verification == nil && j.Route == nil
 }
 
 func validSaved(c savedConfig) bool {
@@ -84,6 +92,11 @@ func (s instanceSpec) verifyRunningRelay(ctx context.Context, c savedConfig, tim
 			}
 			remote, e := probeServer(ctx, c.URL)
 			if e == nil && sameIdentity(remote, local) {
+				if hasEvidence && evidence.PeerHeader {
+					if err := s.checkVerificationRoute(ctx, evidence); err != nil {
+						return err
+					}
+				}
 				recordVerification(ctx, VerificationPublic)
 				return nil
 			}
@@ -118,11 +131,22 @@ func (s instanceSpec) restoreManaged(ctx context.Context, root *securefs.Root, j
 	if !s.validSaved(j.Previous) || !s.validSaved(j.Next) || !s.validJournalSchema(j.Schema) || j.Previous.URL != j.Next.URL || j.Previous.Engine != j.Next.Engine {
 		return errors.New("invalid relay upgrade journal")
 	}
-	if j.Schema == "owntransit.relay-upgrade.v4" {
+	var route *routeChange
+	if j.Schema == "owntransit.relay-upgrade.v4" || j.Schema == "owntransit.relay-upgrade.v5" {
 		if !s.validUpgradeVerification(j) {
 			return errors.New("invalid upgrade verification evidence")
 		}
-		ctx = withVerificationEvidence(ctx, *j.Verification)
+		previousEvidence := *j.Verification
+		if j.Route != nil {
+			var err error
+			route, err = s.recordedRoute(root, j.Route)
+			if err != nil {
+				return err
+			}
+			previousEvidence.RouteDigest = j.Route.BeforeDigest
+			previousEvidence.PeerHeader = false
+		}
+		ctx = withVerificationEvidence(ctx, previousEvidence)
 		if err := checkIdentityDigests(s, j.Verification.Digests); err != nil {
 			return err
 		}
@@ -152,6 +176,9 @@ func (s instanceSpec) restoreManaged(ctx context.Context, root *securefs.Root, j
 		return errors.New("setup selection changed outside upgrade; rollback refused")
 	}
 	if err := s.prevalidateUpgradeContainer(ctx, j); err != nil {
+		return err
+	}
+	if err := restoreRecordedRoute(ctx, route); err != nil {
 		return err
 	}
 	if _, err := command(ctx, "/usr/bin/systemctl", "stop", s.unitName); err != nil {
@@ -194,7 +221,7 @@ func (s instanceSpec) restoreManaged(ctx context.Context, root *securefs.Root, j
 			case <-time.After(100 * time.Millisecond):
 			}
 		}
-		if j.Schema == "owntransit.relay-upgrade.v4" {
+		if j.Schema == "owntransit.relay-upgrade.v4" || j.Schema == "owntransit.relay-upgrade.v5" {
 			if err := s.verifyRunningRelay(ctx, j.Previous, routeProbeTimeout); err != nil {
 				return err
 			}
@@ -215,7 +242,7 @@ func (s instanceSpec) recoverManaged(ctx context.Context, root *securefs.Root, o
 	if strictjson.Decode(b, &j) != nil {
 		return errors.New("invalid relay upgrade journal")
 	}
-	fmt.Fprintln(output, "Recovering the previous relay after an interrupted upgrade; keys and website routing are unchanged.")
+	fmt.Fprintln(output, "Recovering the previous relay and selected website route after an interrupted upgrade; relay keys are retained.")
 	return s.restoreManaged(ctx, root, j)
 }
 
@@ -243,12 +270,22 @@ func (s instanceSpec) upgradeManaged(ctx context.Context, root *securefs.Root, p
 			return errors.New("running relay does not match saved managed image; no service was changed")
 		}
 	}
+	parsed, _ := url.Parse(s.url)
+	route, err := prepareRouteForPort(ctx, parsed.Hostname(), s.port)
+	if err != nil || route == nil {
+		return errors.Join(ErrRoute, err)
+	}
 	evidence, err := s.captureVerificationEvidence(ctx, previous.Engine, nil)
 	if err != nil {
 		return err
 	}
+	if evidence.RouteDigest != routeDigest(route, false) {
+		return errors.New("selected website route changed during upgrade preparation")
+	}
+	evidence.RouteDigest = routeDigest(route, true)
+	evidence.PeerHeader = true
 	ctx = withVerificationEvidence(ctx, evidence)
-	if previous == next && activeErr == nil && bytes.Equal(original, s.unit(next.Image, next.Engine)) {
+	if previous == next && activeErr == nil && bytes.Equal(original, s.unit(next.Image, next.Engine)) && route.edit.Reused {
 		if err := s.verifyRunningRelay(ctx, next, routeProbeTimeout); err != nil {
 			return errors.Join(errors.New("existing relay left running; check its public route"), err)
 		}
@@ -267,7 +304,11 @@ func (s instanceSpec) upgradeManaged(ctx context.Context, root *securefs.Root, p
 	if _, err := command(ctx, previous.Engine, "image", "inspect", "--format", "{{.Id}}", previous.Image); err != nil {
 		return errors.New("previous image is unavailable for rollback; relay left unchanged")
 	}
-	j := upgradeIntent{Schema: "owntransit.relay-upgrade.v4", Previous: previous, Next: next, Enabled: enabledErr == nil, Running: activeErr == nil, PreviousUnit: original, Verification: &evidence}
+	routeJournal, err := route.recovery(root)
+	if err != nil {
+		return err
+	}
+	j := upgradeIntent{Schema: "owntransit.relay-upgrade.v5", Previous: previous, Next: next, Enabled: enabledErr == nil, Running: activeErr == nil, PreviousUnit: original, Verification: &evidence, Route: routeJournal}
 	encoded, _ := json.Marshal(j)
 	if len(encoded) > upgradeJournalLimit {
 		return errors.New("relay upgrade journal exceeds its bound")
@@ -289,7 +330,10 @@ func (s instanceSpec) upgradeManaged(ctx context.Context, root *securefs.Root, p
 			}
 		}
 	}()
-	fmt.Fprintln(output, "Upgrading the existing relay container. Active tunnels may reconnect; relay keys, pairings and website routing are preserved.")
+	fmt.Fprintln(output, "Updating the existing relay and selected website route. Active tunnels may reconnect; relay keys and pairings are retained.")
+	if err := route.apply(ctx, root); err != nil {
+		return err
+	}
 	if _, err := command(ctx, "/usr/bin/systemctl", "stop", s.unitName); err != nil {
 		return err
 	}
@@ -327,7 +371,7 @@ func (s instanceSpec) upgradeManaged(ctx context.Context, root *securefs.Root, p
 }
 
 func (s instanceSpec) validJournalSchema(schema string) bool {
-	if schema == "owntransit.relay-upgrade.v4" {
+	if schema == "owntransit.relay-upgrade.v4" || schema == "owntransit.relay-upgrade.v5" {
 		return true
 	}
 	if s.named() {
