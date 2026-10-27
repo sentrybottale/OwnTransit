@@ -183,7 +183,7 @@ printf '%s\n' \
   "source_date_epoch=$source_date_epoch" \
   "source_manifest_sha256=$source_manifest_sha256" > "$bundle/BUILD-INPUTS"
 printf '%s\n' \
-  "{\"schema\":\"owntransit.software-release.v1\",\"product\":\"owntransit\",\"version\":\"$version\",\"release_id\":\"$release_id\",\"sequence\":1,\"created_unix\":$source_date_epoch,\"minimum_lifecycle\":2,\"source\":{\"repository\":\"https://github.com/sentrybottale/owntransit\",\"commit\":\"$source_commit\",\"dirty\":false,\"source_manifest_sha256\":\"$source_manifest_sha256\"},\"toolchain\":{\"go_version\":\"go1.26.7\",\"builder_image\":\"fixture\"}}" > "$bundle/RELEASE-MANIFEST.json"
+  "{\"schema\":\"owntransit.software-release.v1\",\"product\":\"owntransit\",\"version\":\"$version\",\"release_id\":\"$release_id\",\"sequence\":1,\"created_unix\":$source_date_epoch,\"minimum_lifecycle\":2,\"source\":{\"repository\":\"https://github.com/sentrybottale/owntransit\",\"commit\":\"$source_commit\",\"dirty\":false,\"source_manifest_sha256\":\"$source_manifest_sha256\"},\"toolchain\":{\"go_version\":\"go1.26.10\",\"builder_image\":\"fixture\"}}" > "$bundle/RELEASE-MANIFEST.json"
 
 while IFS= read -r relative; do
   case "$relative" in BUILD-INPUTS|RELEASE-MANIFEST.json|SOURCE-MANIFEST.txt) continue ;; esac
@@ -807,7 +807,7 @@ rewrite_bundle_contract() {
     "source_date_epoch=$source_date_epoch" \
     "source_manifest_sha256=$source_manifest_sha256" > "$bundle/BUILD-INPUTS"
   printf '%s\n' \
-    "{\"schema\":\"owntransit.software-release.v1\",\"product\":\"owntransit\",\"version\":\"$contract_version\",\"release_id\":\"$release_id\",\"sequence\":$contract_release_sequence,\"created_unix\":$source_date_epoch,\"minimum_lifecycle\":$contract_lifecycle,\"source\":{\"repository\":\"https://github.com/sentrybottale/owntransit\",\"commit\":\"$source_commit\",\"dirty\":false,\"source_manifest_sha256\":\"$source_manifest_sha256\"},\"toolchain\":{\"go_version\":\"go1.26.7\",\"builder_image\":\"fixture\"}}" > "$bundle/RELEASE-MANIFEST.json"
+    "{\"schema\":\"owntransit.software-release.v1\",\"product\":\"owntransit\",\"version\":\"$contract_version\",\"release_id\":\"$release_id\",\"sequence\":$contract_release_sequence,\"created_unix\":$source_date_epoch,\"minimum_lifecycle\":$contract_lifecycle,\"source\":{\"repository\":\"https://github.com/sentrybottale/owntransit\",\"commit\":\"$source_commit\",\"dirty\":false,\"source_manifest_sha256\":\"$source_manifest_sha256\"},\"toolchain\":{\"go_version\":\"go1.26.10\",\"builder_image\":\"fixture\"}}" > "$bundle/RELEASE-MANIFEST.json"
   rebuilt_checksums="$workspace/rebuilt-native-SHA256SUMS"
   (
     cd "$bundle"

@@ -653,7 +653,7 @@ func newSignedPackageFixture(t *testing.T, base, label string, sequence uint64, 
 		ReleaseID: releaseID, Sequence: sequence, CreatedUnix: 1700000000 + int64(sequence),
 		Protocol: wireprofile.LegacyV1Protocol, License: "Apache-2.0", MinimumLifecycle: 1,
 		Source:    release.Source{Repository: "https://github.com/sentrybottale/owntransit", Commit: strings.Repeat("b", 40), ManifestSHA256: strings.Repeat("a", 64)},
-		Toolchain: release.Toolchain{GoVersion: "go1.26.7", BuilderImage: "registry.example/build/go@sha256:" + strings.Repeat("c", 64)},
+		Toolchain: release.Toolchain{GoVersion: "go1.26.10", BuilderImage: "registry.example/build/go@sha256:" + strings.Repeat("c", 64)},
 		Artifacts: release.ArtifactMatrix(),
 	}
 	var lifecycle packageMeasurement
@@ -675,7 +675,7 @@ func newSignedPackageFixture(t *testing.T, base, label string, sequence uint64, 
 	thirdParty := []byte(release.LicenseEvidenceHeader + "\nComponent: fixture v1\nFile: LICENSE\n---\nfixture\n---\n")
 	writeProtectedFixture(t, filepath.Join(root, "evidence/THIRD_PARTY_LICENSES.txt"), thirdParty)
 
-	packages := []release.SPDXPackage{{Name: "Go standard library", SPDXID: "SPDXRef-Package-0000", VersionInfo: "go1.26.7", DownloadLocation: "https://go.dev/", FilesAnalyzed: false, LicenseConcluded: "NOASSERTION", LicenseDeclared: "BSD-3-Clause", CopyrightText: "NOASSERTION", ExternalRefs: []release.SPDXExternalRef{{ReferenceCategory: "PACKAGE-MANAGER", ReferenceType: "purl", ReferenceLocator: "pkg:golang/std@go1.26.7"}}}}
+	packages := []release.SPDXPackage{{Name: "Go standard library", SPDXID: "SPDXRef-Package-0000", VersionInfo: "go1.26.10", DownloadLocation: "https://go.dev/", FilesAnalyzed: false, LicenseConcluded: "NOASSERTION", LicenseDeclared: "BSD-3-Clause", CopyrightText: "NOASSERTION", ExternalRefs: []release.SPDXExternalRef{{ReferenceCategory: "PACKAGE-MANAGER", ReferenceType: "purl", ReferenceLocator: "pkg:golang/std@go1.26.10"}}}}
 	for _, artifact := range manifest.Artifacts {
 		document := release.SPDXDocument{
 			SPDXVersion: release.SPDXVersion, DataLicense: release.SPDXDataLicense, SPDXID: release.SPDXDocumentID,

@@ -25,6 +25,15 @@ authority. Older tools are not a supported way to operate these new local
 lifecycle records. The historical profile descriptions below remain distinct
 from current command compatibility.
 
+## Historical raw enrollment commands (1.0.6)
+
+The optional legacy `approve-initial-route`, `approve-route-rotation` and
+`owntransitctl apply` operations fail closed. New administrator-led legacy
+issuance and raw activation are withdrawn; pending work cannot continue through
+those commands. Active credentials and authenticated wire formats are unchanged.
+Current 1.x receiver-owned pairing remains the supported setup path. Older
+binaries retain their earlier behavior, so rollback restores this bypass.
+
 ## Renewal-status extension (1.0.4)
 
 The explicitly versioned `owntransit-renewal-status/1` signed/encrypted query

@@ -97,7 +97,7 @@ jobs:
       - name: Install the pinned Go toolchain
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: 1.26.7
+          go-version: 1.26.10
           cache: false
       - name: Require the native supported Linux target
         env:
@@ -142,40 +142,40 @@ jobs:
         run: |
           docker run --rm --network=none --cpus=2 --memory=512m \
             --volume="$PWD:/src:ro" \
-            docker.io/library/golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514 \
+            docker.io/library/golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af \
             sh -ceu 'install -m 0755 /src/scripts/development/support/systemctl /usr/bin/systemctl; sh /src/scripts/development/test-install-linux.sh'
       - name: Verify scoped named receiver units in a disposable container
         run: |
           go test -mod=readonly -c -o "$RUNNER_TEMP/named-services.test" ./internal/paircmd
           docker run --rm --network=none --cpus=2 --memory=512m \
             --volume="$RUNNER_TEMP:/fixture:ro" --volume="$PWD:/src:ro" \
-            docker.io/library/golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514 \
+            docker.io/library/golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af \
             sh -ceu 'mkdir -p /usr/local/libexec/owntransit-pair-service-check; install -m 0755 /fixture/named-services.test /usr/local/libexec/owntransit-pair-service-check/command.test; install -m 0755 /src/scripts/development/support/systemctl /usr/bin/systemctl; touch /owntransit-pair-service-fixture; /usr/local/libexec/owntransit-pair-service-check/command.test -test.run TestNamedReceiverServices -test.v'
       - name: Test managed VPS cutover and selected-site rollback
         run: |
           go test -mod=readonly -c -o "$RUNNER_TEMP/relay-setup.test" ./internal/relaysetup
           docker run --rm --network=none --cpus=2 --memory=512m \
             --volume="$RUNNER_TEMP:/fixture:ro" \
-            docker.io/library/golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514 \
+            docker.io/library/golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af \
             sh -ceu 'mkdir -p /usr/local/libexec/owntransit-relay-setup-check; install -m 0755 /fixture/relay-setup.test /usr/local/libexec/owntransit-relay-setup-check/host.test; touch /owntransit-relay-setup-fixture; /usr/local/libexec/owntransit-relay-setup-check/host.test -test.run "Test(Managed|Inspection|Cleanup|NamedRelay|Instance)" -test.v'
       - name: Validate named routes with real webserver parsers
         if: matrix.arch == 'amd64'
         run: |
           docker run --rm --cpus=2 --memory=512m \
             --volume="$RUNNER_TEMP:/fixture:ro" \
-            docker.io/library/golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514 \
+            docker.io/library/golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af \
             sh -ceu 'apt-get -qq update; DEBIAN_FRONTEND=noninteractive apt-get -qq -y --no-install-recommends install nginx apache2 caddy openssl; a2enmod ssl headers proxy proxy_http proxy_wstunnel >/dev/null; touch /owntransit-provider-fixture; /fixture/relay-setup.test -test.run "^TestReal(ProviderConfigurationSyntax|NginxPeerHeaderOverwrite|ApacheAndCaddyPeerHeaderConnectionNomination)$" -test.v'
       - name: Build native pairing self-test executables
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/owntransit-selftest"
           for role in owntransit-client owntransit-target owntransit-relay; do
-            go build -mod=readonly -trimpath -ldflags "-X github.com/sentrybottale/owntransit/internal/buildinfo.Version=1.0.5-dev -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA" -o "$RUNNER_TEMP/owntransit-selftest/$role" "./cmd/$role"
+            go build -mod=readonly -trimpath -ldflags "-X github.com/sentrybottale/owntransit/internal/buildinfo.Version=1.0.6-dev -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA" -o "$RUNNER_TEMP/owntransit-selftest/$role" "./cmd/$role"
           done
           cp PAIRING_INSTALL.md LICENSE THIRD_PARTY_NOTICES.md "$RUNNER_TEMP/owntransit-selftest/"
-          CGO_ENABLED=0 go build -mod=readonly -trimpath -tags=owntransit_relay_container -ldflags "-X github.com/sentrybottale/owntransit/internal/buildinfo.Version=1.0.5-dev -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA" -o "$RUNNER_TEMP/owntransit-selftest/owntransit-relay-container" ./cmd/owntransit-relay
-          docker build --network=none -f deploy/pairing/Containerfile -t owntransit-relay:1.0.5-dev "$RUNNER_TEMP/owntransit-selftest"
-          docker save -o "$RUNNER_TEMP/owntransit-selftest/owntransit-relay-image.tar" owntransit-relay:1.0.5-dev
+          CGO_ENABLED=0 go build -mod=readonly -trimpath -tags=owntransit_relay_container -ldflags "-X github.com/sentrybottale/owntransit/internal/buildinfo.Version=1.0.6-dev -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA" -o "$RUNNER_TEMP/owntransit-selftest/owntransit-relay-container" ./cmd/owntransit-relay
+          docker build --network=none -f deploy/pairing/Containerfile -t owntransit-relay:1.0.6-dev "$RUNNER_TEMP/owntransit-selftest"
+          docker save -o "$RUNNER_TEMP/owntransit-selftest/owntransit-relay-image.tar" owntransit-relay:1.0.6-dev
       - name: Upload explicitly unreleased Linux self-test binaries
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -212,7 +212,7 @@ jobs:
       - name: Install the pinned Go toolchain
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: 1.26.7
+          go-version: 1.26.10
           cache: false
       - name: Run both native Darwin race and vet profiles
         env:
@@ -238,7 +238,7 @@ jobs:
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/owntransit-selftest"
-          go build -mod=readonly -trimpath -ldflags "-X github.com/sentrybottale/owntransit/internal/buildinfo.Version=1.0.5-dev -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA" -o "$RUNNER_TEMP/owntransit-selftest/owntransit-client" ./cmd/owntransit-client
+          go build -mod=readonly -trimpath -ldflags "-X github.com/sentrybottale/owntransit/internal/buildinfo.Version=1.0.6-dev -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA" -o "$RUNNER_TEMP/owntransit-selftest/owntransit-client" ./cmd/owntransit-client
           cp PAIRING_INSTALL.md LICENSE THIRD_PARTY_NOTICES.md "$RUNNER_TEMP/owntransit-selftest/"
       - name: Build and smoke the unsigned distribution client
         env:
@@ -250,7 +250,7 @@ jobs:
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/owntransit-native-smoke"
-          flags="-buildid= -X github.com/sentrybottale/owntransit/internal/buildinfo.Version=1.0.5 -X github.com/sentrybottale/owntransit/internal/buildinfo.Release=owntransit-1.0.5 -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA -X github.com/sentrybottale/owntransit/internal/buildinfo.Dirty=false"
+          flags="-buildid= -X github.com/sentrybottale/owntransit/internal/buildinfo.Version=1.0.6 -X github.com/sentrybottale/owntransit/internal/buildinfo.Release=owntransit-1.0.6 -X github.com/sentrybottale/owntransit/internal/buildinfo.Commit=$GITHUB_SHA -X github.com/sentrybottale/owntransit/internal/buildinfo.Dirty=false"
           CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -mod=readonly -trimpath -buildvcs=false -ldflags "$flags" -o "$RUNNER_TEMP/owntransit-native-smoke/owntransit-client" ./cmd/owntransit-client
           "$RUNNER_TEMP/owntransit-native-smoke/owntransit-client" version > "$RUNNER_TEMP/owntransit-native-smoke/version.json"
       - name: Upload the unsigned native distribution smoke result

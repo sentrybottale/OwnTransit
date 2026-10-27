@@ -1,5 +1,13 @@
 # Hostile enrollment exchange
 
+As of 1.0.6, the historical raw approval, rotation and activation CLI operations
+are retired because they did not enforce this document's two-sided comparison.
+New administrator-led legacy issuance is unavailable. The protocol description
+below remains a record of its requirements and implemented primitives, not a
+claim that a complete new legacy enrollment can be performed. Already-active
+identities remain usable, and current receiver-owned pairing is unaffected.
+Returning to an older binary restores its unsafe raw-command behavior.
+
 This document specifies the unchanged legacy administrator-led profile and
 retains that profile's historical command names. In the product 1.0 flow,
 `owntransit-client setup` and `owntransit-target setup` select the receiver-owned

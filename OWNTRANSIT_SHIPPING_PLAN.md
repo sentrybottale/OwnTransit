@@ -1,5 +1,16 @@
 # OwnTransit v1 shipping plan
 
+## 1.0.6 security maintenance release
+
+Use the existing signed nine-asset lane with pinned Go 1.26.10 and its verified
+builder digest. Require both race/vet profiles, current vulnerability analysis,
+security/publication gates, exact 1.0.5 installer upgrades, and authenticated
+native artifact smoke checks. Retire both raw legacy issuance commands and raw
+activation before file access, with negative CLI-dispatch tests. This withdraws
+new legacy enrollment rather than claiming a replacement ceremony. Preserve the
+current receiver-owned setup and active state. Verify the exact draft assets
+before publishing the immutable 1.0.6 release.
+
 ## 1.0.5 relay availability patch
 
 Use the existing signed nine-asset lane, distribution key and platform matrix.

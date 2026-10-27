@@ -1,5 +1,30 @@
 # OwnTransit security policy
 
+## 1.0.6: security toolchain and legacy command retirement
+
+Release builders and required checks pin Go 1.26.10, including the October
+`crypto/tls` resource-exhaustion fix and the `crypto/x509` block for compromised
+intermediate certificates. Updating a host's Go installation does not update an
+already-built OwnTransit binary; install the rebuilt distribution on each role.
+The public WebSocket HTTPS hop may use system roots, while the independent
+outer and inner OwnTransit profiles still require their private trust roots and
+exact endpoint authorization. A public-CA compromise grants no inner endpoint
+or SSH authority.
+
+The historical `owntransit-provision approve-initial-route`,
+`approve-route-rotation` and `owntransitctl apply` CLI operations now fail before
+parsing caller-selected files, loading issuer keys or mutating endpoint state.
+They could bypass the mandatory two-sided transcript comparison. Their removal
+withdraws new administrator-led legacy issuance and raw activation; no usable
+replacement legacy enrollment ceremony is claimed. Current 1.x capsules use
+receiver-owned pairing and do not ship these historical tools.
+
+Existing active identities, policy, alarms and SSH settings are retained. There
+is no carrier, pairing or endpoint-state schema change. Pending historical
+enrollment cannot continue through the retired commands. Older binaries retain
+the old behavior; rollback reintroduces their raw-command bypass and older
+standard library. Keep the updated executables for new setup and recovery.
+
 ## 1.0.5: relay admission and publication hardening
 
 Managed routes overwrite `OwnTransit-Peer-IP` with the original TCP peer on the

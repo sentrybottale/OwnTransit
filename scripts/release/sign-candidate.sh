@@ -619,7 +619,7 @@ grep -Fq -- "\"version\":\"$version\"" "$manifest" || fail "release manifest ver
 grep -Fq -- "\"release_id\":\"$release_id\"" "$manifest" || fail "release manifest ID does not match BUILD-INPUTS"
 grep -Fq -- "\"sequence\":$release_sequence,\"created_unix\":$source_date_epoch," "$manifest" || fail "release manifest sequence/time do not match BUILD-INPUTS"
 grep -Fq -- "\"source\":{\"repository\":\"https://github.com/sentrybottale/owntransit\",\"commit\":\"$source_commit\",\"dirty\":false,\"source_manifest_sha256\":\"$source_manifest_sha256\"}" "$manifest" || fail "release manifest source identity does not match BUILD-INPUTS"
-grep -Fq -- '"toolchain":{"go_version":"go1.26.7"' "$manifest" || fail "release manifest does not use the pinned Go toolchain"
+grep -Fq -- '"toolchain":{"go_version":"go1.26.10"' "$manifest" || fail "release manifest does not use the pinned Go toolchain"
 
 policy="$publish/assets/RELEASE-POLICY.json"
 policy_signature="$publish/assets/RELEASE-POLICY.sig"
@@ -671,7 +671,7 @@ source_archive_sha256=$(sha256_file "$source_archive")
   --source-sha256 "$source_archive_sha256" \
   --release-id "$release_id" \
   --source-commit "$source_commit" \
-  --go-version go1.26.7 \
+  --go-version go1.26.10 \
   --signer-public-key "$trusted_distribution_public" \
   --output "$publish/assets/owntransit.rb" >/dev/null || fail "Homebrew formula rendering failed"
 

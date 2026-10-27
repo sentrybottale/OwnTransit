@@ -7,6 +7,21 @@ authenticated artifacts of the documented release lane. The legacy 0.1.0 lane
 additionally requires its signed qualification record. Git tags do not publish
 artifacts automatically.
 
+## [1.0.6]
+
+- Rebuild the distribution with pinned Go 1.26.10, including the October TLS
+  and certificate-verification security fixes. Update the builder digest,
+  qualification guards and signing metadata together.
+- Retire the historical raw `approve-initial-route`, `approve-route-rotation`
+  and `owntransitctl apply` commands before argument parsing or file access.
+  These commands did not enforce the required two-sided enrollment comparison.
+  New administrator-led legacy issuance is unavailable; this does not add a
+  replacement legacy enrollment workflow.
+- Preserve current receiver-owned Client/Target pairing, active endpoint state,
+  both TLS boundaries and the fixed SSH target. Recognize canonical 1.0.5
+  installations during upgrade. Older immutable binaries retain their original
+  behavior; downgrading restores their toolchain and retired raw commands.
+
 ## [1.0.5]
 
 - Prevent one stalled public source from exhausting the shared reverse-proxy

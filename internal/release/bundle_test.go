@@ -48,7 +48,7 @@ func TestVerifyBundleBindsArtifactsSPDXProvenanceAndLicenses(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	packages := []SPDXPackage{{Name: "Go standard library", SPDXID: "SPDXRef-Package-0000", VersionInfo: "go1.26.7", DownloadLocation: "https://go.dev/", FilesAnalyzed: false, LicenseConcluded: "NOASSERTION", LicenseDeclared: "BSD-3-Clause", CopyrightText: "NOASSERTION", ExternalRefs: []SPDXExternalRef{{ReferenceCategory: "PACKAGE-MANAGER", ReferenceType: "purl", ReferenceLocator: "pkg:golang/std@go1.26.7"}}}}
+	packages := []SPDXPackage{{Name: "Go standard library", SPDXID: "SPDXRef-Package-0000", VersionInfo: "go1.26.10", DownloadLocation: "https://go.dev/", FilesAnalyzed: false, LicenseConcluded: "NOASSERTION", LicenseDeclared: "BSD-3-Clause", CopyrightText: "NOASSERTION", ExternalRefs: []SPDXExternalRef{{ReferenceCategory: "PACKAGE-MANAGER", ReferenceType: "purl", ReferenceLocator: "pkg:golang/std@go1.26.10"}}}}
 	for _, artifact := range manifest.Artifacts {
 		relationships := []SPDXRelationship{{SPDXElementID: SPDXDocumentID, RelationshipType: "DESCRIBES", RelatedSPDXElement: SPDXArtifactID}}
 		for _, pkg := range packages {

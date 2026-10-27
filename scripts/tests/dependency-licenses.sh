@@ -105,8 +105,8 @@ if [ "$mode" != full ]; then
 fi
 
 command -v go >/dev/null 2>&1 || fail 'full check requires the pinned Go toolchain'
-test "$(go env GOVERSION)" = go1.26.7 ||
-  fail 'full check requires Go 1.26.7'
+test "$(go env GOVERSION)" = go1.26.10 ||
+  fail 'full check requires Go 1.26.10'
 test "$(GOWORK=off go env GOWORK)" = off ||
   fail 'full check requires GOWORK=off'
 

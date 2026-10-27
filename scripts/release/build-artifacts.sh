@@ -151,8 +151,8 @@ sha256_file() {
   fi
 }
 
-builder_digest='sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514'
-builder_image="docker.io/library/golang:1.26.7-bookworm@$builder_digest"
+builder_digest='sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af'
+builder_image="docker.io/library/golang:1.26.10-bookworm@$builder_digest"
 # Signed evidence uses the canonical tag-free name. The executed image keeps
 # the human-readable tag, but both references are pinned to this one digest.
 builder_identity="docker.io/library/golang@$builder_digest"
@@ -471,7 +471,7 @@ printf '%s\n' \
   > "$stage_root/BUILD-INPUTS"
 chmod 0644 "$stage_root/BUILD-INPUTS"
 
-release_metadata="--bundle /bundle --version $version --release-id $release_id --sequence $sequence --created-unix $source_date_epoch --repository https://github.com/sentrybottale/owntransit --source-commit $source_commit --source-manifest-sha256 $source_manifest_digest --go-version go1.26.7 --builder-image $builder_identity"
+release_metadata="--bundle /bundle --version $version --release-id $release_id --sequence $sequence --created-unix $source_date_epoch --repository https://github.com/sentrybottale/owntransit --source-commit $source_commit --source-manifest-sha256 $source_manifest_digest --go-version go1.26.10 --builder-image $builder_identity"
 # shellcheck disable=SC2086
 run_release_tool evidence $release_metadata
 # shellcheck disable=SC2086

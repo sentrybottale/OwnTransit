@@ -42,14 +42,6 @@ func productionProvisionCommands() provisionCommands {
 			options.now = time.Now()
 			return initAuthority(options)
 		},
-		approveInitialRoute: func(options approveInitialRouteOptions) ([]byte, error) {
-			options.now = time.Now()
-			return approveInitialRoute(options)
-		},
-		approveRouteRotation: func(options approveInitialRouteOptions) ([]byte, error) {
-			options.now = time.Now()
-			return approveRouteRotation(options)
-		},
 		signLifecyclePolicy: func(options signLifecyclePolicyOptions) ([]byte, error) {
 			options.now = time.Now()
 			return signLifecyclePolicy(options)
@@ -122,36 +114,12 @@ func executeProvision(arguments []string, output, diagnostics io.Writer, command
 			return 1
 		}
 		return 0
-	case "approve-initial-route":
-		options, code, ok := parseApproveInitialRouteArguments(commandArguments, diagnostics)
-		if !ok {
-			return code
-		}
-		summary, err := commands.approveInitialRoute(options)
-		if err != nil {
-			fmt.Fprintf(diagnostics, "owntransit-provision approve-initial-route: %v\n", err)
-			return 1
-		}
-		if _, err := output.Write(summary); err != nil {
-			fmt.Fprintf(diagnostics, "owntransit-provision approve-initial-route: write public summary: %v\n", err)
-			return 1
-		}
-		return 0
-	case "approve-route-rotation":
-		options, code, ok := parseApproveRouteRotationArguments(commandArguments, diagnostics)
-		if !ok {
-			return code
-		}
-		summary, err := commands.approveRouteRotation(options)
-		if err != nil {
-			fmt.Fprintf(diagnostics, "owntransit-provision approve-route-rotation: %v\n", err)
-			return 1
-		}
-		if _, err := output.Write(summary); err != nil {
-			fmt.Fprintf(diagnostics, "owntransit-provision approve-route-rotation: write public summary: %v\n", err)
-			return 1
-		}
-		return 0
+	case "approve-initial-route", "approve-route-rotation":
+		// Retire both raw issuance paths before parsing any caller-selected
+		// files or invoking issuer authority. The historical commands never
+		// consumed the mandatory confirmed exchange transcript.
+		fmt.Fprintln(diagnostics, "owntransit-provision: legacy raw enrollment approval is retired")
+		return 1
 	case "sign-lifecycle-policy":
 		options, code, ok := parseSignLifecyclePolicyArguments(commandArguments, diagnostics)
 		if !ok {
@@ -254,8 +222,6 @@ func writeProvisionHelp(output io.Writer) error {
 Commands:
   version
   init-authority --out <new-directory>
-  approve-initial-route <explicit request, authority, relay, and output flags>
-  approve-route-rotation --deployment-sequence <n> <explicit request, authority, relay, and output flags>
   sign-lifecycle-policy --policy <unsigned-json> --deployment-signing-key <private-key-file> --out <new-file>
   sign-rollback-authorization --authorization <unsigned-json> --deployment-signing-key <private-key-file> --out <new-file>
   issue-invitation --authority <private-directory> --role <role> <runtime and recipient flags> --out <new-directory>
@@ -265,6 +231,10 @@ Commands:
 
 This executable is offline-only. Private key material is read from strict
 files; it is never accepted as an argument value or environment variable.
+
+Retired: approve-initial-route and approve-route-rotation. New legacy
+administrator-led issuance is unavailable. Current Client/Target setup uses
+receiver-owned pairing.
 `)
 	return err
 }

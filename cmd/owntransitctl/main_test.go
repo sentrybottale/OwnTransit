@@ -71,24 +71,23 @@ func TestCTLVersionIsOfflineAndLifecycleRoleBound(t *testing.T) {
 	}
 }
 
-func TestCTLApplyPassesOnlyLocalPathsAndWritesReceipt(t *testing.T) {
-	var output bytes.Buffer
-	var diagnostics bytes.Buffer
-	var got applyOptions
-	commands := ctlCommands{
-		apply: func(options applyOptions) ([]byte, error) {
-			got = options
-			return []byte("{\"schema\":\"owntransit.ctl.apply.v1\"}\n"), nil
-		},
-	}
-	code := executeCTL([]string{
-		"apply", "--state-root", "target-state", "--response", "response.otre",
-	}, &output, &diagnostics, commands)
-	if code != 0 || got.stateRoot != "target-state" || got.responsePath != "response.otre" {
-		t.Fatalf("executeCTL(apply) = %d, options=%+v, diagnostics=%q", code, got, diagnostics.String())
-	}
-	if output.String() != "{\"schema\":\"owntransit.ctl.apply.v1\"}\n" || diagnostics.Len() != 0 {
-		t.Fatalf("unexpected streams: stdout=%q stderr=%q", output.String(), diagnostics.String())
+func TestCTLRawEnrollmentApplyIsRetiredBeforeDispatch(t *testing.T) {
+	for _, arguments := range [][]string{
+		{"apply"},
+		{"apply", "--help"},
+		{"apply", "--state-root", "/private/state", "--response", "/private/response"},
+		{"apply", "--unknown", "/private/input"},
+	} {
+		called := false
+		commands := ctlCommands{apply: func(applyOptions) ([]byte, error) {
+			called = true
+			return nil, nil
+		}}
+		var output, diagnostics bytes.Buffer
+		code := executeCTL(arguments, &output, &diagnostics, commands)
+		if code != 1 || called || output.Len() != 0 || diagnostics.String() != "owntransitctl: legacy raw enrollment activation is retired\n" {
+			t.Errorf("%v code=%d called=%v stdout=%q stderr=%q", arguments, code, called, output.String(), diagnostics.String())
+		}
 	}
 }
 

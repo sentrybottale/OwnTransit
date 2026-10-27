@@ -15,7 +15,7 @@
     "source_manifest_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
   },
   "toolchain": {
-    "go_version": "go1.26.7",
+    "go_version": "go1.26.10",
     "builder_image": "registry.owntransit.invalid/build/go@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
   },
   "artifacts": [

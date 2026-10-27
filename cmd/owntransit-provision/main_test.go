@@ -59,24 +59,29 @@ func TestProvisionInitAuthorityWritesOnlyReturnedPublicSummaryToStdout(t *testin
 	}
 }
 
-func TestProvisionApproveRequiresEveryExplicitInput(t *testing.T) {
-	var output bytes.Buffer
-	var diagnostics bytes.Buffer
-	called := false
-	commands := provisionCommands{
-		version:       func(io.Writer) error { return nil },
-		initAuthority: func(initAuthorityOptions) ([]byte, error) { return nil, nil },
-		approveInitialRoute: func(approveInitialRouteOptions) ([]byte, error) {
-			called = true
-			return nil, nil
-		},
-	}
-	code := executeProvision([]string{"approve-initial-route", "--out", "responses"}, &output, &diagnostics, commands)
-	if code != 2 || called {
-		t.Fatalf("executeProvision(approve) = %d, called=%v", code, called)
-	}
-	if output.Len() != 0 || !strings.Contains(diagnostics.String(), "-relay-request is required") {
-		t.Fatalf("unexpected streams: stdout=%q stderr=%q", output.String(), diagnostics.String())
+func TestProvisionRawEnrollmentApprovalIsRetiredBeforeDispatch(t *testing.T) {
+	for _, command := range []string{"approve-initial-route", "approve-route-rotation"} {
+		validArguments := []string{"--relay-request", "/private/relay", "--connector-request", "/private/connector", "--client-request", "/private/client", "--outer-ca-cert", "/private/outer.crt", "--outer-ca-key", "/private/outer.key", "--inner-connector-ca-cert", "/private/connector.crt", "--inner-connector-ca-key", "/private/connector.key", "--inner-client-ca-cert", "/private/client.crt", "--inner-client-ca-key", "/private/client.key", "--deployment-signing-key", "/private/signer", "--relay-url", "wss://relay.example/connects", "--relay-listen", "127.0.0.1:9087", "--out", "/private/responses"}
+		if command == "approve-route-rotation" {
+			validArguments = append(validArguments, "--deployment-sequence", "2")
+		}
+		for _, arguments := range [][]string{
+			nil,
+			{"--help"},
+			validArguments,
+		} {
+			called := false
+			approve := func(approveInitialRouteOptions) ([]byte, error) {
+				called = true
+				return nil, nil
+			}
+			commands := provisionCommands{approveInitialRoute: approve, approveRouteRotation: approve}
+			var output, diagnostics bytes.Buffer
+			code := executeProvision(append([]string{command}, arguments...), &output, &diagnostics, commands)
+			if code != 1 || called || output.Len() != 0 || diagnostics.String() != "owntransit-provision: legacy raw enrollment approval is retired\n" {
+				t.Errorf("%s %v code=%d called=%v stdout=%q stderr=%q", command, arguments, code, called, output.String(), diagnostics.String())
+			}
+		}
 	}
 }
 
@@ -114,7 +119,7 @@ func TestProvisionLifecycleCommandsDispatchOnlyExplicitFileInputs(t *testing.T) 
 }
 
 func TestProvisionLifecycleHelpAndMissingInputsFailClosed(t *testing.T) {
-	for _, command := range []string{"sign-lifecycle-policy", "sign-rollback-authorization", "approve-route-rotation"} {
+	for _, command := range []string{"sign-lifecycle-policy", "sign-rollback-authorization"} {
 		var output bytes.Buffer
 		var diagnostics bytes.Buffer
 		if code := executeProvision([]string{command, "--help"}, &output, &diagnostics, provisionCommands{}); code != 0 {

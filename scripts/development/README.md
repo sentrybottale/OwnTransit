@@ -1,6 +1,6 @@
 # OwnTransit distribution
 
-1.0.5 ships three public roles: Client, Relay and Target. Commands are
+1.0.6 ships three public roles: Client, Relay and Target. Commands are
 `owntransit-client`, `owntransit-relay` and `owntransit-target`; run the local
 role's `setup` command for its menu. The SSH server runs on the Target.
 Public commands have no `pair` prefix or preview aliases.
@@ -10,9 +10,9 @@ macOS client. The nine public assets are:
 
 - `install-linux.sh`
 - `install-macos.sh`
-- `owntransit-1.0.5-linux-amd64.tar.gz`
-- `owntransit-1.0.5-linux-arm64.tar.gz`
-- `owntransit-1.0.5-darwin-arm64.tar.gz`
+- `owntransit-1.0.6-linux-amd64.tar.gz`
+- `owntransit-1.0.6-linux-arm64.tar.gz`
+- `owntransit-1.0.6-darwin-arm64.tar.gz`
 - `DEVELOPMENT.txt`
 - `DEVELOPMENT-SHA256SUMS`
 - `DEVELOPMENT-SHA256SUMS.sig`
@@ -31,7 +31,7 @@ the pinned public-key digest, detached signature, exact versioned six-member
 inventory and selected archive digest before extraction or execution. The
 bundle installer checks the exact flat member set and platform again.
 
-Linux installs software at `/opt/owntransit/1.0.5/{client,relay,target}`.
+Linux installs software at `/opt/owntransit/1.0.6/{client,relay,target}`.
 macOS retains the per-user `Library/Application Support/OwnTransitSoftware`
 directory and installs `~/.local/bin/owntransit-client` without sudo.
 The target uses `owntransit-target.service` and named units
@@ -50,7 +50,7 @@ Build and verify one immutable release:
 1. Complete both race/vet profiles, security/publication checks and the bounded
    installer, service and end-to-end fixtures for the current source.
 2. Freeze the source commit and run
-   `sh scripts/development/build.sh ABSOLUTE_GO1267 ABSOLUTE_NEW_OUTPUT`.
+   `sh scripts/development/build.sh ABSOLUTE_GO12610 ABSOLUTE_NEW_OUTPUT`.
    Build intermediates remain under that output for inspection.
 3. Inspect the exact native and OCI inventories. Sign the inventory using
    `sh scripts/development/sign.sh PRIVATE_KEY PUBLIC_KEY DEVELOPMENT-SHA256SUMS`.

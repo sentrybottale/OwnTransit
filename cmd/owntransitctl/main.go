@@ -61,10 +61,6 @@ func productionCTLCommands() ctlCommands {
 			return initializeEnrollment(options)
 		},
 		pending: exportPending,
-		apply: func(options applyOptions) ([]byte, error) {
-			options.now = time.Now()
-			return applyResponse(options)
-		},
 		policyApply: func(options signedInputOptions) ([]byte, error) {
 			options.now = time.Now()
 			return applyPolicy(options)
@@ -132,11 +128,10 @@ func executeCTL(arguments []string, output, diagnostics io.Writer, commands ctlC
 		}
 		result, err = commands.pending(options)
 	case "apply":
-		options, code, ok := parseApplyArguments(commandArguments, diagnostics)
-		if !ok {
-			return code
-		}
-		result, err = commands.apply(options)
+		// A raw response bypasses the target's confirmed exchange transcript.
+		// Reject before parsing paths or opening target-local state.
+		fmt.Fprintln(diagnostics, "owntransitctl: legacy raw enrollment activation is retired")
+		return 1
 	case "policy-apply", "rollback":
 		options, code, ok := parseSignedInputArguments(command, commandArguments, diagnostics)
 		if !ok {

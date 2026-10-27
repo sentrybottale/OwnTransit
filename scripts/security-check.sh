@@ -123,8 +123,8 @@ git diff --check
 
 if [ "$mode" = full ]; then
   if command -v go >/dev/null 2>&1; then
-    test "$(go env GOVERSION)" = go1.26.7 ||
-      fail "full checks require the pinned Go 1.26.7 toolchain"
+    test "$(go env GOVERSION)" = go1.26.10 ||
+      fail "full checks require the pinned Go 1.26.10 toolchain"
     test "$(go env GOWORK)" = off || fail "full checks require GOWORK=off"
     go mod verify
     ./scripts/tests/dependency-licenses.sh --full

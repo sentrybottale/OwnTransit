@@ -10,7 +10,7 @@ release source archive contains `SOURCE-MANIFEST.txt` plus an OpenSSH detached
 signature. The manifest covers the complete Go build input set. The Homebrew
 formula pins the archive SHA-256, pins the source-signing Ed25519 public key,
 verifies the detached signature, verifies every manifest entry, rejects
-unlisted build inputs, requires exact `go1.26.7` from Homebrew's keg-only
+unlisted build inputs, requires exact `go1.26.10` from Homebrew's keg-only
 `go@1.26` formula, and builds only the unprivileged client from source. The
 formula deliberately does not build or install `owntransitctl`.
 

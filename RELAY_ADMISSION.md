@@ -79,7 +79,8 @@ route fixtures cover provider configuration, idempotent updates and rollback.
 The required race and vet checks run with both production and POC SSH profiles.
 
 The conditional raw-command issue in the separately shipped historical 0.1.0
-administrator-led profile is not changed here. Removing its raw approval commands
-would also remove its only fresh issuance path. A future change must supply
-ceremony-gated issuance and activation before claiming that workflow remains
-usable. Current 1.x Client/Target setup does not ship those commands.
+administrator-led profile was not changed by 1.0.5. Version 1.0.6 retires raw
+approval, rotation and activation and withdraws new legacy issuance. A future
+replacement must supply ceremony-gated issuance and activation before claiming
+that workflow is usable. Current 1.x Client/Target setup does not ship those
+commands.

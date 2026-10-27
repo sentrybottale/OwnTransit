@@ -356,7 +356,7 @@ source_digest=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
   --source-sha256 "$source_digest" \
   --release-id "$release_id" \
   --source-commit "$source_commit" \
-  --go-version go1.26.7 \
+  --go-version go1.26.10 \
   --signer-public-key "$workspace/signing-key.pub" \
   --output "$formula_dir/owntransit.rb" >/dev/null
 grep -Fq 'license "Apache-2.0"' "$formula_dir/owntransit.rb" || fail "rendered formula lost the explicit license"

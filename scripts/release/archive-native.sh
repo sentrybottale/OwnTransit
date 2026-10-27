@@ -365,8 +365,8 @@ for candidate in gtar tar; do
   fi
 done
 
-builder_digest='sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514'
-builder_image="docker.io/library/golang:1.26.7-bookworm@$builder_digest"
+builder_digest='sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af'
+builder_image="docker.io/library/golang:1.26.10-bookworm@$builder_digest"
 
 archive_once() {
   archive_output=$1

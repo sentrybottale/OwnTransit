@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 
-FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514 AS build
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af AS build
 ARG TARGETOS=linux
 ARG TARGETARCH
 ARG OWNTRANSIT_VERSION=dev
@@ -38,7 +38,7 @@ COPY --from=build /out/ /
 # Verification uses a second source stage on the requested target platform.
 # This prevents a workstation from silently testing its own architecture while
 # merely cross-compiling either supported Linux release target.
-FROM --platform=$TARGETPLATFORM docker.io/library/golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514 AS linux-verify
+FROM --platform=$TARGETPLATFORM docker.io/library/golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af AS linux-verify
 ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src

@@ -43,7 +43,7 @@ func validManifest() Manifest {
 		Schema: ManifestSchema, Product: "owntransit", Version: "0.1.0", ReleaseID: releaseID.String(),
 		Sequence: 1, CreatedUnix: 1700000000, Protocol: wireprofile.LegacyV1Protocol, License: "Apache-2.0", MinimumLifecycle: 1,
 		Source:    Source{Repository: canonicalRepository, Commit: strings.Repeat("b", 40), ManifestSHA256: testDigest},
-		Toolchain: Toolchain{GoVersion: "go1.26.7", BuilderImage: "registry.example/build/go@sha256:" + testDigest},
+		Toolchain: Toolchain{GoVersion: "go1.26.10", BuilderImage: "registry.example/build/go@sha256:" + testDigest},
 		Artifacts: artifacts,
 		Evidence:  evidence,
 	}
