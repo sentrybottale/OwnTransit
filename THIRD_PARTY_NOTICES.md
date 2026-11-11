@@ -14,8 +14,8 @@ The current pinned production-module inventory is:
 | `filippo.io/age` | `v1.3.2` | BSD-3-Clause |
 | `filippo.io/hpke` | `v0.4.0` | BSD-3-Clause |
 | `github.com/coder/websocket` | `v1.8.15` | ISC |
-| `golang.org/x/crypto` | `v0.55.0` | BSD-3-Clause and Go patent grant |
-| `golang.org/x/sys` | `v0.47.0` | BSD-3-Clause and Go patent grant |
+| `golang.org/x/crypto` | `v0.58.0` | BSD-3-Clause and Go patent grant |
+| `golang.org/x/sys` | `v0.49.0` | BSD-3-Clause and Go patent grant |
 
 This inventory is a review aid, not a replacement for the exact upstream files
 inside each release bundle. `scripts/tests/dependency-licenses.sh` proves that
@@ -63,12 +63,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## Go Authors BSD 3-Clause license
 
 This license applies to `filippo.io/hpke v0.4.0`, `golang.org/x/crypto
-v0.55.0`, `golang.org/x/sys v0.47.0`, and the Go standard library shipped in
+v0.58.0`, `golang.org/x/sys v0.49.0`, and the Go standard library shipped in
 the release toolchain. Sources:
 
 - <https://github.com/FiloSottile/hpke/blob/v0.4.0/LICENSE>
-- <https://github.com/golang/crypto/blob/v0.55.0/LICENSE>
-- <https://github.com/golang/sys/blob/v0.47.0/LICENSE>
+- <https://github.com/golang/crypto/blob/v0.58.0/LICENSE>
+- <https://github.com/golang/sys/blob/v0.49.0/LICENSE>
 
 Copyright 2009 The Go Authors.
 

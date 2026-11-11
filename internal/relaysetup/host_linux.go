@@ -29,7 +29,7 @@ const managedRoot = "/var/lib/owntransit-relay-setup"
 const managedContainer = "owntransit-relay-managed"
 const managedUnit = "owntransit-relay-managed.service"
 const unitPath = "/etc/systemd/system/" + managedUnit
-const imageTag = "owntransit-relay:1.0.6"
+const imageTag = "owntransit-relay:1.0.7"
 
 type boundedBuffer struct {
 	bytes.Buffer

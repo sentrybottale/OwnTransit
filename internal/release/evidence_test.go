@@ -10,8 +10,8 @@ func TestValidSPDXPackageReference(t *testing.T) {
 	}{
 		{
 			name: "standard library",
-			pkg: SPDXPackage{Name: "Go standard library", VersionInfo: "go1.26.10", DownloadLocation: "https://go.dev/", LicenseDeclared: "BSD-3-Clause",
-				ExternalRefs: []SPDXExternalRef{{ReferenceCategory: "PACKAGE-MANAGER", ReferenceType: "purl", ReferenceLocator: "pkg:golang/std@go1.26.10"}}},
+			pkg: SPDXPackage{Name: "Go standard library", VersionInfo: "go1.26.11", DownloadLocation: "https://go.dev/", LicenseDeclared: "BSD-3-Clause",
+				ExternalRefs: []SPDXExternalRef{{ReferenceCategory: "PACKAGE-MANAGER", ReferenceType: "purl", ReferenceLocator: "pkg:golang/std@go1.26.11"}}},
 			want: true,
 		},
 		{

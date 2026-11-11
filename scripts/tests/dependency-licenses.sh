@@ -38,11 +38,11 @@ require_text() {
 expected_modules='filippo.io/age v1.3.2
 filippo.io/hpke v0.4.0
 github.com/coder/websocket v1.8.15
-golang.org/x/crypto v0.55.0
-golang.org/x/sys v0.47.0'
+golang.org/x/crypto v0.58.0
+golang.org/x/sys v0.49.0'
 
 test "$(shasum -a 256 THIRD_PARTY_NOTICES.md | awk '{ print $1 }')" = \
-  e33d371224ddd98793822f1cbfb8bc25a196753791f187fc02bab63bca00e79c ||
+  49bd74cc85dd5c2b44e1bedf991fabe747f5d0017e083a47b36cf61567443461 ||
   fail 'THIRD_PARTY_NOTICES.md differs from the reviewed complete notice set'
 for notice_marker in \
   'Copyright 2019 The age Authors' \
@@ -105,8 +105,8 @@ if [ "$mode" != full ]; then
 fi
 
 command -v go >/dev/null 2>&1 || fail 'full check requires the pinned Go toolchain'
-test "$(go env GOVERSION)" = go1.26.10 ||
-  fail 'full check requires Go 1.26.10'
+test "$(go env GOVERSION)" = go1.26.11 ||
+  fail 'full check requires Go 1.26.11'
 test "$(GOWORK=off go env GOWORK)" = off ||
   fail 'full check requires GOWORK=off'
 
