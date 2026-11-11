@@ -1,5 +1,15 @@
 # OwnTransit v1 shipping plan
 
+## 1.0.7 dependency security maintenance release
+
+Use the existing signed nine-asset lane with pinned Go 1.26.11 and its verified
+builder digest, `golang.org/x/crypto` v0.58.0 and `golang.org/x/sys` v0.49.0.
+Require both race/vet profiles, current vulnerability analysis with no
+reachable findings, security/publication gates, exact 1.0.6 installer upgrades,
+and authenticated native artifact smoke checks. Preserve both TLS boundaries,
+the fixed SSH target and existing pairing state. Verify the exact draft assets
+before publishing the immutable 1.0.7 release.
+
 ## 1.0.6 security maintenance release
 
 Use the existing signed nine-asset lane with pinned Go 1.26.10 and its verified

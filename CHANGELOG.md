@@ -7,6 +7,21 @@ authenticated artifacts of the documented release lane. The legacy 0.1.0 lane
 additionally requires its signed qualification record. Git tags do not publish
 artifacts automatically.
 
+## [1.0.7]
+
+- Pin Go 1.26.11 for release builders and required checks, picking up the
+  `net/http` `MaxBytesReader` header-race fix (CVE-2026-97054, GO-2026-6859).
+  OwnTransit does not use `MaxBytesReader` or `MaxBytesHandler`; the bump
+  restores a clean pinned vulnerability gate. Update the builder digest,
+  qualification guards and signing metadata together.
+- Update `golang.org/x/crypto` to v0.58.0 and, as its required minimum,
+  `golang.org/x/sys` to v0.49.0. The `golang.org/x/crypto/ssh` advisories fixed
+  by this update reach only disposable SSH test fixtures; no shipped binary
+  links that package.
+- Recognize canonical 1.0.6 installations during upgrade. Preserve current
+  pairings, active state, both TLS boundaries and the fixed SSH target; no
+  re-pairing, key rotation or wire/state migration is required.
+
 ## [1.0.6]
 
 - Rebuild the distribution with pinned Go 1.26.10, including the October TLS

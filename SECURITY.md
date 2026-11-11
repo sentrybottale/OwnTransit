@@ -1,5 +1,21 @@
 # OwnTransit security policy
 
+## 1.0.7: patched Go toolchain and cryptography module
+
+Release builders and required checks pin Go 1.26.11, which fixes the `net/http`
+`MaxBytesReader` header race (CVE-2026-97054, GO-2026-6859). OwnTransit does not
+use `MaxBytesReader` or `MaxBytesHandler`, so no known path reached that crash;
+the rebuild restores a clean pinned vulnerability gate. `golang.org/x/crypto`
+moves to v0.58.0 and `golang.org/x/sys` to v0.49.0. The `x/crypto/ssh`
+advisories fixed by that update reach only disposable SSH test fixtures; no
+shipped binary links the package, and the remaining module-level `openpgp`
+notice concerns a package OwnTransit does not import.
+
+There is no carrier, pairing, endpoint-state or wire change. Updating a host's
+Go installation does not update an already-built OwnTransit binary; install the
+rebuilt distribution on each role. Rollback restores the older standard
+library.
+
 ## 1.0.6: security toolchain and legacy command retirement
 
 Release builders and required checks pin Go 1.26.10, including the October
