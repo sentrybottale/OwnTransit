@@ -24,7 +24,11 @@ workspace=$(mktemp -d "${TMPDIR:-/tmp}/owntransit-signature-test.XXXXXX") || fai
 workspace=$(CDPATH= cd -P -- "$workspace" && pwd) || fail "cannot resolve test workspace"
 homebrew_style_tap=
 homebrew_style_tap_created=0
+homebrew_style_tap_trusted=0
 cleanup() {
+  if test "$homebrew_style_tap_trusted" -eq 1 && test -n "${OWNTRANSIT_HOMEBREW_BIN:-}"; then
+    "$OWNTRANSIT_HOMEBREW_BIN" untrust --tap "$homebrew_style_tap" >/dev/null 2>&1 || true
+  fi
   if test "$homebrew_style_tap_created" -eq 1 && test -n "${OWNTRANSIT_HOMEBREW_BIN:-}"; then
     "$OWNTRANSIT_HOMEBREW_BIN" untap "$homebrew_style_tap" >/dev/null 2>&1 || true
   fi
@@ -379,6 +383,12 @@ if test -n "${OWNTRANSIT_HOMEBREW_BIN:-}"; then
   fi
   "$OWNTRANSIT_HOMEBREW_BIN" tap-new --no-git "$homebrew_style_tap" >/dev/null
   homebrew_style_tap_created=1
+  # Homebrew 7 refuses to load formulae from untrusted non-official taps.
+  # Trust only this disposable local tap, and revoke it before untapping.
+  if "$OWNTRANSIT_HOMEBREW_BIN" trust --help >/dev/null 2>&1; then
+    "$OWNTRANSIT_HOMEBREW_BIN" trust --tap "$homebrew_style_tap" >/dev/null
+    homebrew_style_tap_trusted=1
+  fi
   homebrew_style_root=$("$OWNTRANSIT_HOMEBREW_BIN" --repository "$homebrew_style_tap")
   cp "$formula_dir/owntransit.rb" "$homebrew_style_root/Formula/owntransit.rb"
   chmod 0644 "$homebrew_style_root/Formula/owntransit.rb"
@@ -389,6 +399,10 @@ if test -n "${OWNTRANSIT_HOMEBREW_BIN:-}"; then
       ruby -rjson -e 'puts JSON.parse(STDIN.read).fetch("formulae").fetch(0).fetch("versions").fetch("stable")'
   )
   test "$homebrew_style_version" = 0.1.0-rc.3 || fail "Homebrew inferred the wrong RC version"
+  if test "$homebrew_style_tap_trusted" -eq 1; then
+    "$OWNTRANSIT_HOMEBREW_BIN" untrust --tap "$homebrew_style_tap" >/dev/null
+    homebrew_style_tap_trusted=0
+  fi
   "$OWNTRANSIT_HOMEBREW_BIN" untap "$homebrew_style_tap" >/dev/null
   homebrew_style_tap_created=0
 fi
